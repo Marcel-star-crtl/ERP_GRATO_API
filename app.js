@@ -1,556 +1,189 @@
-// const dotenv = require('dotenv');
-// dotenv.config();
-
-// const express = require('express');
-// const http = require('http');
-// const cors = require('cors');
-// const swaggerUi = require('swagger-ui-express');
-// const authRoutes = require('./routes/authRoutes');
-// const profileRoutes = require('./routes/profileRoutes');
-// const taskRoutes = require('./routes/taskRoutes');
-// const notificationsRoutes = require('./routes/notificationRoutes');
-// const recommendationRoutes = require('./routes/recommendationRoutes');
-// const generatorRoutes = require('./routes/generatorRoutes');
-// const maintenanceRoutes = require('./routes/maintenanceRoutes');
-// const telemetryRoutes = require('./routes/telemetryRoutes');
-// const towerRoutes = require('./routes/towerRoutes');
-// const connectDB = require('./config/db');
-// const swaggerSpec = require('./swagger');
-// const socketService = require('./services/socketService');
-// const { initializeFirebase } = require('./config/firebase');
-// const SerialService = require('./services/serialService');
-// const dashboardRoutes = require('./routes/dashboardRoutes');
-// const simulationdashboardRoutes = require('./routes/simulationDashboardRoutes');
-
-
-// initializeFirebase();
-
-// const app = express();
-
-// // Payment Routes
-// const paymentRoutes = require('./routes/paymentRoutes');
-
-// const server = http.createServer(app);
-// socketService.initialize(server);
-
-// // After socketService initialization
-// const serialService = new SerialService(socketService.io);
-// serialService.initialize();
-
-// // After creating the serialService instance
-// app.locals.serialService = serialService;
-
-// connectDB();
-
-// app.use(cors());
-// app.use(express.json());
-// app.use(express.urlencoded({ extended: true }));
-
-// app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec.specs));
-// app.use('/api/auth', authRoutes);
-// app.use('/api/profile', profileRoutes);
-// app.use('/api/tasks', taskRoutes);
-// app.use('/api/notifications', notificationsRoutes);
-// app.use('/api/task', taskRoutes)
-// app.use('/api/recommendations', recommendationRoutes)
-// app.use('/api/payments', paymentRoutes);
-// app.use('/api/generators', generatorRoutes);
-// app.use('/api/maintenance', maintenanceRoutes);
-// app.use('/api/towers', towerRoutes)
-// app.use('/api/telemetry', telemetryRoutes)
-// app.use('/api', dashboardRoutes);
-// // app.use('/api/simulation', simulationdashboardRoutes);
-
-
-// const PORT = process.env.PORT || 5000;
-
-// app.listen(PORT, () => {
-//   console.log(`Server started on port http://localhost:${PORT}`);
-//   console.log(`Swagger UI available at http://localhost:${PORT}/api-docs`);
-// });
-
-
-
-
-
-
-
-
-
-
-// const dotenv = require('dotenv');
-// dotenv.config();
-// const express = require('express');
-// const http = require('http');
-// const cors = require('cors');
-// const { SerialPort } = require('serialport');
-// const { ReadlineParser } = require('@serialport/parser-readline');
-// const mongoose = require('mongoose');
-
-
-// // Initialize Express
-// const app = express();
-// const server = http.createServer(app);
-
-// // Middleware
-// app.use(cors());
-// app.use(express.json());
-// app.use(express.urlencoded({ extended: true }));
-
-// // Database Connection
-// mongoose.connect(process.env.MONGO_URI)
-//   .then(() => console.log('MongoDB connected'))
-//   .catch(err => console.error('MongoDB connection error:', err));
-
-// // Enhanced Serial Service Class
-// class SerialService {
-//   constructor() {
-//     this.port = null;
-//     this.parser = null;
-//     this.lastData = {
-//       raw: null,
-//       parsed: null,
-//       timestamp: null
-//     };
-//     this.rawDataBuffer = [];
-//   }
-
-//   async initialize() {
-//     try {
-//       await this.close();
-
-//       console.log(`Initializing serial on ${process.env.SERIAL_PORT} at ${process.env.SERIAL_BAUDRATE || 9600} baud`);
-
-//       this.port = new SerialPort({
-//         path: process.env.SERIAL_PORT || 'COM1',
-//         baudRate: parseInt(process.env.SERIAL_BAUDRATE) || 9600,
-//         dataBits: 8,
-//         parity: 'none',
-//         stopBits: 1,
-//         autoOpen: false
-//       });
-
-//       this.parser = this.port.pipe(new ReadlineParser({ delimiter: '\r\n' }));
-
-//       this.port.on('open', () => {
-//         console.log(`Serial port ${this.port.path} opened successfully`);
-//         this.setupDataHandlers();
-//       });
-
-//       this.port.on('error', (err) => {
-//         console.error('Serial port error:', err);
-//         this.reconnect();
-//       });
-
-//       await this.openPort();
-
-//     } catch (err) {
-//       console.error('Serial initialization error:', err);
-//       this.reconnect();
-//     }
-//   }
-
-
-//   setupDataHandlers() {
-//     this.parser.on('data', async (data) => {
-//       try {
-//         const strData = data.toString().trim();
-//         console.log(`[RAW] ${strData}`);
-        
-//         // Store raw data for debugging
-//         this.rawDataBuffer.push(strData);
-//         if (this.rawDataBuffer.length > 10) this.rawDataBuffer.shift();
-        
-//         this.lastData = {
-//           raw: strData,
-//           timestamp: new Date()
-//         };
-
-//         // Skip debug/empty lines
-//         if (!strData || strData.startsWith("PROTEUS") || strData.startsWith("DEBUG")) {
-//           return;
-//         }
-
-//         await this.processData(strData);
-//       } catch (err) {
-//         console.error('Data handler error:', err);
-//       }
-//     });
-//   }
-
-
-//   async processData(data) {
-//     try {
-//       const parts = data.split(',');
-//       if (parts.length !== 8) { 
-//         throw new Error(`Invalid data format. Expected 8 values, got ${parts.length}`);
-//       }
-  
-//       const [genId, fuel, power, temp, vib, status, runtime, shutdownReason] = parts;
-  
-//       const telemetry = {
-//         metadata: {
-//           generator_id: genId,
-//           tower_id: 'UNKNOWN_TOWER' 
-//         },
-//         fuel_level: parseFloat(fuel),
-//         power_output: parseFloat(power),
-//         temperature: parseFloat(temp),
-//         vibration: parseInt(vib),
-//         status: status === '1' ? 'running' : 'standby',
-//         timestamp: new Date(),
-//         event_type: this.determineEventType(fuel, temp, vib, status),
-//         runtime: parseInt(runtime),
-//         shutdown_reason: shutdownReason
-//       };
-
-//       // Save to database
-//       const Telemetry = require('./models/Telemetry');
-//       await Telemetry.create(telemetry);
-//       console.log(`Saved telemetry for ${genId}`);
-
-//       // Save raw data for debugging
-//       const SerialData = require('./models/SerialData');
-//       await SerialData.create({ rawData: data });
-
-//       this.lastData.parsed = telemetry;
-
-//     } catch (err) {
-//       console.error('Data processing error:', err);
-//     }
-//   }
-
-//   determineEventType(fuel, temp, vib, status) {
-//     if (status !== '1') return 'shutdown';
-//     if (fuel < 20) return 'low_fuel';
-//     if (temp > 85) return 'overheating';
-//     if (vib > 80) return 'mechanical_issue';
-//     return 'normal';
-//   }
-
-
-//   async openPort() {
-//     return new Promise((resolve, reject) => {
-//       this.port.open((err) => {
-//         if (err) return reject(err);
-//         resolve();
-//       });
-//     });
-//   }
-
-//   async sendToPort(message) {
-//     return new Promise((resolve, reject) => {
-//       if (!this.port?.isOpen) {
-//         return reject(new Error('Port not open'));
-//       }
-//       this.port.write(message + '\n', (err) => {
-//         if (err) return reject(err);
-//         console.log('Sent to port:', message);
-//         resolve();
-//       });
-//     });
-//   }
-
-//   reconnect() {
-//     setTimeout(() => {
-//       console.log('Attempting to reconnect...');
-//       this.initialize();
-//     }, 5000);
-//   }
-
-//   async close() {
-//     if (this.port?.isOpen) {
-//       await new Promise(resolve => this.port.close(resolve));
-//     }
-//   }
-
-//   getStatus() {
-//     return {
-//       isConnected: this.port?.isOpen || false,
-//       lastDataReceived: this.lastData.timestamp || 'Never',
-//       portPath: this.port?.path || 'Not connected',
-//       lastRawData: this.lastData.raw || 'None'
-//     };
-//   }
-// }
-
-// // Initialize Serial Service
-// const serialService = new SerialService();
-// app.locals.serialService = serialService;
-// serialService.initialize();
-
-// // Routes
-// app.use('/api/telemetry', require('./routes/telemetryRoutes'));
-// // ... other routes ...
-
-// // Health Check Endpoint
-// app.get('/api/health', (req, res) => {
-//   res.json({
-//     status: 'OK',
-//     mongo: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-//     serial: serialService.port?.isOpen ? 'connected' : 'disconnected',
-//     port: process.env.SERIAL_PORT || 'not configured'
-//   });
-// });
-
-// // Start Server
-// const PORT = process.env.PORT || 5000;
-// server.listen(PORT, () => {
-//   console.log(`Server running on http://localhost:${PORT}`);
-//   console.log(`Using serial port: ${process.env.SERIAL_PORT || 'COM1'}`);
-// });
-
-
-
-
-
-
 const dotenv = require('dotenv');
 dotenv.config();
+
 const express = require('express');
 const http = require('http');
+const path = require('path'); 
 const cors = require('cors');
-const { SerialPort } = require('serialport');
-const { ReadlineParser } = require('@serialport/parser-readline');
-const mongoose = require('mongoose');
 const swaggerUi = require('swagger-ui-express');
 const authRoutes = require('./routes/authRoutes');
-const profileRoutes = require('./routes/profileRoutes');
-const taskRoutes = require('./routes/taskRoutes');
-const notificationsRoutes = require('./routes/notificationRoutes');
-const recommendationRoutes = require('./routes/recommendationRoutes');
-const generatorRoutes = require('./routes/generatorRoutes');
-const maintenanceRoutes = require('./routes/maintenanceRoutes');
-const telemetryRoutes = require('./routes/telemetryRoutes');
-const towerRoutes = require('./routes/towerRoutes');
+const pettyCashRoutes = require('./routes/pettyCashRoutes'); 
 const connectDB = require('./config/db');
 const swaggerSpec = require('./swagger');
 const socketService = require('./services/socketService');
-const { initializeFirebase } = require('./config/firebase');
-const dashboardRoutes = require('./routes/dashboardRoutes');
-const simulationdashboardRoutes = require('./routes/simulationDashboardRoutes');
+const cashRequestRoutes = require('./routes/cashRequestRoutes');
+const invoiceRoutes = require('./routes/invoiceRoutes');
+const { upload, handleMulterError } = require('./middlewares/uploadMiddleware'); 
+const supplierRoutes = require('./routes/supplierInvoiceRoutes');
+const purchaseRequisitionRoutes = require('./routes/purchaseRequisitionRoutes');
+const vendorRoutes = require('./routes/vendorRoutes');
+const incidentReportRoutes = require('./routes/incidentReportRoutes');
+const budgetCodeRoutes = require('./routes/budgetCodeRoutes');
+const buyerRoutes = require('./routes/buyerRoutes');
+const contractRoutes = require('./routes/contractRoutes');
+const itSupportRoutes = require('./routes/itSupportRoutes');
+const suggestionRoutes = require('./routes/suggestionRoutes');
+const leaveManagementRoutes = require('./routes/leaveManagementRoutes');
+const projectRoutes = require('./routes/projectRoutes');
+const supplierOnboardingRoutes = require('./routes/supplierOnboardingRoutes');
 
-
-// Initialize Express
 const app = express();
+
 const server = http.createServer(app);
+socketService.initialize(server);
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+connectDB();
 
-// Database Connection
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error('MongoDB connection error:', err));
-
-// Enhanced Serial Service Class
-class SerialService {
-  constructor() {
-    this.port = null;
-    this.parser = null;
-    this.lastData = {
-      raw: null,
-      parsed: null,
-      timestamp: null
-    };
-    this.rawDataBuffer = [];
-  }
-
-  async initialize() {
-    try {
-      await this.close();
-
-      console.log(`Initializing serial on ${process.env.SERIAL_PORT} at ${process.env.SERIAL_BAUDRATE || 9600} baud`);
-
-      this.port = new SerialPort({
-        path: process.env.SERIAL_PORT || 'COM1',
-        baudRate: parseInt(process.env.SERIAL_BAUDRATE) || 9600,
-        dataBits: 8,
-        parity: 'none',
-        stopBits: 1,
-        autoOpen: false
-      });
-
-      this.parser = this.port.pipe(new ReadlineParser({ delimiter: '\r\n' }));
-
-      this.port.on('open', () => {
-        console.log(`Serial port ${this.port.path} opened successfully`);
-        this.setupDataHandlers();
-      });
-
-      this.port.on('error', (err) => {
-        console.error('Serial port error:', err);
-        this.reconnect();
-      });
-
-      await this.openPort();
-
-    } catch (err) {
-      console.error('Serial initialization error:', err);
-      this.reconnect();
+// CORS Configuration - Fixed
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      process.env.CLIENT_URL || 'http://localhost:3000',
+      'http://localhost:3001',
+      'http://127.0.0.1:3000',
+      'http://localhost:5173', 
+      'http://127.0.0.1:5173'
+    ];
+    
+    console.log('Request origin:', origin);
+    console.log('CLIENT_URL from env:', process.env.CLIENT_URL);
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log('Blocked origin:', origin);
+      callback(null, true); 
     }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-requested-with'],
+  preflightContinue: false,
+  optionsSuccessStatus: 200
+}));
+
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Serve uploaded files statically
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
+
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  if (req.files) {
+    console.log('Files:', Object.keys(req.files));
   }
+  next();
+});
 
-
-  setupDataHandlers() {
-    this.parser.on('data', async (data) => {
-      try {
-        const strData = data.toString().trim();
-        console.log(`[RAW] ${strData}`);
-        
-        // Store raw data for debugging
-        this.rawDataBuffer.push(strData);
-        if (this.rawDataBuffer.length > 10) this.rawDataBuffer.shift();
-        
-        this.lastData = {
-          raw: strData,
-          timestamp: new Date()
-        };
-
-        // Skip debug/empty lines
-        if (!strData || strData.startsWith("PROTEUS") || strData.startsWith("DEBUG")) {
-          return;
-        }
-
-        await this.processData(strData);
-      } catch (err) {
-        console.error('Data handler error:', err);
-      }
-    });
-  }
-
-
-  async processData(data) {
-    try {
-      const parts = data.split(',');
-      if (parts.length !== 9) { 
-        throw new Error(`Invalid data format. Expected 8 values, got ${parts.length}`);
-      }
-  
-      const [genId, towerId, fuel, power, temp, vib, status, runtime, shutdownReason] = parts;
-  
-      const telemetry = {
-        metadata: {
-          generator_id: genId,
-          tower_id: towerId 
-        },
-        fuel_level: parseFloat(fuel),
-        power_output: parseFloat(power),
-        temperature: parseFloat(temp),
-        vibration: parseInt(vib),
-        status: status === '1' ? 'running' : 'standby',
-        timestamp: new Date(),
-        event_type: this.determineEventType(fuel, temp, vib, status),
-        runtime: parseInt(runtime),
-        shutdown_reason: shutdownReason
-      };
-
-      // Save to database
-      const Telemetry = require('./models/Telemetry');
-      await Telemetry.create(telemetry);
-      console.log(`Saved telemetry for ${genId}`);
-
-      // Save raw data for debugging
-      const SerialData = require('./models/SerialData');
-      await SerialData.create({ rawData: data });
-
-      this.lastData.parsed = telemetry;
-
-    } catch (err) {
-      console.error('Data processing error:', err);
-    }
-  }
-
-  determineEventType(fuel, temp, vib, status) {
-    if (status !== '1') return 'shutdown';
-    if (fuel < 20) return 'low_fuel';
-    if (temp > 85) return 'overheating';
-    if (vib > 80) return 'mechanical_issue';
-    return 'normal';
-  }
-
-
-  async openPort() {
-    return new Promise((resolve, reject) => {
-      this.port.open((err) => {
-        if (err) return reject(err);
-        resolve();
-      });
-    });
-  }
-
-  async sendToPort(message) {
-    return new Promise((resolve, reject) => {
-      if (!this.port?.isOpen) {
-        return reject(new Error('Port not open'));
-      }
-      this.port.write(message + '\n', (err) => {
-        if (err) return reject(err);
-        console.log('Sent to port:', message);
-        resolve();
-      });
-    });
-  }
-
-  reconnect() {
-    setTimeout(() => {
-      console.log('Attempting to reconnect...');
-      this.initialize();
-    }, 5000);
-  }
-
-  async close() {
-    if (this.port?.isOpen) {
-      await new Promise(resolve => this.port.close(resolve));
-    }
-  }
-
-  getStatus() {
-    return {
-      isConnected: this.port?.isOpen || false,
-      lastDataReceived: this.lastData.timestamp || 'Never',
-      portPath: this.port?.path || 'Not connected',
-      lastRawData: this.lastData.raw || 'None'
-    };
-  }
-}
-
-// Initialize Serial Service
-const serialService = new SerialService();
-app.locals.serialService = serialService;
-serialService.initialize();
-
-// Routes
-app.use('/api/telemetry', require('./routes/telemetryRoutes'));
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec.specs));
 app.use('/api/auth', authRoutes);
-app.use('/api/profile', profileRoutes);
-app.use('/api/tasks', taskRoutes);
-app.use('/api/notifications', notificationsRoutes);
-app.use('/api/task', taskRoutes)
-app.use('/api/recommendations', recommendationRoutes)
-app.use('/api/generators', generatorRoutes);
-app.use('/api/maintenance', maintenanceRoutes);
-app.use('/api/towers', towerRoutes)
-app.use('/api/telemetry', telemetryRoutes)
-app.use('/api', dashboardRoutes);
-// app.use('/api/simulation', simulationdashboardRoutes);
+app.use('/api/pettycash', pettyCashRoutes); 
+app.use('/api/cash-requests', cashRequestRoutes);
+app.use('/api/invoices', invoiceRoutes);
+app.use('/api/suppliers', supplierRoutes);
+app.use('/api/purchase-requisitions', purchaseRequisitionRoutes);
+app.use('/api/incident-reports', incidentReportRoutes);
+app.use('/api/files', require('./routes/files')); 
+app.use('/api/items', require('./routes/itemsRoutes'));
+app.use('/api/budget-codes', budgetCodeRoutes);
+app.use('/api/buyer', buyerRoutes);
+app.use('/api/contracts', contractRoutes);
+app.use('/api/it-support', itSupportRoutes);
+app.use('/api/suggestions', suggestionRoutes);
+app.use('/api/leave', leaveManagementRoutes);
+app.use('/api/projects', projectRoutes);
+app.use('/api/supplier-onboarding', supplierOnboardingRoutes);
 
-// Health Check Endpoint
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    mongo: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-    serial: serialService.port?.isOpen ? 'connected' : 'disconnected',
-    port: process.env.SERIAL_PORT || 'not configured'
+app.use(handleMulterError);
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('Global error handler:', err);
+  
+  // Clean up any temporary files on error
+  if (req.files) {
+    const cleanupFiles = [];
+    
+    if (Array.isArray(req.files)) {
+      cleanupFiles.push(...req.files);
+    } else if (typeof req.files === 'object') {
+      Object.values(req.files).forEach(files => {
+        if (Array.isArray(files)) {
+          cleanupFiles.push(...files);
+        }
+      });
+    }
+    
+    cleanupFiles.forEach(file => {
+      if (file.path) {
+        const fs = require('fs');
+        fs.unlink(file.path, (unlinkErr) => {
+          if (unlinkErr) console.warn('Failed to cleanup file:', file.path, unlinkErr.message);
+        });
+      }
+    });
+  }
+  
+  // Handle specific error types
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation error',
+      errors: Object.values(err.errors).map(e => e.message)
+    });
+  }
+  
+  if (err.name === 'CastError') {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid ID format'
+    });
+  }
+  
+  if (err.code === 11000) {
+    return res.status(400).json({
+      success: false,
+      message: 'Duplicate entry detected'
+    });
+  }
+  
+  // Default error response
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Internal server error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 });
 
-// Start Server
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-  console.log(`Using serial port: ${process.env.SERIAL_PORT || 'COM1'}`);
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'Route not found'
+  });
 });
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
+});
+
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+  console.log(`Server started on port http://localhost:${PORT}`);
+  console.log(`Swagger UI available at http://localhost:${PORT}/api-docs`);
+});
+
+
+
+

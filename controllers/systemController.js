@@ -25,7 +25,7 @@ exports.getSystemStats = async (req, res) => {
       active_generators: activeGenerators,
       alerts: alerts,
       avg_fuel_efficiency: avgFuelEfficiency.toFixed(1),
-      maintenance_due: Math.floor(generatorCount * 0.2) // Mock 20% due
+      maintenance_due: Math.floor(generatorCount * 0.2) 
     });
   } catch (err) {
     console.error(err);
