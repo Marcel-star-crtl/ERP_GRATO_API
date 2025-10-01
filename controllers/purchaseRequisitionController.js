@@ -3603,6 +3603,170 @@ const getBudgetCodesForVerification = async (req, res) => {
   }
 };
 
+// Finance Dashboard Data
+const getFinanceDashboardData = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+
+    // Check permissions
+    const canView = user.role === 'admin' || 
+                   user.role === 'finance' || 
+                   user.email === 'ranibellmambo@gratoengineering.com';
+
+    if (!canView) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    // Get all finance-related requisitions
+    const financeRequisitions = await PurchaseRequisition.find({
+      status: { 
+        $in: [
+          'pending_finance_verification',
+          'pending_supply_chain_review',
+          'pending_buyer_assignment',
+          'pending_head_approval',
+          'approved',
+          'in_procurement',
+          'procurement_complete'
+        ]
+      }
+    })
+    .populate('employee', 'fullName email department')
+    .populate('financeVerification.verifiedBy', 'fullName email')
+    .populate('supplyChainReview.assignedBuyer', 'fullName email')
+    .sort({ createdAt: -1 });
+
+    // Calculate statistics
+    const stats = {
+      totalValue: 0,
+      pendingVerification: 0,
+      approvedThisMonth: 0,
+      rejectedThisMonth: 0,
+      averageProcessingTime: 0,
+      budgetUtilization: 0
+    };
+
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
+
+    // Process each requisition for statistics
+    financeRequisitions.forEach(req => {
+      // Calculate total value
+      const reqValue = req.budgetXAF || req.supplyChainReview?.estimatedCost || 0;
+      stats.totalValue += reqValue;
+
+      // Count pending verification
+      if (req.status === 'pending_finance_verification') {
+        stats.pendingVerification++;
+      }
+
+      // Count monthly approvals/rejections
+      const createdDate = new Date(req.createdAt);
+      if (createdDate.getMonth() === currentMonth && createdDate.getFullYear() === currentYear) {
+        if (req.financeVerification?.decision === 'approved') {
+          stats.approvedThisMonth++;
+        } else if (req.financeVerification?.decision === 'rejected') {
+          stats.rejectedThisMonth++;
+        }
+      }
+    });
+
+    // Get urgent/high priority items requiring attention
+    const urgentItems = financeRequisitions.filter(req => 
+      req.status === 'pending_finance_verification' && 
+      (req.urgency === 'High' || 
+       new Date() - new Date(req.createdAt) > 7 * 24 * 60 * 60 * 1000) // More than 7 days old
+    );
+
+    // Get recent activity (last 10 finance-related actions)
+    const recentActivity = financeRequisitions
+      .filter(req => req.financeVerification?.verificationDate)
+      .sort((a, b) => new Date(b.financeVerification.verificationDate) - new Date(a.financeVerification.verificationDate))
+      .slice(0, 10)
+      .map(req => ({
+        id: req._id,
+        requisitionNumber: req.requisitionNumber,
+        title: req.title,
+        employee: req.employee,
+        action: req.financeVerification.decision,
+        amount: req.budgetXAF || req.supplyChainReview?.estimatedCost || 0,
+        date: req.financeVerification.verificationDate,
+        verifiedBy: req.financeVerification.verifiedBy
+      }));
+
+    // Get budget breakdown by department
+    const departmentBreakdown = {};
+    financeRequisitions.forEach(req => {
+      const dept = req.employee?.department || 'Unknown';
+      const amount = req.budgetXAF || req.supplyChainReview?.estimatedCost || 0;
+      
+      if (!departmentBreakdown[dept]) {
+        departmentBreakdown[dept] = {
+          totalAmount: 0,
+          count: 0,
+          pending: 0,
+          approved: 0
+        };
+      }
+      
+      departmentBreakdown[dept].totalAmount += amount;
+      departmentBreakdown[dept].count++;
+      
+      if (req.status === 'pending_finance_verification') {
+        departmentBreakdown[dept].pending++;
+      } else if (req.financeVerification?.decision === 'approved') {
+        departmentBreakdown[dept].approved++;
+      }
+    });
+
+    // Get monthly trends (last 6 months)
+    const monthlyTrends = [];
+    for (let i = 5; i >= 0; i--) {
+      const date = new Date();
+      date.setMonth(date.getMonth() - i);
+      const month = date.getMonth();
+      const year = date.getFullYear();
+      
+      const monthData = financeRequisitions.filter(req => {
+        const reqDate = new Date(req.createdAt);
+        return reqDate.getMonth() === month && reqDate.getFullYear() === year;
+      });
+      
+      monthlyTrends.push({
+        month: date.toLocaleString('default', { month: 'short', year: 'numeric' }),
+        totalRequests: monthData.length,
+        totalValue: monthData.reduce((sum, req) => sum + (req.budgetXAF || 0), 0),
+        approved: monthData.filter(req => req.financeVerification?.decision === 'approved').length,
+        rejected: monthData.filter(req => req.financeVerification?.decision === 'rejected').length
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        statistics: stats,
+        urgentItems: urgentItems.slice(0, 10), // Limit to 10 most urgent
+        recentActivity,
+        departmentBreakdown,
+        monthlyTrends,
+        pendingRequisitions: financeRequisitions.filter(req => req.status === 'pending_finance_verification'),
+        totalRequisitions: financeRequisitions.length
+      }
+    });
+
+  } catch (error) {
+    console.error('Get finance dashboard data error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch finance dashboard data',
+      error: error.message
+    });
+  }
+};
+
 
 // Export all functions
 module.exports = {
@@ -3652,6 +3816,9 @@ module.exports = {
   getAvailableBuyers,
   getHeadApprovalRequisitions,
   getBudgetCodesForVerification,
+
+  // Finance Dashboard
+  getFinanceDashboardData,
 
   // Draft management
   saveDraft

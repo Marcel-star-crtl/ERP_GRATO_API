@@ -1,21 +1,15 @@
 const SUPPLIER_APPROVAL_CHAINS = {
+  // NEW SIMPLIFIED WORKFLOW: Department Head → Head of Business only
   'HSE': [
     {
       level: 1,
-      approver: 'Mr. Ovo Bechem',
-      email: 'bechem.mbu@gratoglobal.com',
-      role: 'HSE Coordinator', 
-      department: 'Technical'
-    },
-    {
-      level: 2,
       approver: 'Mr. Didier Oyong',
       email: 'didier.oyong@gratoengineering.com',
       role: 'Technical Director', 
       department: 'Technical'
     },
     {
-      level: 3,
+      level: 2,
       approver: 'Mr. E.T Kelvin',
       email: 'kelvin.eyong@gratoglobal.com',
       role: 'Head of Business Dev & Supply Chain', 
@@ -26,23 +20,16 @@ const SUPPLIER_APPROVAL_CHAINS = {
   'Refurbishment': [
     {
       level: 1,
-      approver: 'Mr. verla Ivo',
-      email: 'verla.ivo@gratoengineering.com',
-      role: 'Head of Refurbishment', 
+      approver: 'Mr. Didier Oyong',
+      email: 'didier.oyong@gratoengineering.com',
+      role: 'Technical Director', // Department head
       department: 'Technical'
     },
     {
       level: 2,
-      approver: 'Mr. Didier Oyong',
-      email: 'didier.oyong@gratoengineering.com',
-      role: 'Technical Director', // This is the department head
-      department: 'Technical'
-    },
-    {
-      level: 3,
       approver: 'Mr. E.T Kelvin',
       email: 'kelvin.eyong@gratoglobal.com',
-      role: 'Head of Business Dev & Supply Chain', // Final approver
+      role: 'Head of Business Dev & Supply Chain', // Head of Business
       department: 'Business Development & Supply Chain'
     }
   ],
@@ -50,20 +37,13 @@ const SUPPLIER_APPROVAL_CHAINS = {
   'Project': [
     {
       level: 1,
-      approver: 'Mr. Joel Wamba',
-      email: 'joel@gratoengineering.com',
-      role: 'Project Manager', 
-      department: 'Technical'
-    },
-    {
-      level: 2,
       approver: 'Mr. Didier Oyong',
       email: 'didier.oyong@gratoengineering.com',
       role: 'Technical Director', 
       department: 'Technical'
     },
     {
-      level: 3,
+      level: 2,
       approver: 'Mr. E.T Kelvin',
       email: 'kelvin.eyong@gratoglobal.com',
       role: 'Head of Business Dev & Supply Chain', 
@@ -74,20 +54,13 @@ const SUPPLIER_APPROVAL_CHAINS = {
   'Operations': [
     {
       level: 1,
-      approver: 'Mr. Pascal Assam',
-      email: 'pascal.rodrique@gratoglobal.com',
-      role: 'Operations Manager', 
-      department: 'Technical'
-    },
-    {
-      level: 2,
       approver: 'Mr. Didier Oyong',
       email: 'didier.oyong@gratoengineering.com',
       role: 'Technical Director', 
       department: 'Technical'
     },
     {
-      level: 3,
+      level: 2,
       approver: 'Mr. E.T Kelvin',
       email: 'kelvin.eyong@gratoglobal.com',
       role: 'Head of Business Dev & Supply Chain', 
@@ -98,20 +71,13 @@ const SUPPLIER_APPROVAL_CHAINS = {
   'Diesel': [
     {
       level: 1,
-      approver: 'Mr. Kevin Minka',
-      email: 'minka.kevin@gratoglobal.com',
-      role: 'Diesel Coordinator', 
-      department: 'Technical'
-    },
-    {
-      level: 2,
       approver: 'Mr. Didier Oyong',
       email: 'didier.oyong@gratoengineering.com',
       role: 'Technical Director', 
       department: 'Technical'
     },
     {
-      level: 3,
+      level: 2,
       approver: 'Mr. E.T Kelvin',
       email: 'kelvin.eyong@gratoglobal.com',
       role: 'Head of Business Dev & Supply Chain', 
@@ -122,13 +88,6 @@ const SUPPLIER_APPROVAL_CHAINS = {
   'Supply Chain': [
     {
       level: 1,
-      approver: 'Mr. Lukong Lambert',
-      email: 'lukong.lambert@gratoglobal.com',
-      role: 'Supply Chain Coordinator', 
-      department: 'Business Development & Supply Chain'
-    },
-    {
-      level: 2,
       approver: 'Mr. E.T Kelvin',
       email: 'kelvin.eyong@gratoglobal.com',
       role: 'Head of Business Dev & Supply Chain',
@@ -139,20 +98,13 @@ const SUPPLIER_APPROVAL_CHAINS = {
   'HR & Admin': [
     {
       level: 1,
-      approver: 'Ms. Cristabel Mangwi',
-      email: 'marcel.ngong@gratoglobal.com',
-      role: 'Order Management Assistant', 
-      department: 'Business Development & Supply Chain'
-    },
-    {
-      level: 2,
       approver: 'Mrs. Bruiline Tsitoh',
       email: 'bruiline.tsitoh@gratoglobal.com',
       role: 'HR & Admin Head', 
       department: 'HR & Admin'
     },
     {
-      level: 3,
+      level: 2,
       approver: 'Mr. E.T Kelvin',
       email: 'kelvin.eyong@gratoglobal.com',
       role: 'Head of Business Dev & Supply Chain', 
@@ -170,7 +122,7 @@ const SUPPLIER_APPROVAL_CHAINS = {
     }
   ],
 
-  // New chains for department-based assignments
+  // Department-based assignments (simplified)
   'Technical': [
     {
       level: 1,
@@ -191,13 +143,6 @@ const SUPPLIER_APPROVAL_CHAINS = {
   'Business Development & Supply Chain': [
     {
       level: 1,
-      approver: 'Mr. Lukong Lambert',
-      email: 'lukong.lambert@gratoglobal.com',
-      role: 'Supply Chain Coordinator', 
-      department: 'Business Development & Supply Chain'
-    },
-    {
-      level: 2,
       approver: 'Mr. E.T Kelvin',
       email: 'kelvin.eyong@gratoglobal.com',
       role: 'Head of Business Dev & Supply Chain', 
@@ -285,9 +230,8 @@ const getApproversForCategory = (serviceCategory) => {
     email: step.email,
     role: step.role,
     department: step.department,
-    hierarchy: step.level === 1 ? 'Supervisor' : 
-               step.level === 2 && step.role.includes('Director') || step.role.includes('Head') ? 'Department Head' :
-               step.level === 3 || step.email === 'kelvin.eyong@gratoglobal.com' ? 'Final Approver' : 'Approver'
+    hierarchy: step.level === 1 ? 'Department Head' : 
+               step.level === 2 ? 'Head of Business' : 'Approver'
   }));
 };
 
@@ -333,9 +277,8 @@ const getCategoriesForApprover = (userEmail) => {
         level: approverStep.level,
         role: approverStep.role,
         department: approverStep.department,
-        hierarchy: approverStep.level === 1 ? 'Supervisor' : 
-                  approverStep.level === 2 && (approverStep.role.includes('Director') || approverStep.role.includes('Head')) ? 'Department Head' :
-                  approverStep.level === 3 || approverStep.email === 'kelvin.eyong@gratoglobal.com' ? 'Final Approver' : 'Approver'
+        hierarchy: approverStep.level === 1 ? 'Department Head' : 
+                  approverStep.level === 2 ? 'Head of Business' : 'Approver'
       });
     }
   });
@@ -368,14 +311,12 @@ const getApprovalChainSummary = () => {
         name: step.approver,
         role: step.role,
         department: step.department,
-        hierarchy: step.level === 1 ? 'Supervisor' : 
-                  step.level === 2 && (step.role.includes('Director') || step.role.includes('Head')) ? 'Department Head' :
-                  step.level === 3 || step.email === 'kelvin.eyong@gratoglobal.com' ? 'Final Approver' : 'Approver'
+        hierarchy: step.level === 1 ? 'Department Head' : 
+                  step.level === 2 ? 'Head of Business' : 'Approver'
       })),
       finalApprover: chain[chain.length - 1]?.approver || 'Unknown',
-      workflow: chain.length === 1 ? 'Direct Approval' :
-               chain.length === 2 ? 'Supervisor → Final' :
-               chain.length === 3 ? 'Supervisor → Department Head → Final' : 'Multi-level'
+      workflow: chain.length === 1 ? 'Direct Head of Business Approval' :
+               chain.length === 2 ? 'Department Head → Head of Business' : 'Multi-level'
     };
   });
   
@@ -385,26 +326,22 @@ const getApprovalChainSummary = () => {
 // Get approval hierarchy explanation
 const getApprovalHierarchy = () => {
   return {
-    description: "Supplier invoice approval follows a hierarchical structure:",
+    description: "NEW SUPPLIER INVOICE APPROVAL: Simplified 2-level workflow",
     levels: {
       1: {
-        title: "Supervisor Level", 
-        description: "First line supervisors/coordinators review invoices in their area of expertise",
-        examples: ["HSE Coordinator", "Project Manager", "Operations Manager", "Diesel Coordinator", "Supply Chain Coordinator"]
+        title: "Department Head Level", 
+        description: "Department heads provide initial approval for invoices in their department",
+        examples: ["Technical Director", "HR & Admin Head", "Finance Head", "Head of Business Dev & Supply Chain"]
       },
       2: {
-        title: "Department Head Level",
-        description: "Department heads provide departmental approval after supervisor review", 
-        examples: ["Technical Director", "HR & Admin Head", "Finance Head"]
-      },
-      3: {
-        title: "Final Approval Level",
-        description: "Head of Business Dev & Supply Chain provides final approval for most invoices",
+        title: "Head of Business Level",
+        description: "Head of Business Dev & Supply Chain provides final approval before finance processing",
         examples: ["Head of Business Dev & Supply Chain (Mr. E.T Kelvin)"]
       }
     },
+    workflow: "Finance assigns to department → Department Head approves → Head of Business approves → Finance processes",
     specialCases: {
-      "Supply Chain": "Only 2 levels: Coordinator → Department Head (who is also final approver)",
+      "Supply Chain & Business Development": "Single level approval - direct to Head of Business Dev & Supply Chain",
       "General": "Direct approval by Head of Business Dev & Supply Chain for uncategorized invoices"
     }
   };

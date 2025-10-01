@@ -33,12 +33,12 @@ exports.submitSupplierInvoice = async (req, res) => {
       });
     }
 
-    // Validate PO number format
-    const poRegex = /^PO-\w{2}\d{10}-\d+$/i;
+    // Validate PO number format - more flexible pattern
+    const poRegex = /^PO-\w{2}\d{8,12}-\d+$/i;
     if (!poRegex.test(poNumber)) {
       return res.status(400).json({
         success: false,
-        message: 'PO number format should be: PO-XX0000000000-X (e.g., PO-NG010000000-1)'
+        message: 'PO number format should be: PO-XX########-X (e.g., PO-NG010000000-1)'
       });
     }
 
@@ -951,20 +951,20 @@ exports.processSupplierApprovalStep = async (req, res) => {
         console.log(`Notifying next approver: ${nextApprover.approver.name} at level ${nextApprover.level}`);
         // Notification will be sent by post-save middleware
       } else {
-        // All approvals complete - notify finance
-        console.log('All supplier invoice approvals completed - notifying finance');
+        // All approvals complete - notify finance for processing
+        console.log('All supplier invoice approvals completed - notifying finance for processing');
         
         const financeUsers = await User.find({ role: 'finance' }).select('email fullName');
         if (financeUsers.length > 0) {
           notifications.push(
             sendEmail({
               to: financeUsers.map(u => u.email),
-              subject: `Supplier Invoice Fully Approved - ${invoice.invoiceNumber}`,
+              subject: `Supplier Invoice Ready for Processing - ${invoice.invoiceNumber}`,
               html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                   <div style="background-color: #d4edda; padding: 20px; border-radius: 8px;">
-                    <h2>Supplier Invoice Fully Approved</h2>
-                    <p>A supplier invoice has completed the full approval chain and is ready for payment processing.</p>
+                    <h2>Supplier Invoice Ready for Processing</h2>
+                    <p>A supplier invoice has completed the full approval chain and is ready for finance processing and payment.</p>
                     
                     <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
                       <ul>
@@ -973,14 +973,16 @@ exports.processSupplierApprovalStep = async (req, res) => {
                         <li><strong>PO Number:</strong> ${invoice.poNumber}</li>
                         <li><strong>Amount:</strong> ${invoice.currency} ${invoice.invoiceAmount.toLocaleString()}</li>
                         <li><strong>Service Category:</strong> ${invoice.serviceCategory}</li>
+                        <li><strong>Department:</strong> ${invoice.assignedDepartment}</li>
                         <li><strong>Final Approver:</strong> ${user.fullName}</li>
+                        <li><strong>Status:</strong> Ready for Finance Processing</li>
                       </ul>
                     </div>
                     
                     <div style="text-align: center; margin: 30px 0;">
                       <a href="${process.env.CLIENT_URL || 'http://localhost:3000'}/finance/supplier-invoices" 
-                         style="background-color: #17a2b8; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
-                        Process Payment
+                         style="background-color: #28a745; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+                        Process Invoice
                       </a>
                     </div>
                   </div>
@@ -1259,6 +1261,107 @@ exports.processSupplierInvoicePayment = async (req, res) => {
     res.status(400).json({
       success: false,
       message: error.message || 'Failed to process payment'
+    });
+  }
+};
+
+// Mark supplier invoice as processed (final finance step)
+exports.markSupplierInvoiceAsProcessed = async (req, res) => {
+  try {
+    console.log('=== MARKING SUPPLIER INVOICE AS PROCESSED ===');
+    const { invoiceId } = req.params;
+    const { comments } = req.body;
+
+    const invoice = await SupplierInvoice.findById(invoiceId)
+      .populate('supplier', 'supplierDetails email');
+
+    if (!invoice) {
+      return res.status(404).json({
+        success: false,
+        message: 'Supplier invoice not found'
+      });
+    }
+
+    if (invoice.approvalStatus !== 'pending_finance_processing') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invoice must be pending finance processing to mark as processed'
+      });
+    }
+
+    // Update invoice status
+    invoice.approvalStatus = 'processed';
+    
+    // Update finance review
+    invoice.financeReview = {
+      ...invoice.financeReview,
+      reviewedBy: req.user.userId,
+      reviewDate: new Date(),
+      reviewTime: new Date().toTimeString().split(' ')[0],
+      status: 'processed',
+      finalComments: comments || 'Invoice processed and ready for payment'
+    };
+
+    await invoice.save();
+
+    // Send notification to supplier
+    if (invoice.supplier && invoice.supplier.email) {
+      await sendEmail({
+        to: invoice.supplier.email,
+        subject: `Invoice Processed - ${invoice.invoiceNumber}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background-color: #d1ecf1; padding: 20px; border-radius: 8px; border-left: 4px solid #0bc5ea;">
+              <h2 style="color: #333; margin-top: 0;">Invoice Processed</h2>
+              <p style="color: #555;">Dear ${invoice.supplierDetails.companyName},</p>
+              <p>Your invoice has been processed by our finance team and is now ready for payment.</p>
+              
+              <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <h3>Invoice Details</h3>
+                <ul style="list-style: none; padding: 0;">
+                  <li><strong>Invoice Number:</strong> ${invoice.invoiceNumber}</li>
+                  <li><strong>PO Number:</strong> ${invoice.poNumber}</li>
+                  <li><strong>Amount:</strong> ${invoice.currency} ${invoice.invoiceAmount.toLocaleString()}</li>
+                  <li><strong>Status:</strong> Processed - Ready for Payment</li>
+                  <li><strong>Processed Date:</strong> ${new Date().toLocaleDateString('en-GB')}</li>
+                </ul>
+              </div>
+              
+              ${comments ? `
+              <div style="background-color: #f8f9fa; padding: 15px; border-radius: 6px; margin: 20px 0;">
+                <p><strong>Finance Comments:</strong></p>
+                <p style="font-style: italic;">${comments}</p>
+              </div>
+              ` : ''}
+              
+              <p>Payment will be processed according to our payment terms. You will receive a separate notification once payment is completed.</p>
+              
+              <p>Thank you for your business with Grato Engineering.</p>
+            </div>
+          </div>
+        `
+      }).catch(error => {
+        console.error('Failed to send invoice processed notification:', error);
+      });
+    }
+
+    console.log('=== SUPPLIER INVOICE MARKED AS PROCESSED ===');
+
+    res.json({
+      success: true,
+      message: 'Invoice marked as processed successfully',
+      data: {
+        ...invoice.toObject(),
+        currentApprover: invoice.getCurrentApprover(),
+        approvalProgress: invoice.approvalProgress
+      }
+    });
+
+  } catch (error) {
+    console.error('=== FAILED TO MARK SUPPLIER INVOICE AS PROCESSED ===', error);
+    res.status(400).json({
+      success: false,
+      message: error.message || 'Failed to mark invoice as processed'
     });
   }
 };

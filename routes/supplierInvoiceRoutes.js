@@ -226,6 +226,13 @@ router.post('/admin/invoices/:invoiceId/payment',
   supplierInvoiceController.processSupplierInvoicePayment
 );
 
+// Mark supplier invoice as processed (NEW - final finance step)
+router.put('/admin/invoices/:invoiceId/process',
+  authMiddleware,
+  requireRoles('finance', 'admin'),
+  supplierInvoiceController.markSupplierInvoiceAsProcessed
+);
+
 // Get supplier invoice analytics
 router.get('/admin/analytics',
   authMiddleware,

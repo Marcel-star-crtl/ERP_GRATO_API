@@ -29,6 +29,12 @@ router.get('/finance',
   purchaseRequisitionController.getFinanceRequisitions
 );
 
+router.get('/finance/dashboard-data', 
+  authMiddleware, 
+  requireRoles('finance', 'admin'),
+  purchaseRequisitionController.getFinanceDashboardData
+);
+
 router.put('/:requisitionId/finance-verification', 
   authMiddleware, 
   requireRoles('finance', 'admin'),

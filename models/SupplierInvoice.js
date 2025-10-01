@@ -71,9 +71,9 @@ const supplierInvoiceSchema = new mongoose.Schema({
     uppercase: true,
     validate: {
       validator: function(v) {
-        return /^PO-\w{2}\d{10}-\d+$/.test(v);
+        return /^PO-\w{2}\d{8,12}-\d+$/.test(v);
       },
-      message: 'PO number format should be: PO-XX0000000000-X (e.g., PO-NG010000000-1)'
+      message: 'PO number format should be: PO-XX########-X (e.g., PO-NG010000000-1)'
     }
   },
   
@@ -190,9 +190,11 @@ const supplierInvoiceSchema = new mongoose.Schema({
     type: String,
     enum: [
       'pending_finance_assignment',
-      'pending_department_approval', 
+      'pending_department_head_approval',
+      'pending_head_of_business_approval', 
       'approved', 
       'rejected', 
+      'pending_finance_processing',
       'processed',
       'paid'
     ],
@@ -523,9 +525,9 @@ supplierInvoiceSchema.methods.assignToDepartment = function(department, assigned
   this.assignedBy = assignedByUserId;
   this.assignmentDate = new Date();
   this.assignmentTime = new Date().toTimeString().split(' ')[0];
-  this.approvalStatus = 'pending_department_approval';
+  this.approvalStatus = 'pending_department_head_approval'; // Updated for new workflow
   
-  // Use the original department name for approval chain lookup
+  // NEW WORKFLOW: Get simplified approval chain - Department Head → Head of Business only
   const chain = getSupplierApprovalChain(department, this.serviceCategory);
   this.approvalChain = chain.map(step => ({
     level: step.level,
@@ -587,11 +589,20 @@ supplierInvoiceSchema.methods.processApprovalStep = function(approverEmail, deci
     const nextStep = this.approvalChain.find(step => step.level === nextLevel);
     
     if (nextStep) {
+      // Move to next approval level
       this.currentApprovalLevel = nextLevel;
       nextStep.activatedDate = new Date();
       nextStep.notificationSent = false;
+      
+      // Update status based on current level
+      if (this.currentApprovalLevel === 1) {
+        this.approvalStatus = 'pending_department_head_approval';
+      } else if (this.currentApprovalLevel === 2) {
+        this.approvalStatus = 'pending_head_of_business_approval';
+      }
     } else {
-      this.approvalStatus = 'approved';
+      // All approvals complete - ready for finance processing
+      this.approvalStatus = 'pending_finance_processing';
       this.currentApprovalLevel = 0;
     }
   }
@@ -694,7 +705,7 @@ supplierInvoiceSchema.statics.getPendingForApprover = function(approverEmail) {
   return this.find({
     'approvalChain.approver.email': approverEmail,
     'approvalChain.status': 'pending',
-    approvalStatus: 'pending_department_approval',
+    approvalStatus: { $in: ['pending_department_head_approval', 'pending_head_of_business_approval'] },
     $expr: {
       $let: {
         vars: {
@@ -717,11 +728,13 @@ supplierInvoiceSchema.statics.getPendingForApprover = function(approverEmail) {
     .sort({ assignmentDate: -1 });
 };
 
-// Static method to get invoices needing finance processing
+// Static method to get invoices needing finance processing (includes new pending_finance_processing status)
 supplierInvoiceSchema.statics.getPendingFinanceProcessing = function() {
   return this.find({
-    approvalStatus: 'pending_finance_assignment',
-    initialSubmission: true
+    $or: [
+      { approvalStatus: 'pending_finance_assignment', initialSubmission: true },
+      { approvalStatus: 'pending_finance_processing' }
+    ]
   }).populate('supplier', 'supplierDetails email')
     .sort({ uploadedDate: 1 }); // Oldest first
 };
@@ -772,7 +785,8 @@ supplierInvoiceSchema.pre('remove', async function(next) {
 
 // Post-save middleware for notifications
 supplierInvoiceSchema.post('save', async function() {
-  if (this.approvalStatus === 'pending_department_approval' && 
+  if ((this.approvalStatus === 'pending_department_head_approval' || 
+       this.approvalStatus === 'pending_head_of_business_approval') && 
       this.currentApprovalLevel > 0 && 
       this.approvalChain.length > 0) {
     
