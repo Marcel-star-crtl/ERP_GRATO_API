@@ -2,7 +2,6 @@ const PurchaseRequisition = require('../models/PurchaseRequisition');
 const PurchaseOrder = require('../models/PurchaseOrder');
 const Quote = require('../models/Quote');
 const Supplier = require('../models/Supplier');
-const DeliveryTracking = require('../models/DeliveryTracking');
 const mongoose = require('mongoose');
 
 // Get procurement analytics

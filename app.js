@@ -1,6 +1,15 @@
 const dotenv = require('dotenv');
 dotenv.config();
 
+const { initializeServer, verifyConfiguration } = require('./utils/serverInit');
+
+initializeServer();
+verifyConfiguration();
+
+const initializeSharePointFolders = require('./utils/initializeFolders');
+initializeSharePointFolders();
+
+
 const express = require('express');
 const http = require('http');
 const path = require('path'); 
@@ -26,6 +35,10 @@ const suggestionRoutes = require('./routes/suggestionRoutes');
 const leaveManagementRoutes = require('./routes/leaveManagementRoutes');
 const projectRoutes = require('./routes/projectRoutes');
 const supplierOnboardingRoutes = require('./routes/supplierOnboardingRoutes');
+const sharepointRoutes = require('./routes/sharepoint');
+const actionItemRoutes = require('./routes/actionItemRoutes');
+const cron = require('node-cron');
+
 
 const app = express();
 
@@ -64,6 +77,60 @@ app.use(cors({
   optionsSuccessStatus: 200
 }));
 
+// Run daily at 8 AM to send task reminders
+cron.schedule('0 8 * * *', async () => {
+  try {
+    console.log('=== RUNNING DAILY TASK REMINDERS ===');
+    
+    const users = await User.find({ isActive: true }).select('_id email fullName');
+    
+    for (const user of users) {
+      const tasks = await ActionItem.find({
+        assignedTo: user._id,
+        status: { $nin: ['Completed'] }
+      }).sort({ dueDate: 1 });
+
+      if (tasks.length > 0) {
+        await sendActionItemEmail.dailyTaskSummary(
+          user.email,
+          user.fullName,
+          tasks
+        ).catch(err => console.error(`Failed to send summary to ${user.email}:`, err));
+      }
+    }
+
+    console.log('✅ Daily task reminders sent');
+  } catch (error) {
+    console.error('❌ Error in daily task reminders:', error);
+  }
+});
+
+// Run daily at 9 AM to check for overdue tasks
+cron.schedule('0 9 * * *', async () => {
+  try {
+    console.log('=== CHECKING OVERDUE TASKS ===');
+    
+    const overdueTasks = await ActionItem.find({
+      status: { $nin: ['Completed'] },
+      dueDate: { $lt: new Date() }
+    }).populate('assignedTo', 'email fullName');
+
+    for (const task of overdueTasks) {
+      await sendActionItemEmail.taskOverdue(
+        task.assignedTo.email,
+        task.assignedTo.fullName,
+        task.title,
+        task.dueDate,
+        task._id
+      ).catch(err => console.error(`Failed to send overdue notification:`, err));
+    }
+
+    console.log(`✅ Sent ${overdueTasks.length} overdue notifications`);
+  } catch (error) {
+    console.error('❌ Error checking overdue tasks:', error);
+  }
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -96,6 +163,8 @@ app.use('/api/suggestions', suggestionRoutes);
 app.use('/api/leave', leaveManagementRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/supplier-onboarding', supplierOnboardingRoutes);
+app.use('/api/sharepoint', sharepointRoutes);
+app.use('/api/action-items', actionItemRoutes);
 
 app.use(handleMulterError);
 

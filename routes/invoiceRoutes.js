@@ -7,20 +7,50 @@ const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware'
 const uploadMiddleware = require('../middlewares/uploadMiddleware');
 const upload = uploadMiddleware.upload || uploadMiddleware; 
 
-// Employee routes
+// // Employee routes
+// router.post('/upload',
+//   authMiddleware,
+//   // requireRoles('employee', 'admin', 'it', 'supervisor', 'finance', 'hr', 'supply_chain', 'buyer'),
+//   upload.fields([
+//     { name: 'poFile', maxCount: 1 },
+//     { name: 'invoiceFile', maxCount: 1 }
+//   ]),
+//   invoiceApprovalController.uploadInvoiceWithApprovalChain
+// );
+
 router.post('/upload',
   authMiddleware,
-  requireRoles('employee', 'admin'),
   upload.fields([
     { name: 'poFile', maxCount: 1 },
     { name: 'invoiceFile', maxCount: 1 }
   ]),
-  invoiceApprovalController.uploadInvoiceWithApprovalChain
+  invoiceApprovalController.uploadInvoiceWithApprovalChain  
+);
+
+
+// Get pending approvals for current user
+router.get('/supervisor/pending',
+  authMiddleware,
+  requireRoles('supervisor', 'admin', 'finance', 'hr'),
+  invoiceApprovalController.getPendingApprovalsForUser
+);
+
+// Get all invoices for supervisor (including upcoming)
+router.get('/supervisor/all',
+  authMiddleware,
+  requireRoles('supervisor', 'admin', 'finance'),
+  invoiceApprovalController.getSupervisorInvoices
+);
+
+// Get invoice details
+router.get('/:invoiceId',
+  authMiddleware,
+  invoiceApprovalController.getInvoiceDetails
 );
 
 router.get('/employee',
   authMiddleware,
-  requireRoles('employee', 'admin', 'finance'),
+  // requireRoles('employee', 'admin', 'finance', 'it'),
   invoiceController.getEmployeeInvoices
 );
 
@@ -49,22 +79,11 @@ router.put('/finance/process/:invoiceId',
   invoiceApprovalController.markInvoiceAsProcessed
 );
 
-// Supervisor/Department approval routes
-router.get('/supervisor/pending',
-  authMiddleware,
-  requireRoles('supervisor', 'admin'),
-  invoiceApprovalController.getPendingApprovalsForUser
-);
 
-router.get('/supervisor/all',
-  authMiddleware,
-  requireRoles('supervisor', 'admin'),
-  invoiceApprovalController.getSupervisorInvoices
-);
 
 router.put('/supervisor/approve/:invoiceId',
   authMiddleware,
-  requireRoles('supervisor', 'admin'),
+  requireRoles('supervisor', 'admin', 'hr', 'it', 'finance', 'buyer', 'supply_chain' ),
   invoiceApprovalController.processApprovalStep
 );
 
@@ -81,11 +100,6 @@ router.put('/approvals/:invoiceId/decision',
   invoiceApprovalController.processApprovalStep
 );
 
-// Common routes
-router.get('/:invoiceId',
-  authMiddleware,
-  invoiceApprovalController.getInvoiceDetails
-);
 
 // Analytics and reporting routes
 router.get('/analytics/dashboard',

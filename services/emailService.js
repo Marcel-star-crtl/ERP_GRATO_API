@@ -4013,6 +4013,1470 @@ const sendITSupportEmail = {
   }
 };
 
+
+// /**
+//  * Budget Code Management Email Templates
+//  * Add these to your existing emailService.js file
+//  */
+
+// const sendBudgetCodeEmail = {
+//   /**
+//    * Notify approver of new budget code requiring approval
+//    * @param {string} approverEmail - Approver's email
+//    * @param {string} approverName - Approver's name
+//    * @param {string} creatorName - Budget code creator's name
+//    * @param {Object} budgetCode - Budget code object
+//    * @param {string} approvalLevel - Current approval level (departmental_head, head_of_business, finance)
+//    * @returns {Promise<Object>}
+//    */
+//   newBudgetCodeForApproval: async (approverEmail, approverName, creatorName, budgetCode, approvalLevel) => {
+//     try {
+//       const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+//       const approvalLink = `${clientUrl}/admin/budget-codes/${budgetCode._id}/approve`;
+
+//       const levelLabels = {
+//         'departmental_head': 'Department Head Approval',
+//         'head_of_business': 'Executive Approval',
+//         'finance': 'Finance Activation'
+//       };
+
+//       const subject = `Budget Code Approval Required: ${budgetCode.code}`;
+//       const text = `Dear ${approverName},\n\nA new budget code has been submitted for your approval.\n\nCode: ${budgetCode.code}\nName: ${budgetCode.name}\nDepartment: ${budgetCode.department}\nAmount: XAF ${budgetCode.budget.toLocaleString()}\nType: ${budgetCode.budgetType}\nCreated by: ${creatorName}\nApproval Level: ${levelLabels[approvalLevel]}\n\nPlease review and approve: ${approvalLink}\n\nBest regards,\nBudget Management System`;
+
+//       const html = `
+//         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+//           <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #faad14;">
+//             <h2 style="color: #333; margin-top: 0;">💰 Budget Code Approval Required</h2>
+//             <p style="color: #555; line-height: 1.6;">
+//               Dear ${approverName},
+//             </p>
+//             <p style="color: #555; line-height: 1.6;">
+//               A new budget code has been submitted for your ${levelLabels[approvalLevel].toLowerCase()}.
+//             </p>
+
+//             <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+//               <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #faad14; padding-bottom: 10px;">Budget Code Details</h3>
+//               <table style="width: 100%; border-collapse: collapse;">
+//                 <tr>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Budget Code:</strong></td>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><code style="background-color: #f0f0f0; padding: 4px 8px; border-radius: 4px;">${budgetCode.code}</code></td>
+//                 </tr>
+//                 <tr>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Budget Name:</strong></td>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${budgetCode.name}</td>
+//                 </tr>
+//                 <tr>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Department:</strong></td>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${budgetCode.department}</td>
+//                 </tr>
+//                 <tr>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Budget Amount:</strong></td>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee; color: #52c41a; font-weight: bold; font-size: 16px;">XAF ${budgetCode.budget.toLocaleString()}</td>
+//                 </tr>
+//                 <tr>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Budget Type:</strong></td>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${budgetCode.budgetType.replace('_', ' ').toUpperCase()}</td>
+//                 </tr>
+//                 <tr>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Budget Period:</strong></td>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${budgetCode.budgetPeriod.toUpperCase()}</td>
+//                 </tr>
+//                 <tr>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Created By:</strong></td>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${creatorName}</td>
+//                 </tr>
+//                 <tr>
+//                   <td style="padding: 8px 0;"><strong>Approval Level:</strong></td>
+//                   <td style="padding: 8px 0;"><span style="background-color: #faad14; color: #333; padding: 4px 8px; border-radius: 4px; font-size: 12px;">${levelLabels[approvalLevel].toUpperCase()}</span></td>
+//                 </tr>
+//               </table>
+//             </div>
+
+//             ${budgetCode.description ? `
+//             <div style="background-color: #e6f7ff; border-left: 4px solid #1890ff; padding: 15px; margin: 20px 0;">
+//               <h4 style="color: #1890ff; margin-top: 0;">Budget Description:</h4>
+//               <p style="color: #333; margin-bottom: 0;">${budgetCode.description}</p>
+//             </div>
+//             ` : ''}
+
+//             ${budgetCode.justification ? `
+//             <div style="background-color: #f0f8ff; border-left: 4px solid #722ed1; padding: 15px; margin: 20px 0;">
+//               <h4 style="color: #722ed1; margin-top: 0;">Justification:</h4>
+//               <p style="color: #333; margin-bottom: 0;">${budgetCode.justification}</p>
+//             </div>
+//             ` : ''}
+
+//             <div style="background-color: #f6ffed; padding: 15px; border-radius: 6px; margin: 20px 0;">
+//               <h4 style="color: #52c41a; margin-top: 0;">Your Responsibilities:</h4>
+//               <ul style="color: #52c41a; margin-bottom: 0; padding-left: 20px;">
+//                 ${approvalLevel === 'departmental_head' ? `
+//                   <li>Validate department needs and resource alignment</li>
+//                   <li>Confirm budget justification</li>
+//                   <li>Verify budget allocation is appropriate</li>
+//                 ` : approvalLevel === 'head_of_business' ? `
+//                   <li>Assess strategic alignment with business goals</li>
+//                   <li>Review budget allocation across departments</li>
+//                   <li>Evaluate cross-departmental impact</li>
+//                   <li>Provide final business approval</li>
+//                 ` : `
+//                   <li>Create budget code in accounting system</li>
+//                   <li>Set up budget tracking and monitoring</li>
+//                   <li>Ensure financial compliance</li>
+//                   <li>Activate budget code for use</li>
+//                 `}
+//               </ul>
+//             </div>
+
+//             <div style="text-align: center; margin: 30px 0;">
+//               <a href="${approvalLink}" 
+//                  style="display: inline-block; background-color: #faad14; color: #333; 
+//                         padding: 15px 30px; text-decoration: none; border-radius: 8px;
+//                         font-weight: bold; font-size: 16px;">
+//                 📋 Review & ${approvalLevel === 'finance' ? 'Activate' : 'Approve'} Budget Code
+//               </a>
+//             </div>
+
+//             <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+//             <p style="color: #888; font-size: 12px; margin-bottom: 0; text-align: center;">
+//               This is an automated message from the Budget Management System. Please do not reply to this email.
+//             </p>
+//           </div>
+//         </div>
+//       `;
+
+//       return await sendEmail({
+//         to: approverEmail,
+//         subject,
+//         text,
+//         html
+//       });
+
+//     } catch (error) {
+//       console.error('Error in newBudgetCodeForApproval:', error);
+//       return {
+//         success: false,
+//         error: error.message
+//       };
+//     }
+//   },
+
+//   /**
+//    * Notify creator that budget code was approved at current level
+//    * @param {string} creatorEmail - Creator's email
+//    * @param {string} creatorName - Creator's name
+//    * @param {string} approverName - Approver's name
+//    * @param {Object} budgetCode - Budget code object
+//    * @param {string} currentLevel - Current approval level completed
+//    * @param {string} nextLevel - Next approval level (or null if final)
+//    * @returns {Promise<Object>}
+//    */
+//   budgetCodeLevelApproved: async (creatorEmail, creatorName, approverName, budgetCode, currentLevel, nextLevel) => {
+//     try {
+//       const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+//       const trackingLink = `${clientUrl}/employee/budget-codes/${budgetCode._id}`;
+
+//       const subject = nextLevel 
+//         ? `Budget Code Progress Update: ${budgetCode.code}` 
+//         : `Budget Code Activated: ${budgetCode.code}`;
+
+//       const text = nextLevel
+//         ? `Dear ${creatorName},\n\nYour budget code has been approved at ${currentLevel} and is progressing to ${nextLevel}.\n\nCode: ${budgetCode.code}\nName: ${budgetCode.name}\nAmount: XAF ${budgetCode.budget.toLocaleString()}\nApproved by: ${approverName}\n\nTrack progress: ${trackingLink}\n\nBest regards,\nBudget Management System`
+//         : `Dear ${creatorName},\n\nCongratulations! Your budget code has been fully approved and is now active.\n\nCode: ${budgetCode.code}\nName: ${budgetCode.name}\nAmount: XAF ${budgetCode.budget.toLocaleString()}\nActivated by: ${approverName}\n\nYou can now use this budget code for requisitions: ${trackingLink}\n\nBest regards,\nBudget Management System`;
+
+//       const html = nextLevel ? `
+//         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+//           <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px; border-left: 4px solid #1890ff;">
+//             <h2 style="color: #1890ff; margin-top: 0;">✅ Budget Code Approval Progress</h2>
+//             <p style="color: #555; line-height: 1.6;">
+//               Dear ${creatorName},
+//             </p>
+//             <p style="color: #555; line-height: 1.6;">
+//               Your budget code has successfully passed ${currentLevel} approval and is progressing to the next stage.
+//             </p>
+
+//             <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+//               <h3 style="color: #333; margin-top: 0;">Budget Code: ${budgetCode.code}</h3>
+//               <p><strong>Name:</strong> ${budgetCode.name}</p>
+//               <p><strong>Amount:</strong> <span style="color: #52c41a; font-weight: bold;">XAF ${budgetCode.budget.toLocaleString()}</span></p>
+//               <p><strong>Approved by:</strong> ${approverName}</p>
+//               <p><strong>Next Stage:</strong> <span style="background-color: #faad14; color: #333; padding: 4px 8px; border-radius: 4px;">${nextLevel}</span></p>
+//             </div>
+
+//             <div style="text-align: center; margin: 30px 0;">
+//               <a href="${trackingLink}" 
+//                  style="display: inline-block; background-color: #1890ff; color: white; 
+//                         padding: 12px 25px; text-decoration: none; border-radius: 6px;
+//                         font-weight: bold;">
+//                 📊 Track Approval Progress
+//               </a>
+//             </div>
+//           </div>
+//         </div>
+//       ` : `
+//         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+//           <div style="background-color: #f6ffed; padding: 20px; border-radius: 8px; border-left: 4px solid #52c41a;">
+//             <h2 style="color: #389e0d; margin-top: 0;">🎉 Budget Code Activated!</h2>
+//             <p style="color: #389e0d; line-height: 1.6; font-size: 16px;">
+//               Dear ${creatorName},
+//             </p>
+//             <p style="color: #389e0d; line-height: 1.6; font-size: 16px;">
+//               Congratulations! Your budget code has completed all approval stages and is now active.
+//             </p>
+
+//             <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+//               <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #52c41a; padding-bottom: 10px;">Active Budget Code</h3>
+//               <table style="width: 100%; border-collapse: collapse;">
+//                 <tr>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Budget Code:</strong></td>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><code style="background-color: #52c41a; color: white; padding: 4px 8px; border-radius: 4px;">${budgetCode.code}</code></td>
+//                 </tr>
+//                 <tr>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Budget Name:</strong></td>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${budgetCode.name}</td>
+//                 </tr>
+//                 <tr>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Total Budget:</strong></td>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee; color: #52c41a; font-weight: bold; font-size: 16px;">XAF ${budgetCode.budget.toLocaleString()}</td>
+//                 </tr>
+//                 <tr>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Activated By:</strong></td>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${approverName}</td>
+//                 </tr>
+//                 <tr>
+//                   <td style="padding: 8px 0;"><strong>Status:</strong></td>
+//                   <td style="padding: 8px 0;"><span style="background-color: #52c41a; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">✅ ACTIVE</span></td>
+//                 </tr>
+//               </table>
+//             </div>
+
+//             <div style="background-color: #e6f7ff; padding: 15px; border-radius: 6px; margin: 20px 0;">
+//               <h4 style="color: #1890ff; margin-top: 0;">What You Can Do Now:</h4>
+//               <ul style="color: #1890ff; margin-bottom: 0; padding-left: 20px;">
+//                 <li>Use this budget code for purchase requisitions</li>
+//                 <li>Track budget utilization in real-time</li>
+//                 <li>Monitor remaining budget allocation</li>
+//                 <li>Generate budget reports and analytics</li>
+//               </ul>
+//             </div>
+
+//             <div style="text-align: center; margin: 30px 0;">
+//               <a href="${trackingLink}" 
+//                  style="display: inline-block; background-color: #52c41a; color: white; 
+//                         padding: 12px 25px; text-decoration: none; border-radius: 6px;
+//                         font-weight: bold; margin-right: 10px;">
+//                 📊 View Budget Code
+//               </a>
+//               <a href="${clientUrl}/employee/requisitions/new" 
+//                  style="display: inline-block; background-color: #1890ff; color: white; 
+//                         padding: 12px 25px; text-decoration: none; border-radius: 6px;
+//                         font-weight: bold;">
+//                 📝 Create Requisition
+//               </a>
+//             </div>
+
+//             <hr style="border: none; border-top: 1px solid #b7eb8f; margin: 20px 0;">
+//             <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; text-align: center;">
+//               Your budget code is now ready for use. Thank you for following the approval process!
+//             </p>
+//           </div>
+//         </div>
+//       `;
+
+//       return await sendEmail({
+//         to: creatorEmail,
+//         subject,
+//         text,
+//         html
+//       });
+
+//     } catch (error) {
+//       console.error('Error in budgetCodeLevelApproved:', error);
+//       return {
+//         success: false,
+//         error: error.message
+//       };
+//     }
+//   },
+
+//   /**
+//    * Notify creator that budget code was rejected
+//    * @param {string} creatorEmail - Creator's email
+//    * @param {string} creatorName - Creator's name
+//    * @param {string} rejectorName - Rejector's name
+//    * @param {Object} budgetCode - Budget code object
+//    * @param {string} rejectionReason - Reason for rejection
+//    * @param {string} rejectionLevel - Level at which rejection occurred
+//    * @returns {Promise<Object>}
+//    */
+//   budgetCodeRejected: async (creatorEmail, creatorName, rejectorName, budgetCode, rejectionReason, rejectionLevel) => {
+//     try {
+//       const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+//       const resubmitLink = `${clientUrl}/employee/budget-codes/new`;
+
+//       const subject = `Budget Code Request Rejected: ${budgetCode.code}`;
+//       const text = `Dear ${creatorName},\n\nYour budget code request has been rejected at ${rejectionLevel}.\n\nCode: ${budgetCode.code}\nName: ${budgetCode.name}\nAmount: XAF ${budgetCode.budget.toLocaleString()}\nRejected by: ${rejectorName}\nReason: ${rejectionReason}\n\nPlease review the feedback and submit a revised request: ${resubmitLink}\n\nBest regards,\nBudget Management System`;
+
+//       const html = `
+//         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+//           <div style="background-color: #fff2f0; padding: 20px; border-radius: 8px; border-left: 4px solid #ff4d4f;">
+//             <h2 style="color: #cf1322; margin-top: 0;">❌ Budget Code Request Not Approved</h2>
+//             <p style="color: #555; line-height: 1.6;">
+//               Dear ${creatorName},
+//             </p>
+//             <p style="color: #555; line-height: 1.6;">
+//               Your budget code request has not been approved at the ${rejectionLevel} stage.
+//             </p>
+
+//             <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+//               <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #ff4d4f; padding-bottom: 10px;">Rejection Details</h3>
+//               <table style="width: 100%; border-collapse: collapse;">
+//                 <tr>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Budget Code:</strong></td>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${budgetCode.code}</td>
+//                 </tr>
+//                 <tr>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Budget Name:</strong></td>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${budgetCode.name}</td>
+//                 </tr>
+//                 <tr>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Amount:</strong></td>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">XAF ${budgetCode.budget.toLocaleString()}</td>
+//                 </tr>
+//                 <tr>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Rejected By:</strong></td>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${rejectorName}</td>
+//                 </tr>
+//                 <tr>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Rejection Stage:</strong></td>
+//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${rejectionLevel}</td>
+//                 </tr>
+//                 <tr>
+//                   <td style="padding: 8px 0;"><strong>Status:</strong></td>
+//                   <td style="padding: 8px 0;"><span style="background-color: #ff4d4f; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">REJECTED</span></td>
+//                 </tr>
+//               </table>
+//             </div>
+
+//             <div style="background-color: #fff3cd; border-left: 4px solid #faad14; padding: 15px; margin: 20px 0;">
+//               <h4 style="color: #ad6800; margin-top: 0;">Reason for Rejection:</h4>
+//               <p style="color: #333; margin-bottom: 0; font-style: italic;">"${rejectionReason}"</p>
+//             </div>
+
+//             <div style="background-color: #e6f7ff; padding: 15px; border-radius: 6px; margin: 20px 0;">
+//               <h4 style="color: #1890ff; margin-top: 0;">Next Steps:</h4>
+//               <ul style="color: #1890ff; margin-bottom: 0; padding-left: 20px;">
+//                 <li>Review the rejection feedback carefully</li>
+//                 <li>Address the concerns raised by the approver</li>
+//                 <li>Revise your budget request accordingly</li>
+//                 <li>Submit a new budget code request when ready</li>
+//               </ul>
+//             </div>
+
+//             <div style="text-align: center; margin: 30px 0;">
+//               <a href="${resubmitLink}" 
+//                  style="display: inline-block; background-color: #1890ff; color: white; 
+//                         padding: 12px 25px; text-decoration: none; border-radius: 6px;
+//                         font-weight: bold;">
+//                 📝 Submit Revised Request
+//               </a>
+//             </div>
+
+//             <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+//             <p style="color: #888; font-size: 12px; margin-bottom: 0; text-align: center;">
+//               This is an automated message from the Budget Management System. Please do not reply to this email.
+//             </p>
+//           </div>
+//         </div>
+//       `;
+
+//       return await sendEmail({
+//         to: creatorEmail,
+//         subject,
+//         text,
+//         html
+//       });
+
+//     } catch (error) {
+//       console.error('Error in budgetCodeRejected:', error);
+//       return {
+//         success: false,
+//         error: error.message
+//       };
+//     }
+//   }
+// };
+
+
+/**
+ * Budget Code Approval Email Templates
+ * Complete email service component for budget code workflow notifications
+ */
+
+const budgetCodeEmailTemplates = {
+  /**
+   * Notify approver of new budget code requiring approval
+   * @param {Object} params - Email parameters
+   * @param {string} params.approverEmail - Approver's email
+   * @param {string} params.approverName - Approver's name
+   * @param {string} params.budgetCodeNumber - Budget code (e.g., DEPT-IT-2024)
+   * @param {string} params.budgetCodeName - Budget name
+   * @param {string} params.department - Department
+   * @param {number} params.budgetAmount - Total budget amount
+   * @param {string} params.budgetType - Type of budget
+   * @param {string} params.createdBy - Creator's name
+   * @param {string} params.budgetCodeId - Budget code ID for approval link
+   * @param {number} [params.currentLevel=1] - Current approval level
+   * @returns {Object} Email content object
+   */
+  newBudgetCodeToApprover: (params) => {
+    const {
+      approverEmail,
+      approverName,
+      budgetCodeNumber,
+      budgetCodeName,
+      department,
+      budgetAmount,
+      budgetType,
+      createdBy,
+      budgetCodeId,
+      currentLevel = 1
+    } = params;
+
+    const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+    const approvalLink = `${clientUrl}/finance/budget-codes/${budgetCodeId}/approve`;
+
+    const subject = `Budget Code Approval Required: ${budgetCodeNumber}`;
+    
+    const text = `Budget Code Approval Required\n\nDear ${approverName},\n\nA new budget code requires your approval.\n\nBudget Code: ${budgetCodeNumber}\nName: ${budgetCodeName}\nDepartment: ${department}\nBudget Amount: XAF ${budgetAmount.toLocaleString()}\nType: ${budgetType}\nCreated by: ${createdBy}\n\nPlease review and approve: ${approvalLink}\n\nBest regards,\nFinance System`;
+
+    const html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Budget Code Approval Required</title>
+      </head>
+      <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5;">
+        <div style="background-color: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+          <!-- Header -->
+          <div style="background: linear-gradient(135deg, #faad14, #fadb14); padding: 20px; border-radius: 8px; text-align: center; margin-bottom: 30px;">
+            <h1 style="color: #333; margin: 0; font-size: 24px; font-weight: bold;">💰 Budget Code Approval Required</h1>
+          </div>
+
+          <!-- Greeting -->
+          <div style="margin-bottom: 25px;">
+            <p style="color: #555; line-height: 1.6; font-size: 16px; margin: 0;">
+              Dear <strong>${approverName}</strong>,
+            </p>
+            <p style="color: #555; line-height: 1.6; font-size: 16px; margin: 15px 0 0 0;">
+              A new budget code has been created and requires your approval before it can be activated.
+            </p>
+          </div>
+
+          <!-- Budget Code Details -->
+          <div style="background-color: #f8f9fa; padding: 25px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #faad14;">
+            <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #faad14; padding-bottom: 10px; font-size: 18px;">Budget Code Details</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold; width: 40%;">Budget Code:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">
+                  <code style="background-color: #fff3cd; padding: 6px 12px; border-radius: 4px; color: #333; font-weight: bold; font-size: 14px;">${budgetCodeNumber}</code>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold;">Name:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #333;">${budgetCodeName}</td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold;">Department:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #333;">${department}</td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold;">Budget Amount:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">
+                  <strong style="color: #faad14; font-size: 18px; font-weight: bold;">XAF ${budgetAmount.toLocaleString()}</strong>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold;">Budget Type:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #333;">
+                  ${budgetType.replace(/_/g, ' ').toUpperCase()}
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold;">Created by:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #333;">${createdBy}</td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; color: #666; font-weight: bold;">Approval Level:</td>
+                <td style="padding: 12px 0;">
+                  <span style="background-color: #faad14; color: #333; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: bold;">LEVEL ${currentLevel}</span>
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- Action Required -->
+          <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #1890ff;">
+            <h4 style="color: #1890ff; margin-top: 0; font-size: 16px; font-weight: bold;">Your Action Required:</h4>
+            <p style="color: #333; margin-bottom: 0; line-height: 1.6;">
+              Please review this budget code request and approve or reject based on budget availability, department needs, and organizational priorities.
+            </p>
+          </div>
+
+          <!-- Action Button -->
+          <div style="text-align: center; margin: 35px 0;">
+            <a href="${approvalLink}" 
+               style="display: inline-block; background: linear-gradient(135deg, #faad14, #fadb14); color: #333; 
+                      padding: 16px 35px; text-decoration: none; border-radius: 8px;
+                      font-weight: bold; font-size: 16px; transition: all 0.3s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+              📝 Review & Approve Budget Code
+            </a>
+          </div>
+
+          <!-- Footer -->
+          <div style="border-top: 1px solid #e0e0e0; padding-top: 20px; text-align: center;">
+            <p style="color: #888; font-size: 12px; margin-bottom: 0; line-height: 1.4;">
+              This is an automated message from the Budget Management System.<br>
+              Please do not reply to this email.
+            </p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    return {
+      to: approverEmail,
+      subject,
+      text,
+      html
+    };
+  },
+
+  /**
+   * Notify creator when budget code is approved and activated
+   * @param {Object} params - Email parameters
+   * @param {string} params.creatorEmail - Creator's email
+   * @param {string} params.creatorName - Creator's name
+   * @param {string} params.budgetCodeNumber - Budget code
+   * @param {string} params.budgetCodeName - Budget name
+   * @param {number} params.budgetAmount - Total budget amount
+   * @param {string} params.approvedBy - Final approver's name
+   * @param {string} params.budgetCodeId - Budget code ID
+   * @returns {Object} Email content object
+   */
+  budgetCodeActivated: (params) => {
+    const {
+      creatorEmail,
+      creatorName,
+      budgetCodeNumber,
+      budgetCodeName,
+      budgetAmount,
+      approvedBy,
+      budgetCodeId
+    } = params;
+
+    const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+    const viewLink = `${clientUrl}/finance/budget-codes/${budgetCodeId}`;
+
+    const subject = `Budget Code Activated: ${budgetCodeNumber}`;
+    
+    const text = `Budget Code Successfully Activated\n\nDear ${creatorName},\n\nYour budget code has been fully approved and is now active.\n\nBudget Code: ${budgetCodeNumber}\nName: ${budgetCodeName}\nBudget Amount: XAF ${budgetAmount.toLocaleString()}\nFinal Approved by: ${approvedBy}\n\nThe budget code is now available for use with purchase requisitions.\n\nView details: ${viewLink}\n\nBest regards,\nFinance Team`;
+
+    const html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Budget Code Activated</title>
+      </head>
+      <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5;">
+        <div style="background-color: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+          <!-- Header -->
+          <div style="background: linear-gradient(135deg, #52c41a, #73d13d); padding: 20px; border-radius: 8px; text-align: center; margin-bottom: 30px;">
+            <h1 style="color: white; margin: 0; font-size: 24px; font-weight: bold;">✅ Budget Code Successfully Activated!</h1>
+          </div>
+
+          <!-- Greeting -->
+          <div style="margin-bottom: 25px;">
+            <p style="color: #389e0d; line-height: 1.6; font-size: 16px; margin: 0; font-weight: bold;">
+              Dear ${creatorName},
+            </p>
+            <p style="color: #555; line-height: 1.6; font-size: 16px; margin: 15px 0 0 0;">
+              Great news! Your budget code has completed all approval steps and is now active.
+            </p>
+          </div>
+
+          <!-- Activated Budget Code Details -->
+          <div style="background-color: #f6ffed; padding: 25px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #52c41a;">
+            <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #52c41a; padding-bottom: 10px; font-size: 18px;">Activated Budget Code</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold; width: 40%;">Budget Code:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">
+                  <code style="background-color: #f6ffed; padding: 6px 12px; border-radius: 4px; color: #52c41a; font-weight: bold; font-size: 14px; border: 1px solid #b7eb8f;">${budgetCodeNumber}</code>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold;">Name:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #333;">${budgetCodeName}</td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold;">Budget Amount:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">
+                  <strong style="color: #52c41a; font-size: 18px; font-weight: bold;">XAF ${budgetAmount.toLocaleString()}</strong>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold;">Final Approved by:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #333;">${approvedBy}</td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; color: #666; font-weight: bold;">Status:</td>
+                <td style="padding: 12px 0;">
+                  <span style="background-color: #52c41a; color: white; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: bold;">ACTIVE</span>
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- Next Steps -->
+          <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #1890ff;">
+            <h4 style="color: #1890ff; margin-top: 0; font-size: 16px; font-weight: bold;">Next Steps:</h4>
+            <ul style="color: #333; margin: 0; padding-left: 20px; line-height: 1.6;">
+              <li>The budget code can now be assigned to purchase requisitions</li>
+              <li>Track budget utilization in real-time through the finance dashboard</li>
+              <li>Receive alerts when utilization reaches 75% and 90%</li>
+              <li>Generate reports on budget allocation and spending</li>
+            </ul>
+          </div>
+
+          <!-- Action Button -->
+          <div style="text-align: center; margin: 35px 0;">
+            <a href="${viewLink}" 
+               style="display: inline-block; background: linear-gradient(135deg, #52c41a, #73d13d); color: white; 
+                      padding: 14px 30px; text-decoration: none; border-radius: 8px;
+                      font-weight: bold; font-size: 15px; transition: all 0.3s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+              📊 View Budget Code Details
+            </a>
+          </div>
+
+          <!-- Footer -->
+          <div style="border-top: 1px solid #b7eb8f; padding-top: 20px; text-align: center;">
+            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; line-height: 1.4;">
+              Thank you for maintaining sound financial management practices!
+            </p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    return {
+      to: creatorEmail,
+      subject,
+      text,
+      html
+    };
+  },
+
+  /**
+   * Notify creator when budget code is rejected
+   * @param {Object} params - Email parameters
+   * @param {string} params.creatorEmail - Creator's email
+   * @param {string} params.creatorName - Creator's name
+   * @param {string} params.budgetCodeNumber - Budget code
+   * @param {string} params.budgetCodeName - Budget name
+   * @param {string} params.rejectedBy - Rejector's name
+   * @param {string} params.rejectionReason - Reason for rejection
+   * @param {number} params.rejectionLevel - Level at which it was rejected
+   * @returns {Object} Email content object
+   */
+  budgetCodeRejected: (params) => {
+    const {
+      creatorEmail,
+      creatorName,
+      budgetCodeNumber,
+      budgetCodeName,
+      rejectedBy,
+      rejectionReason,
+      rejectionLevel
+    } = params;
+
+    const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+    const createNewLink = `${clientUrl}/finance/budget-codes/create`;
+
+    const subject = `Budget Code Rejected: ${budgetCodeNumber}`;
+    
+    const text = `Budget Code Rejected\n\nDear ${creatorName},\n\nYour budget code request has been rejected.\n\nBudget Code: ${budgetCodeNumber}\nName: ${budgetCodeName}\nRejected by: ${rejectedBy}\nRejection Level: ${rejectionLevel}\nReason: ${rejectionReason}\n\nYou may create a new budget code with the necessary adjustments.\n\nBest regards,\nFinance Team`;
+
+    const html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Budget Code Rejected</title>
+      </head>
+      <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5;">
+        <div style="background-color: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+          <!-- Header -->
+          <div style="background: linear-gradient(135deg, #ff4d4f, #ff7875); padding: 20px; border-radius: 8px; text-align: center; margin-bottom: 30px;">
+            <h1 style="color: white; margin: 0; font-size: 24px; font-weight: bold;">❌ Budget Code Rejected</h1>
+          </div>
+
+          <!-- Greeting -->
+          <div style="margin-bottom: 25px;">
+            <p style="color: #555; line-height: 1.6; font-size: 16px; margin: 0;">
+              Dear ${creatorName},
+            </p>
+            <p style="color: #555; line-height: 1.6; font-size: 16px; margin: 15px 0 0 0;">
+              We regret to inform you that your budget code request has been rejected during the approval process.
+            </p>
+          </div>
+
+          <!-- Rejection Details -->
+          <div style="background-color: #fff2f0; padding: 25px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #ff4d4f;">
+            <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #ff4d4f; padding-bottom: 10px; font-size: 18px;">Rejection Details</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold; width: 40%;">Budget Code:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">
+                  <code style="background-color: #fff2f0; padding: 6px 12px; border-radius: 4px; color: #333; font-weight: bold; font-size: 14px; border: 1px solid #ffccc7;">${budgetCodeNumber}</code>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold;">Name:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #333;">${budgetCodeName}</td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold;">Rejected by:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #333;">${rejectedBy}</td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold;">Rejection Level:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #333;">Level ${rejectionLevel}</td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; color: #666; font-weight: bold;">Status:</td>
+                <td style="padding: 12px 0;">
+                  <span style="background-color: #ff4d4f; color: white; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: bold;">REJECTED</span>
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- Rejection Reason -->
+          <div style="background-color: #fff7e6; border-left: 4px solid #faad14; padding: 20px; margin: 25px 0;">
+            <h4 style="color: #ad6800; margin-top: 0; font-size: 16px; font-weight: bold;">Rejection Reason:</h4>
+            <p style="color: #333; margin-bottom: 0; font-style: italic; line-height: 1.6; background-color: white; padding: 15px; border-radius: 6px; border: 1px solid #ffe58f;">
+              "${rejectionReason}"
+            </p>
+          </div>
+
+          <!-- What You Can Do -->
+          <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #1890ff;">
+            <h4 style="color: #1890ff; margin-top: 0; font-size: 16px; font-weight: bold;">What You Can Do:</h4>
+            <ul style="color: #333; margin: 0; padding-left: 20px; line-height: 1.6;">
+              <li>Review the rejection reason carefully</li>
+              <li>Address the concerns raised by the approver</li>
+              <li>Consult with your department head if needed</li>
+              <li>Submit a new budget code request with adjustments</li>
+            </ul>
+          </div>
+
+          <!-- Action Button -->
+          <div style="text-align: center; margin: 35px 0;">
+            <a href="${createNewLink}" 
+               style="display: inline-block; background: linear-gradient(135deg, #1890ff, #40a9ff); color: white; 
+                      padding: 14px 30px; text-decoration: none; border-radius: 8px;
+                      font-weight: bold; font-size: 15px; transition: all 0.3s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+              📋 Create New Budget Code
+            </a>
+          </div>
+
+          <!-- Footer -->
+          <div style="border-top: 1px solid #ffccc7; padding-top: 20px; text-align: center;">
+            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; line-height: 1.4;">
+              If you have questions about this rejection, please contact the Finance team.
+            </p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    return {
+      to: creatorEmail,
+      subject,
+      text,
+      html
+    };
+  },
+
+  /**
+   * Notify budget owner when budget utilization reaches threshold
+   * @param {Object} params - Email parameters
+   * @param {string} params.ownerEmail - Budget owner's email
+   * @param {string} params.ownerName - Budget owner's name
+   * @param {string} params.budgetCodeNumber - Budget code
+   * @param {string} params.budgetCodeName - Budget name
+   * @param {number} params.budgetAmount - Total budget
+   * @param {number} params.usedAmount - Amount used
+   * @param {number} params.utilizationPercentage - Utilization percentage
+   * @param {string} params.budgetCodeId - Budget code ID
+   * @returns {Object} Email content object
+   */
+  budgetUtilizationAlert: (params) => {
+    const {
+      ownerEmail,
+      ownerName,
+      budgetCodeNumber,
+      budgetCodeName,
+      budgetAmount,
+      usedAmount,
+      utilizationPercentage,
+      budgetCodeId
+    } = params;
+
+    const isCritical = utilizationPercentage >= 90;
+    const alertLevel = isCritical ? 'CRITICAL' : 'WARNING';
+    const alertColor = isCritical ? '#ff4d4f' : '#faad14';
+    const bgColor = isCritical ? '#fff2f0' : '#fff3cd';
+    const gradient = isCritical 
+      ? 'linear-gradient(135deg, #ff4d4f, #ff7875)' 
+      : 'linear-gradient(135deg, #faad14, #fadb14)';
+
+    const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+    const viewLink = `${clientUrl}/finance/budget-codes/${budgetCodeId}`;
+
+    const subject = `${alertLevel}: Budget Code ${budgetCodeNumber} at ${utilizationPercentage}% Utilization`;
+    
+    const text = `Budget Utilization Alert - ${alertLevel}\n\nDear ${ownerName},\n\nYour budget code has reached ${utilizationPercentage}% utilization.\n\nBudget Code: ${budgetCodeNumber}\nName: ${budgetCodeName}\nTotal Budget: XAF ${budgetAmount.toLocaleString()}\nUsed: XAF ${usedAmount.toLocaleString()}\nRemaining: XAF ${(budgetAmount - usedAmount).toLocaleString()}\nUtilization: ${utilizationPercentage}%\n\n${isCritical ? 'URGENT ACTION REQUIRED: Budget is nearly depleted!' : 'Please monitor spending closely.'}\n\nView details: ${viewLink}\n\nBest regards,\nFinance System`;
+
+    const html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Budget Utilization Alert</title>
+      </head>
+      <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5;">
+        <div style="background-color: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+          <!-- Header -->
+          <div style="background: ${gradient}; padding: 20px; border-radius: 8px; text-align: center; margin-bottom: 30px;">
+            <h1 style="color: ${isCritical ? 'white' : '#333'}; margin: 0; font-size: 24px; font-weight: bold;">
+              ${isCritical ? '🚨' : '⚠️'} Budget Utilization Alert - ${alertLevel}
+            </h1>
+          </div>
+
+          <!-- Greeting -->
+          <div style="margin-bottom: 25px;">
+            <p style="color: #555; line-height: 1.6; font-size: 16px; margin: 0;">
+              Dear ${ownerName},
+            </p>
+            <p style="color: #555; line-height: 1.6; font-size: 16px; margin: 15px 0 0 0;">
+              Your budget code has reached <strong style="color: ${alertColor}; font-size: 18px;">${utilizationPercentage}%</strong> utilization and requires your attention.
+            </p>
+          </div>
+
+          <!-- Budget Status -->
+          <div style="background-color: ${bgColor}; padding: 25px; border-radius: 8px; margin: 25px 0; border-left: 4px solid ${alertColor};">
+            <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid ${alertColor}; padding-bottom: 10px; font-size: 18px;">Budget Status</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold; width: 40%;">Budget Code:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">
+                  <code style="background-color: white; padding: 6px 12px; border-radius: 4px; color: #333; font-weight: bold; font-size: 14px; border: 1px solid ${alertColor};">${budgetCodeNumber}</code>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold;">Name:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #333;">${budgetCodeName}</td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold;">Total Budget:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #333;">XAF ${budgetAmount.toLocaleString()}</td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold;">Used Amount:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">
+                  <strong style="color: ${alertColor}; font-size: 16px; font-weight: bold;">XAF ${usedAmount.toLocaleString()}</strong>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0; color: #666; font-weight: bold;">Remaining:</td>
+                <td style="padding: 12px 0; border-bottom: 1px solid #e0e0e0;">
+                  <strong style="color: ${isCritical ? '#ff4d4f' : '#52c41a'}; font-size: 16px; font-weight: bold;">XAF ${(budgetAmount - usedAmount).toLocaleString()}</strong>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; color: #666; font-weight: bold;">Utilization:</td>
+                <td style="padding: 12px 0;">
+                  <div style="background-color: #f0f0f0; height: 24px; border-radius: 12px; overflow: hidden; position: relative; box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);">
+                    <div style="background: ${gradient}; height: 100%; width: ${utilizationPercentage}%; display: flex; align-items: center; justify-content: center; color: ${isCritical ? 'white' : '#333'}; font-size: 12px; font-weight: bold; transition: width 0.3s ease;">
+                      ${utilizationPercentage}%
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          <!-- Alert Message -->
+          ${isCritical ? `
+          <div style="background-color: #fff2f0; border-left: 4px solid #ff4d4f; padding: 20px; margin: 25px 0;">
+            <h4 style="color: #cf1322; margin-top: 0; font-size: 16px; font-weight: bold;">🚨 URGENT ACTION REQUIRED</h4>
+            <p style="color: #cf1322; margin-bottom: 0; font-weight: bold; line-height: 1.6;">
+              Budget is critically low! Please review pending requisitions and consider requesting additional budget allocation immediately.
+            </p>
+          </div>
+          ` : `
+          <div style="background-color: #fff7e6; border-left: 4px solid #faad14; padding: 20px; margin: 25px 0;">
+            <h4 style="color: #ad6800; margin-top: 0; font-size: 16px; font-weight: bold;">⚠️ Recommended Actions:</h4>
+            <ul style="color: #333; margin: 0; padding-left: 20px; line-height: 1.6;">
+              <li>Review current budget allocations and spending</li>
+              <li>Prioritize essential requisitions only</li>
+              <li>Consider requesting budget increase if needed</li>
+              <li>Monitor utilization closely going forward</li>
+            </ul>
+          </div>
+          `}
+
+          <!-- Action Button -->
+          <div style="text-align: center; margin: 35px 0;">
+            <a href="${viewLink}" 
+               style="display: inline-block; background: ${gradient}; color: ${isCritical ? 'white' : '#333'}; 
+                      padding: 14px 30px; text-decoration: none; border-radius: 8px;
+                      font-weight: bold; font-size: 15px; transition: all 0.3s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+              📊 View Budget Details
+            </a>
+          </div>
+
+          <!-- Footer -->
+          <div style="border-top: 1px solid #e0e0e0; padding-top: 20px; text-align: center;">
+            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; line-height: 1.4;">
+              This is an automated budget monitoring alert.<br>
+              You will receive notifications at 75%, 90%, and 100% utilization.
+            </p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    return {
+      to: ownerEmail,
+      subject,
+      text,
+      html
+    };
+  }
+};
+
+// Usage example with email service integration
+const sendBudgetCodeEmail = {
+  /**
+   * Send new budget code approval email
+   */
+  sendNewBudgetCodeToApprover: async (params) => {
+    try {
+      const emailContent = budgetCodeEmailTemplates.newBudgetCodeToApprover(params);
+      return await sendEmail(emailContent);
+    } catch (error) {
+      console.error('Error sending budget code approval email:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Send budget code activated email
+   */
+  sendBudgetCodeActivated: async (params) => {
+    try {
+      const emailContent = budgetCodeEmailTemplates.budgetCodeActivated(params);
+      return await sendEmail(emailContent);
+    } catch (error) {
+      console.error('Error sending budget code activated email:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Send budget code rejected email
+   */
+  sendBudgetCodeRejected: async (params) => {
+    try {
+      const emailContent = budgetCodeEmailTemplates.budgetCodeRejected(params);
+      return await sendEmail(emailContent);
+    } catch (error) {
+      console.error('Error sending budget code rejected email:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Send budget utilization alert email
+   */
+  sendBudgetUtilizationAlert: async (params) => {
+    try {
+      const emailContent = budgetCodeEmailTemplates.budgetUtilizationAlert(params);
+      return await sendEmail(emailContent);
+    } catch (error) {
+      console.error('Error sending budget utilization alert:', error);
+      throw error;
+    }
+  }
+};
+
+
+const sendActionItemEmail = {
+  /**
+   * Notify supervisor of new task creation (for approval before starting)
+   */
+  taskCreationApproval: async (supervisorEmail, supervisorName, employeeName, title, description, priority, dueDate, taskId, projectName = null) => {
+    try {
+      const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+      const taskLink = `${clientUrl}/action-items/${taskId}`;
+      const formattedDueDate = new Date(dueDate).toLocaleDateString('en-US', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+
+      const priorityColors = {
+        'LOW': '#28a745',
+        'MEDIUM': '#17a2b8',
+        'HIGH': '#ffc107',
+        'CRITICAL': '#dc3545'
+      };
+
+      const priorityColor = priorityColors[priority] || '#6c757d';
+
+      const subject = `🔔 Task Creation Approval Needed: ${title}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;">
+            <h2 style="color: #856404; margin-top: 0;">🔔 Task Creation Needs Your Approval</h2>
+            <p style="color: #856404; line-height: 1.6;">
+              Dear ${supervisorName},
+            </p>
+            <p style="color: #856404; line-height: 1.6;">
+              <strong>${employeeName}</strong> has created a new task${projectName ? ` for project <strong>${projectName}</strong>` : ''} and needs your approval before starting work.
+            </p>
+
+            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #ffc107; padding-bottom: 10px;">Task Details</h3>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Task:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${title}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Description:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${description}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Created By:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${employeeName}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Priority:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">
+                    <span style="background-color: ${priorityColor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
+                      ${priority}
+                    </span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Due Date:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; color: #dc3545; font-weight: bold;">
+                    ${formattedDueDate}
+                  </td>
+                </tr>
+                ${projectName ? `
+                <tr>
+                  <td style="padding: 8px 0;"><strong>Project:</strong></td>
+                  <td style="padding: 8px 0;">${projectName}</td>
+                </tr>
+                ` : ''}
+              </table>
+            </div>
+
+            <div style="background-color: #d1ecf1; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #17a2b8;">
+              <p style="color: #0c5460; margin: 0; font-weight: bold;">
+                ⚠️ Action Required: Please approve or reject this task so ${employeeName} can proceed.
+              </p>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${taskLink}" 
+                 style="display: inline-block; background-color: #ffc107; color: #333; 
+                        padding: 15px 30px; text-decoration: none; border-radius: 8px;
+                        font-weight: bold; font-size: 16px; border: 2px solid #ffc107;">
+                ✅ Review & Approve Task
+              </a>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #ffeeba; margin: 20px 0;">
+            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; text-align: center;">
+              This is an automated message from the Action Items System.
+            </p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({
+        to: supervisorEmail,
+        subject,
+        html
+      });
+
+    } catch (error) {
+      console.error('❌ Error in taskCreationApproval:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Notify employee that task creation was approved
+   */
+  taskCreationApproved: async (userEmail, userName, supervisorName, title, taskId, comments = '') => {
+    try {
+      const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+      const taskLink = `${clientUrl}/action-items/${taskId}`;
+
+      const subject = `✅ Task Approved - You Can Start: ${title}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #d4edda; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
+            <h2 style="color: #155724; margin-top: 0;">✅ Task Approved - You Can Start!</h2>
+            <p style="color: #155724; line-height: 1.6;">
+              Dear ${userName},
+            </p>
+            <p style="color: #155724; line-height: 1.6; font-size: 16px;">
+              Great news! Your supervisor <strong>${supervisorName}</strong> has approved your task "<strong>${title}</strong>". You can now start working on it.
+            </p>
+
+            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+              <p style="color: #28a745; font-size: 18px; font-weight: bold; text-align: center; margin: 0;">
+                ✓ APPROVED - READY TO START
+              </p>
+            </div>
+
+            ${comments ? `
+            <div style="background-color: #e9ecef; padding: 15px; border-radius: 6px; margin: 20px 0;">
+              <p style="color: #333; margin: 0;"><strong>Supervisor Comments:</strong></p>
+              <p style="color: #555; margin: 10px 0 0 0; font-style: italic;">${comments}</p>
+            </div>
+            ` : ''}
+
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${taskLink}" 
+                 style="display: inline-block; background-color: #28a745; color: white; 
+                        padding: 15px 30px; text-decoration: none; border-radius: 8px;
+                        font-weight: bold; font-size: 16px;">
+                🚀 Start Working on Task
+              </a>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #c3e6cb; margin: 20px 0;">
+            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; text-align: center;">
+              This is an automated message from the Action Items System.
+            </p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({
+        to: userEmail,
+        subject,
+        html
+      });
+
+    } catch (error) {
+      console.error('❌ Error in taskCreationApproved:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Notify employee that task creation was rejected
+   */
+  taskCreationRejected: async (userEmail, userName, supervisorName, title, taskId, reason) => {
+    try {
+      const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+      const taskLink = `${clientUrl}/action-items/${taskId}`;
+
+      const subject = `❌ Task Not Approved: ${title}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #f8d7da; padding: 20px; border-radius: 8px; border-left: 4px solid #dc3545;">
+            <h2 style="color: #721c24; margin-top: 0;">❌ Task Not Approved</h2>
+            <p style="color: #721c24; line-height: 1.6;">
+              Dear ${userName},
+            </p>
+            <p style="color: #721c24; line-height: 1.6;">
+              Your supervisor <strong>${supervisorName}</strong> has not approved the task "<strong>${title}</strong>".
+            </p>
+
+            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #dc3545; padding-bottom: 10px;">Reason</h3>
+              <p style="color: #555; font-style: italic;">${reason || 'No specific reason provided'}</p>
+            </div>
+
+            <div style="background-color: #d1ecf1; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #17a2b8;">
+              <p style="color: #0c5460; margin: 0;">
+                <strong>💡 Next Steps:</strong> Please discuss with your supervisor to understand their concerns and make necessary adjustments.
+              </p>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${taskLink}" 
+                 style="display: inline-block; background-color: #6c757d; color: white; 
+                        padding: 12px 25px; text-decoration: none; border-radius: 6px;
+                        font-weight: bold; font-size: 14px;">
+                📋 View Task Details
+              </a>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #f5c6cb; margin: 20px 0;">
+            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; text-align: center;">
+              This is an automated message from the Action Items System.
+            </p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({
+        to: userEmail,
+        subject,
+        html
+      });
+
+    } catch (error) {
+      console.error('❌ Error in taskCreationRejected:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Notify supervisor that task is submitted for completion approval
+   */
+  taskCompletionApproval: async (supervisorEmail, supervisorName, employeeName, title, description, taskId, documentsCount, completionNotes) => {
+    try {
+      const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+      const taskLink = `${clientUrl}/action-items/${taskId}`;
+
+      const subject = `✅ Task Completion Needs Approval: ${title}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #d1ecf1; padding: 20px; border-radius: 8px; border-left: 4px solid #17a2b8;">
+            <h2 style="color: #0c5460; margin-top: 0;">✅ Task Completion Needs Your Approval</h2>
+            <p style="color: #0c5460; line-height: 1.6;">
+              Dear ${supervisorName},
+            </p>
+            <p style="color: #0c5460; line-height: 1.6;">
+              <strong>${employeeName}</strong> has completed the task "<strong>${title}</strong>" and submitted it for your approval.
+            </p>
+
+            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #17a2b8; padding-bottom: 10px;">Task Details</h3>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Task:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${title}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Completed By:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${employeeName}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Documents Attached:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">
+                    <span style="background-color: #17a2b8; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
+                      📎 ${documentsCount} file${documentsCount !== 1 ? 's' : ''}
+                    </span>
+                  </td>
+                </tr>
+                ${completionNotes ? `
+                <tr>
+                  <td style="padding: 8px 0;"><strong>Completion Notes:</strong></td>
+                  <td style="padding: 8px 0; font-style: italic;">${completionNotes}</td>
+                </tr>
+                ` : ''}
+              </table>
+            </div>
+
+            <div style="background-color: #fff3cd; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #ffc107;">
+              <p style="color: #856404; margin: 0; font-weight: bold;">
+                ⚠️ Action Required: Please review the task completion and supporting documents.
+              </p>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${taskLink}" 
+                 style="display: inline-block; background-color: #17a2b8; color: white; 
+                        padding: 15px 30px; text-decoration: none; border-radius: 8px;
+                                         font-weight: bold; font-size: 16px;">
+                🔍 Review & Approve Completion
+              </a>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #bee5eb; margin: 20px 0;">
+            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; text-align: center;">
+              This is an automated message from the Action Items System.
+            </p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({
+        to: supervisorEmail,
+        subject,
+        html
+      });
+
+    } catch (error) {
+      console.error('❌ Error in taskCompletionApproval:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Notify employee that task completion was approved
+   */
+  taskCompletionApproved: async (userEmail, userName, supervisorName, title, taskId, comments = '') => {
+    try {
+      const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+      const taskLink = `${clientUrl}/action-items/${taskId}`;
+
+      const subject = `🎉 Task Completed & Approved: ${title}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #d4edda; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
+            <h2 style="color: #155724; margin-top: 0;">🎉 Task Completed Successfully!</h2>
+            <p style="color: #155724; line-height: 1.6;">
+              Dear ${userName},
+            </p>
+            <p style="color: #155724; line-height: 1.6; font-size: 16px;">
+              Excellent work! Your supervisor <strong>${supervisorName}</strong> has approved the completion of your task "<strong>${title}</strong>".
+            </p>
+
+            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+              <p style="color: #28a745; font-size: 24px; font-weight: bold; text-align: center; margin: 0;">
+                ✓ COMPLETED & APPROVED
+              </p>
+            </div>
+
+            ${comments ? `
+            <div style="background-color: #e9ecef; padding: 15px; border-radius: 6px; margin: 20px 0;">
+              <p style="color: #333; margin: 0;"><strong>Supervisor Feedback:</strong></p>
+              <p style="color: #555; margin: 10px 0 0 0; font-style: italic;">${comments}</p>
+            </div>
+            ` : ''}
+
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${taskLink}" 
+                 style="display: inline-block; background-color: #28a745; color: white; 
+                        padding: 12px 25px; text-decoration: none; border-radius: 6px;
+                        font-weight: bold; font-size: 14px;">
+                📊 View Completed Task
+              </a>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #c3e6cb; margin: 20px 0;">
+            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; text-align: center;">
+              This is an automated message from the Action Items System.
+            </p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({
+        to: userEmail,
+        subject,
+        html
+      });
+
+    } catch (error) {
+      console.error('❌ Error in taskCompletionApproved:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Notify employee that task completion was rejected
+   */
+  taskCompletionRejected: async (userEmail, userName, supervisorName, title, taskId, reason) => {
+    try {
+      const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+      const taskLink = `${clientUrl}/action-items/${taskId}`;
+
+      const subject = `🔄 Task Needs Revision: ${title}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;">
+            <h2 style="color: #856404; margin-top: 0;">🔄 Task Needs Revision</h2>
+            <p style="color: #856404; line-height: 1.6;">
+              Dear ${userName},
+            </p>
+            <p style="color: #856404; line-height: 1.6;">
+              Your supervisor <strong>${supervisorName}</strong> has reviewed your task "<strong>${title}</strong>" and requires some revisions before final approval.
+            </p>
+
+            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #ffc107; padding-bottom: 10px;">Supervisor Feedback</h3>
+              <p style="color: #555; font-style: italic; line-height: 1.6;">${reason || 'Please discuss with your supervisor for specific requirements'}</p>
+            </div>
+
+            <div style="background-color: #d1ecf1; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #17a2b8;">
+              <p style="color: #0c5460; margin: 0;">
+                <strong>💡 Next Steps:</strong>
+              </p>
+              <ul style="color: #0c5460; margin: 10px 0 0 0; padding-left: 20px;">
+                <li>Review the supervisor's feedback carefully</li>
+                <li>Make the necessary improvements or corrections</li>
+                <li>Resubmit the task with updated documentation</li>
+              </ul>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${taskLink}" 
+                 style="display: inline-block; background-color: #ffc107; color: #333; 
+                        padding: 15px 30px; text-decoration: none; border-radius: 8px;
+                        font-weight: bold; font-size: 16px; border: 2px solid #ffc107;">
+                🔧 Revise Task
+              </a>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #ffeeba; margin: 20px 0;">
+            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; text-align: center;">
+              This is an automated message from the Action Items System.
+            </p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({
+        to: userEmail,
+        subject,
+        html
+      });
+
+    } catch (error) {
+      console.error('❌ Error in taskCompletionRejected:', error);
+      return { success: false, error: error.message };
+    }
+  }
+};
+
+
 module.exports = {
   sendEmail,
   sendCashRequestEmail,
@@ -4022,5 +5486,8 @@ module.exports = {
   sendIncidentReportEmail,
   sendVendorEmail,
   sendSuggestionEmail,
+  budgetCodeEmailTemplates,
+  sendBudgetCodeEmail,
+  sendActionItemEmail,
   getTransporter
 };

@@ -199,7 +199,7 @@ const UserSchema = new mongoose.Schema({
     }],
     departmentRole: {
         type: String,
-        enum: ['head', 'supervisor', 'coordinator', 'staff', 'buyer'], // NEW: Added buyer
+        enum: ['head', 'supervisor', 'coordinator', 'staff', 'buyer', 'hr', 'it', 'supply_chain'], 
         default: function() {
             if (this.role === 'buyer') return 'buyer';
             return this.role !== 'supplier' ? 'staff' : undefined;

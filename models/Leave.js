@@ -69,12 +69,12 @@ const leaveSchema = new mongoose.Schema({
       'examination_leave',
       
       // Special leaves
-      'sabbatical_leave',
-      'compensatory_time',
-      'jury_duty',
-      'military_leave',
-      'volunteer_leave',
-      'unpaid_personal_leave',
+      // 'sabbatical_leave',
+      // 'compensatory_time',
+      // 'jury_duty',
+      // 'military_leave',
+      // 'volunteer_leave',
+      // 'unpaid_personal_leave',
       
       // Other
       'other'

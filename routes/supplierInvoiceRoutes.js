@@ -242,7 +242,7 @@ router.get('/admin/analytics',
 
 router.get('/supervisor/pending',
   authMiddleware,
-  requireRoles('supervisor', 'admin'),
+  requireRoles('supervisor', 'admin', 'finance', 'hr', 'it'),
   supplierInvoiceController.getPendingSupplierApprovalsForUser
 );
 

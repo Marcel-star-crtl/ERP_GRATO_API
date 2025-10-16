@@ -81,7 +81,7 @@ const DEPARTMENT_STRUCTURE = {
             },
             // ENHANCED: Buyers with specific roles and specializations
             'Order Management Assistant/Buyer': {
-                name: 'Mr. Cristabel Maneni',
+                name: 'Mr. Christabel Mangwi',
                 email: 'christabel@gratoengineering.com',
                 supervisor: 'Supply Chain Coordinator',
                 department: 'Business Development & Supply Chain',

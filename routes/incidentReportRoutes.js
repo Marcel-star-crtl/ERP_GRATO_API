@@ -25,13 +25,13 @@ router.post('/preview-approval-chain',
 // Supervisor routes - MOVED UP before /:reportId
 router.get('/supervisor', 
   authMiddleware, 
-  requireRoles('supervisor', 'admin'), 
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr'), 
   incidentReportController.getSupervisorIncidentReports
 );
 
 router.get('/supervisor/:reportId', 
   authMiddleware, 
-  requireRoles('supervisor', 'admin'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr'),
   incidentReportController.getIncidentReportDetails
 );
 
@@ -64,7 +64,7 @@ router.get('/admin/:reportId',
 // PUT routes for decision processing
 router.put('/:reportId/supervisor', 
   authMiddleware, 
-  requireRoles('supervisor', 'admin'), 
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr'), 
   incidentReportController.processSupervisorDecision
 );
 

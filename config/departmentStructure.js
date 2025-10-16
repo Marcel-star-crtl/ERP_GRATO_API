@@ -81,12 +81,12 @@ const DEPARTMENT_STRUCTURE = {
           },
           // FIXED: Buyers with correct role structure
           'Order Management Assistant/Buyer': {
-              name: 'Mr. Cristabel Maneni',
+              name: 'Ms. Christabel Mangwi',
               email: 'christabel@gratoengineering.com',
               supervisor: 'Supply Chain Coordinator',
               department: 'Business Development & Supply Chain',
-              role: 'employee', // FIXED: Changed from 'buyer' to 'employee'
-              departmentRole: 'buyer', // FIXED: Added departmentRole as 'buyer'
+              role: 'employee', 
+              departmentRole: 'buyer', 
               specializations: ['Office_Supplies', 'Consumables', 'General'],
               maxOrderValue: 2000000
           },
@@ -95,8 +95,8 @@ const DEPARTMENT_STRUCTURE = {
               email: 'pryde.mua@gratoglobal.com',
               supervisor: 'Supply Chain Coordinator',
               department: 'Business Development & Supply Chain',
-              role: 'employee', // FIXED: Changed from 'buyer' to 'employee'
-              departmentRole: 'buyer', // FIXED: Added departmentRole as 'buyer'
+              role: 'employee', 
+              departmentRole: 'buyer', 
               specializations: ['Equipment', 'Hardware', 'Maintenance_Supplies'],
               maxOrderValue: 5000000
           },
@@ -107,7 +107,7 @@ const DEPARTMENT_STRUCTURE = {
               department: 'Business Development & Supply Chain'
           },
           'Finance Officer': {
-              name: 'Ms. Rambell Mambo',
+              name: 'Ms. Ranibell Mambo',
               email: 'ranibellmambo@gratoengineering.com',
               supervisor: 'Head of Business Dev & Supply Chain',
               department: 'Business Development & Supply Chain'
@@ -118,7 +118,7 @@ const DEPARTMENT_STRUCTURE = {
   // HR & Admin
   'HR & Admin': {
       name: 'HR & Admin',
-      head: 'Mrs. Brunline Teitoh',
+      head: 'Mrs. Bruiline Tsitoh',
       headEmail: 'bruiline.tsitoh@gratoglobal.com',
       positions: {
           'Office Driver/Logistics Assistant': {
@@ -128,7 +128,7 @@ const DEPARTMENT_STRUCTURE = {
               department: 'HR & Admin'
           },
           'IT Staff': {
-              name: 'Mr. Ngong Marcel',
+              name: 'Marcel',
               email: 'marcel.ngong@gratoglobal.com',
               supervisor: 'HR & Admin Head',
               department: 'HR & Admin'
@@ -154,7 +154,7 @@ const DEPARTMENT_STRUCTURE = {
               department: 'Executive'
           },
           'Head of HR & Admin': {
-              name: 'Mrs. Brunline Teitoh',
+              name: 'Mrs. Bruiline Tsitoh',
               email: 'bruiline.tsitoh@gratoglobal.com',
               supervisor: 'President',
               department: 'Executive'
@@ -298,7 +298,7 @@ const getApprovalChain = (employeeName, department) => {
 
       chain.push({
           level: 2,
-          approver: 'Ms. Rambell Mambo',
+          approver: 'Ms. Ranibell Mambo',
           email: 'ranibellmambo@gratoengineering.com',
           role: 'Finance Officer',
           department: 'Business Development & Supply Chain'
@@ -393,7 +393,7 @@ const getApprovalChain = (employeeName, department) => {
   console.log('Adding finance verification step');
   chain.push({
       level: level++,
-      approver: 'Ms. Rambell Mambo',
+      approver: 'Ms. Ranibell Mambo',
       email: 'ranibellmambo@gratoengineering.com',
       role: 'Finance Officer - Budget Verification',
       department: 'Business Development & Supply Chain'

@@ -6,7 +6,7 @@ class PDFService {
   constructor() {
     this.defaultFont = 'Helvetica';
     this.boldFont = 'Helvetica-Bold';
-    this.logoPath = path.join(__dirname, '../public/assets/company-logo.png');
+    this.logoPath = path.join(__dirname, '../public/images/company-logo.jpg');
   }
 
   async generatePurchaseOrderPDF(poData, outputPath) {
@@ -63,7 +63,7 @@ class PDFService {
 
     // Two-column section: Shipping address (left) and Supplier (right)
     this.drawAddressSection(doc, yPos, poData);
-    yPos += 90; // Reduced spacing for address section only
+    yPos += 90; 
 
     // Purchase Order Title Bar
     this.drawPOTitleBar(doc, yPos, poData);
@@ -88,7 +88,7 @@ class PDFService {
     // Company Logo (left side)
     try {
       if (fs.existsSync(this.logoPath)) {
-        doc.image(this.logoPath, 40, yPos, { width: 60, height: 60 });
+        doc.image(this.logoPath, 40, yPos, { width: 60, height: 56 });
       } else {
         // Placeholder logo - red box with text
         doc.rect(40, yPos, 60, 60)
@@ -168,7 +168,7 @@ class PDFService {
 
   drawPOTitleBar(doc, yPos, poData) {
     // Purchase Order title - just colored text, no background bar
-    doc.fillColor('#C5504B') // Orange/red color for the text
+    doc.fillColor('#C5504B') 
        .fontSize(14)
        .font(this.boldFont)
        .text(`Purchase Order #${this.safeString(poData.poNumber, 'P00004')}`, 40, yPos);
@@ -400,10 +400,10 @@ class PDFService {
     // Add some spacing before signatures
     yPos += 20;
     
-    doc.fontSize(9)
-       .font(this.boldFont)
-       .fillColor('#000000')
-       .text('Signatures:', 40, yPos);
+    // doc.fontSize(9)
+    //    .font(this.boldFont)
+    //    .fillColor('#000000')
+    //    .text('Signatures:', 40, yPos);
     
     // Three signature lines
     const signatureY = yPos + 20;
@@ -419,22 +419,22 @@ class PDFService {
     
     doc.fontSize(8)
        .font(this.defaultFont)
-       .text('Buyer Signature', 40, signatureY + 35);
-    doc.text('Date: ___________', 40, signatureY + 48);
+      //  .text('Buyer Signature', 40, signatureY + 35);
+    // doc.text('Date: ___________', 40, signatureY + 48);
     
     // Line 2 - Supplier
     doc.moveTo(40 + lineSpacing, signatureY + 30)
        .lineTo(40 + lineSpacing + lineWidth, signatureY + 30)
        .stroke();
-    doc.text('Supplier Signature', 40 + lineSpacing, signatureY + 35);
-    doc.text('Date: ___________', 40 + lineSpacing, signatureY + 48);
+    // doc.text('Supplier Signature', 40 + lineSpacing, signatureY + 35);
+    // doc.text('Date: ___________', 40 + lineSpacing, signatureY + 48);
     
     // Line 3 - Finance Approval
     doc.moveTo(40 + (lineSpacing * 2), signatureY + 30)
        .lineTo(40 + (lineSpacing * 2) + lineWidth, signatureY + 30)
        .stroke();
-    doc.text('Finance Approval', 40 + (lineSpacing * 2), signatureY + 35);
-    doc.text('Date: ___________', 40 + (lineSpacing * 2), signatureY + 48);
+    // doc.text('Finance Approval', 40 + (lineSpacing * 2), signatureY + 35);
+    // doc.text('Date: ___________', 40 + (lineSpacing * 2), signatureY + 48);
   }
 
   drawPaymentTerms(doc, yPos, poData) {

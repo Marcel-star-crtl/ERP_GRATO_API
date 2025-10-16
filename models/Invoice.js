@@ -249,9 +249,8 @@ invoiceSchema.virtual('statusDisplay').get(function() {
   return statusMap[this.approvalStatus] || this.approvalStatus;
 });
 
-// Method to assign department and create approval chain
 invoiceSchema.methods.assignToDepartment = function(department, assignedByUserId) {
-  const { getApprovalChain } = require('../config/departmentStructure');
+  const { getInvoiceApprovalChain } = require('../config/invoiceApprovalChain');
   
   this.assignedDepartment = department;
   this.assignedBy = assignedByUserId;
@@ -259,82 +258,65 @@ invoiceSchema.methods.assignToDepartment = function(department, assignedByUserId
   this.assignmentTime = new Date().toTimeString().split(' ')[0];
   this.approvalStatus = 'pending_department_approval';
   
-  // Create approval chain based on employee's position and hierarchy
   const employeeName = this.employeeDetails?.name || 'Unknown Employee';
   
-  console.log(`Creating approval chain for: "${employeeName}" in department: "${department}"`);
+  console.log(`Creating invoice approval chain for: "${employeeName}" in department: "${department}"`);
   
-  const chain = getApprovalChain(employeeName, department);
+  const chain = getInvoiceApprovalChain(employeeName, department);
   
-  // Check if approval chain was successfully created
   if (!chain || !Array.isArray(chain) || chain.length === 0) {
-    console.warn(`No approval chain found for employee "${employeeName}" in department "${department}". Creating default chain.`);
+    console.warn(`No approval chain found. Creating default chain.`);
     
-    // Create a default approval chain with department head and president
     const { DEPARTMENT_STRUCTURE } = require('../config/departmentStructure');
     const defaultChain = [];
     
-    // Add department head if exists
     if (DEPARTMENT_STRUCTURE[department] && DEPARTMENT_STRUCTURE[department].head) {
       defaultChain.push({
         level: 1,
-        approver: DEPARTMENT_STRUCTURE[department].head,
-        email: DEPARTMENT_STRUCTURE[department].headEmail,
-        role: 'Department Head',
-        department: department
+        approver: {
+          name: DEPARTMENT_STRUCTURE[department].head,
+          email: DEPARTMENT_STRUCTURE[department].headEmail,
+          role: 'Department Head',
+          department: department
+        }
       });
     }
     
-    // Add president as final approver
-    if (DEPARTMENT_STRUCTURE['Executive'] && DEPARTMENT_STRUCTURE['Executive'].head) {
-      defaultChain.push({
-        level: defaultChain.length + 1,
-        approver: DEPARTMENT_STRUCTURE['Executive'].head,
-        email: DEPARTMENT_STRUCTURE['Executive'].headEmail,
-        role: 'President',
-        department: 'Executive'
-      });
-    }
+    // Add Finance as final approver
+    defaultChain.push({
+      level: defaultChain.length + 1,
+      approver: {
+        name: 'Ms. Ranibell Mambo',
+        email: 'ranibellmambo@gratoengineering.com',
+        role: 'Finance Officer',
+        department: 'Business Development & Supply Chain'
+      }
+    });
     
     this.approvalChain = defaultChain.map(step => ({
       level: step.level,
-      approver: {
-        name: step.approver,
-        email: step.email,
-        role: step.role,
-        department: step.department
-      },
+      approver: step.approver,
       status: 'pending',
-      // Only the first step is initially activated
-      activatedDate: step.level === 1 ? new Date() : null
+      activatedDate: step.level === 1 ? new Date() : null,
+      notificationSent: false
     }));
     
   } else {
-    // Use the generated approval chain
     this.approvalChain = chain.map(step => ({
       level: step.level,
-      approver: {
-        name: step.approver,
-        email: step.email,
-        role: step.role,
-        department: step.department
-      },
+      approver: step.approver,
       status: 'pending',
-      // Only the first step is initially activated
-      activatedDate: step.level === 1 ? new Date() : null
+      activatedDate: step.level === 1 ? new Date() : null,
+      notificationSent: false
     }));
   }
 
-  // Set current approval level to 1 if we have an approval chain, otherwise 0
   this.currentApprovalLevel = this.approvalChain.length > 0 ? 1 : 0;
   
-  const firstApprover = this.approvalChain.length > 0 ? this.approvalChain[0].approver.name : 'None';
-  console.log(`Invoice ${this.poNumber} assigned to ${department}. Approval chain length: ${this.approvalChain.length}. First approver: ${firstApprover}`);
+  console.log(`Invoice ${this.poNumber} assigned to ${department}. Approval chain: ${this.approvalChain.length} levels`);
 };
 
-// Method to process approval step (sequential)
 invoiceSchema.methods.processApprovalStep = function(approverEmail, decision, comments, userId) {
-  // Find the current active step
   const currentStep = this.approvalChain.find(step => 
     step.level === this.currentApprovalLevel && 
     step.approver.email === approverEmail && 
@@ -345,7 +327,6 @@ invoiceSchema.methods.processApprovalStep = function(approverEmail, decision, co
     throw new Error(`You are not authorized to approve at this level. Current level: ${this.currentApprovalLevel}`);
   }
 
-  // Update the current step
   currentStep.status = decision === 'approved' ? 'approved' : 'rejected';
   currentStep.decision = decision;
   currentStep.comments = comments;
@@ -354,28 +335,24 @@ invoiceSchema.methods.processApprovalStep = function(approverEmail, decision, co
   currentStep.approver.userId = userId;
 
   if (decision === 'rejected') {
-    // If rejected, mark entire invoice as rejected
     this.approvalStatus = 'rejected';
     this.rejectionComments = comments;
-    this.currentApprovalLevel = 0; // Reset level
+    this.currentApprovalLevel = 0;
     
     console.log(`Invoice ${this.poNumber} REJECTED by ${currentStep.approver.name} at level ${currentStep.level}`);
   } else {
-    // If approved, move to next level
     const nextLevel = this.currentApprovalLevel + 1;
     const nextStep = this.approvalChain.find(step => step.level === nextLevel);
     
     if (nextStep) {
-      // Activate next step
       this.currentApprovalLevel = nextLevel;
       nextStep.activatedDate = new Date();
-      nextStep.notificationSent = false; // Reset notification flag
+      nextStep.notificationSent = false;
       
       console.log(`Invoice ${this.poNumber} approved by ${currentStep.approver.name}. Moving to level ${nextLevel}: ${nextStep.approver.name}`);
     } else {
-      // All steps completed - fully approved
       this.approvalStatus = 'approved';
-      this.currentApprovalLevel = 0; // Reset level
+      this.currentApprovalLevel = 0;
       
       console.log(`Invoice ${this.poNumber} FULLY APPROVED. All approval steps completed.`);
     }
@@ -383,6 +360,7 @@ invoiceSchema.methods.processApprovalStep = function(approverEmail, decision, co
 
   return currentStep;
 };
+
 
 // Method to get current active approver (only person who can approve right now)
 // invoiceSchema.methods.getCurrentApprover = function() {
@@ -440,32 +418,62 @@ invoiceSchema.methods.getPendingSteps = function() {
     .sort((a, b) => a.level - b.level);
 };
 
-// Static method to get invoices pending approval for a specific user (current level only)
+// UPDATED: Static method to get pending invoices for specific approver
 invoiceSchema.statics.getPendingForApprover = function(approverEmail) {
-  return this.find({
-    'approvalChain.approver.email': approverEmail,
-    'approvalChain.status': 'pending',
-    approvalStatus: 'pending_department_approval',
-    $expr: {
-      $let: {
-        vars: {
-          currentStep: {
-            $arrayElemAt: [
-              {
-                $filter: {
-                  input: '$approvalChain',
-                  cond: { $eq: ['$$this.level', '$currentApprovalLevel'] }
-                }
-              },
-              0
-            ]
-          }
-        },
-        in: { $eq: ['$$currentStep.approver.email', approverEmail] }
+  return this.aggregate([
+    {
+      $match: {
+        approvalStatus: 'pending_department_approval'
       }
+    },
+    {
+      $addFields: {
+        currentStep: {
+          $arrayElemAt: [
+            {
+              $filter: {
+                input: '$approvalChain',
+                cond: { $eq: ['$$this.level', '$currentApprovalLevel'] }
+              }
+            },
+            0
+          ]
+        }
+      }
+    },
+    {
+      $match: {
+        'currentStep.approver.email': approverEmail,
+        'currentStep.status': 'pending'
+      }
+    },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'employee',
+        foreignField: '_id',
+        as: 'employeeData'
+      }
+    },
+    {
+      $unwind: {
+        path: '$employeeData',
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    {
+      $sort: { uploadedDate: -1 }
     }
-  }).populate('employee', 'fullName email department')
-    .sort({ assignmentDate: -1 });
+  ]).then(results => {
+    // Convert aggregation results back to Mongoose documents
+    return results.map(doc => {
+      const invoice = new this(doc);
+      if (doc.employeeData) {
+        invoice.employee = doc.employeeData;
+      }
+      return invoice;
+    });
+  });
 };
 
 // Static method to get all invoices for a department supervisor (including upcoming ones)
@@ -507,6 +515,10 @@ invoiceSchema.methods.notifyCurrentApprover = async function() {
                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${this.employeeDetails.name}</td>
                 </tr>
                 <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Department:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${this.employeeDetails.department}</td>
+                </tr>
+                <tr>
                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>PO Number:</strong></td>
                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${this.poNumber}</td>
                 </tr>
@@ -520,13 +532,20 @@ invoiceSchema.methods.notifyCurrentApprover = async function() {
                 </tr>
                 <tr>
                   <td style="padding: 8px 0;"><strong>Approval Level:</strong></td>
-                  <td style="padding: 8px 0;"><span style="background-color: #ffc107; color: #333; padding: 4px 8px; border-radius: 4px; font-size: 12px;">Level ${currentStep.level}</span></td>
+                  <td style="padding: 8px 0;"><span style="background-color: #ffc107; color: #333; padding: 4px 8px; border-radius: 4px; font-size: 12px;">Level ${currentStep.level} of ${this.approvalChain.length}</span></td>
                 </tr>
               </table>
             </div>
             
+            <div style="background-color: #e6f7ff; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #1890ff;">
+              <h4 style="color: #0c5460; margin-top: 0;">Approval Progress</h4>
+              <p style="color: #0c5460; margin: 0;">
+                ${this.approvalChain.filter(s => s.status === 'approved').length} of ${this.approvalChain.length} approvals completed
+              </p>
+            </div>
+            
             <div style="text-align: center; margin: 30px 0;">
-              <a href="${process.env.CLIENT_URL || 'http://localhost:3000'}/supervisor/invoice/${this._id}" 
+              <a href="${process.env.CLIENT_URL || 'http://localhost:3000'}/invoices" 
                  style="display: inline-block; background-color: #28a745; color: white; 
                         padding: 15px 30px; text-decoration: none; border-radius: 8px;
                         font-weight: bold; font-size: 16px;">
@@ -543,14 +562,13 @@ invoiceSchema.methods.notifyCurrentApprover = async function() {
       `
     });
     
-    // Mark notification as sent
     currentStep.notificationSent = true;
     currentStep.notificationSentAt = new Date();
     await this.save();
     
-    console.log(`Notification sent to ${currentStep.approver.email} for invoice ${this.poNumber}`);
+    console.log(`✅ Notification sent to ${currentStep.approver.email} for invoice ${this.poNumber}`);
   } catch (error) {
-    console.error(`Failed to send notification for invoice ${this.poNumber}:`, error);
+    console.error(`❌ Failed to send notification for invoice ${this.poNumber}:`, error);
   }
 };
 
