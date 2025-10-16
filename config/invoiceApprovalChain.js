@@ -1,5 +1,3 @@
-// config/invoiceApprovalChain.js
-
 const { DEPARTMENT_STRUCTURE } = require('./departmentStructure');
 
 /**
