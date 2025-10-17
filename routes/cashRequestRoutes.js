@@ -17,13 +17,27 @@ router.get(
       const User = require('../models/User');
       
       const user = await User.findById(req.user.userId);
+      console.log(`=== DASHBOARD STATS for ${user.role}: ${user.email} ===`);
       
-      let filter = {};
+      let baseFilter = {};
+      let pendingFilter = {};
       
       if (user.role === 'employee') {
-        filter = { employee: req.user.userId };
+        baseFilter = { employee: req.user.userId };
+        pendingFilter = {
+          employee: req.user.userId,
+          status: { $regex: /pending/ }
+        };
       } else if (user.role === 'supervisor') {
-        filter = {
+        // Supervisor sees team requests that need their approval
+        baseFilter = {
+          'approvalChain': {
+            $elemMatch: {
+              'approver.email': user.email
+            }
+          }
+        };
+        pendingFilter = {
           'approvalChain': {
             $elemMatch: {
               'approver.email': user.email,
@@ -32,23 +46,66 @@ router.get(
           }
         };
       } else if (user.role === 'finance') {
-        filter = {
+        // Finance sees all requests at finance level or beyond
+        baseFilter = {
           $or: [
-            { status: 'pending_finance' },
+            { status: { $regex: /pending_finance/ } },
             { status: 'approved' },
-            { status: 'disbursed' }
+            { status: 'disbursed' },
+            { status: 'completed' },
+            {
+              'approvalChain': {
+                $elemMatch: {
+                  'approver.role': 'Finance Officer'
+                }
+              }
+            }
           ]
+        };
+        pendingFilter = {
+          $or: [
+            { status: { $regex: /pending_finance/ } },
+            {
+              'approvalChain': {
+                $elemMatch: {
+                  'approver.email': user.email,
+                  'approver.role': 'Finance Officer',
+                  'status': 'pending'
+                }
+              }
+            }
+          ]
+        };
+      } else if (user.role === 'admin') {
+        // Admin sees everything
+        baseFilter = {};
+        pendingFilter = {
+          status: { $regex: /pending/ }
         };
       }
       
+      console.log('Base filter:', JSON.stringify(baseFilter, null, 2));
+      console.log('Pending filter:', JSON.stringify(pendingFilter, null, 2));
+      
+      const [total, pending, approved, disbursed, completed, denied] = await Promise.all([
+        CashRequest.countDocuments(baseFilter),
+        CashRequest.countDocuments(pendingFilter),
+        CashRequest.countDocuments({ ...baseFilter, status: 'approved' }),
+        CashRequest.countDocuments({ ...baseFilter, status: 'disbursed' }),
+        CashRequest.countDocuments({ ...baseFilter, status: 'completed' }),
+        CashRequest.countDocuments({ ...baseFilter, status: 'denied' })
+      ]);
+      
       const stats = {
-        total: await CashRequest.countDocuments(filter),
-        pending: await CashRequest.countDocuments({ ...filter, status: /pending/ }),
-        approved: await CashRequest.countDocuments({ ...filter, status: 'approved' }),
-        disbursed: await CashRequest.countDocuments({ ...filter, status: 'disbursed' }),
-        completed: await CashRequest.countDocuments({ ...filter, status: 'completed' }),
-        denied: await CashRequest.countDocuments({ ...filter, status: 'denied' })
+        total,
+        pending,
+        approved,
+        disbursed,
+        completed,
+        denied
       };
+      
+      console.log('Stats calculated:', stats);
       
       res.json({
         success: true,
@@ -250,7 +307,33 @@ router.post(
   '/:requestId/justification',
   authMiddleware,
   requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr'),
-  upload.array('documents', 10),
+  // Support both 'documents' and 'attachments' field names for justification uploads
+  (req, res, next) => {
+    console.log('=== JUSTIFICATION UPLOAD MIDDLEWARE ===');
+    console.log('Content-Type:', req.headers['content-type']);
+    console.log('Request has files:', !!req.files);
+    next();
+  },
+  upload.fields([
+    { name: 'documents', maxCount: 10 },
+    { name: 'attachments', maxCount: 10 },
+    { name: 'justificationDocuments', maxCount: 10 }
+  ]),
+  // Normalize file field names
+  (req, res, next) => {
+    if (req.files) {
+      // Combine all file fields into a single array
+      const allFiles = [];
+      if (req.files.documents) allFiles.push(...req.files.documents);
+      if (req.files.attachments) allFiles.push(...req.files.attachments);
+      if (req.files.justificationDocuments) allFiles.push(...req.files.justificationDocuments);
+      
+      // Replace req.files with normalized array
+      req.files = allFiles;
+      console.log(`Normalized ${allFiles.length} files for justification upload`);
+    }
+    next();
+  },
   handleMulterError,
   validateFiles,
   cashRequestController.submitJustification,

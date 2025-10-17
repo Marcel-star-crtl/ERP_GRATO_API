@@ -128,6 +128,12 @@ const getFinanceRequests = async (req, res) => {
     
     let query = {};
     
+    // Helper function to check if all previous levels are approved
+    const isPreviousLevelApproved = (request, currentLevel) => {
+      const previousLevels = request.approvalChain.filter(step => step.level < currentLevel);
+      return previousLevels.length === 0 || previousLevels.every(step => step.status === 'approved');
+    };
+    
     if (user.role === 'finance') {
       // Finance users see:
       // 1. Requests pending their approval (ANY level, not just 4)
@@ -204,10 +210,59 @@ const getFinanceRequests = async (req, res) => {
 
     console.log(`Finance requests found: ${requests.length}`);
 
-    // Add detailed debug info for each request
-    const requestsWithDebug = requests.map(req => {
+    // Filter requests to ensure proper approval hierarchy with enhanced logging
+    const validRequests = requests.filter(req => {
       const financeStep = req.approvalChain.find(s => 
         s.approver.email === user.email && s.approver.role === 'Finance Officer'
+      );
+      
+      console.log(`\n🔍 Checking request ${req._id}:`);
+      console.log(`  Current status: ${req.status}`);
+      console.log(`  Finance step found: ${!!financeStep}`);
+      
+      if (financeStep) {
+        console.log(`  Finance step level: ${financeStep.level}, status: ${financeStep.status}`);
+      }
+      
+      // If no finance step for this user, check if it's a general finance status
+      if (!financeStep) {
+        const isGeneralFinanceStatus = ['approved', 'disbursed', 'completed', 'justification_pending_finance'].includes(req.status);
+        console.log(`  No finance step for user, general finance status: ${isGeneralFinanceStatus}`);
+        return isGeneralFinanceStatus;
+      }
+      
+      // For requests with pending finance step, ensure all previous levels are approved
+      if (financeStep.status === 'pending') {
+        const allPreviousApproved = isPreviousLevelApproved(req, financeStep.level);
+        const previousSteps = req.approvalChain.filter(s => s.level < financeStep.level);
+        
+        console.log(`  Previous steps (${previousSteps.length}):`);
+        previousSteps.forEach(step => {
+          console.log(`    Level ${step.level}: ${step.approver.role} - ${step.status}`);
+        });
+        
+        if (!allPreviousApproved) {
+          console.log(`  ❌ FILTERED OUT: Previous levels not all approved`);
+          return false;
+        }
+        console.log(`  ✅ INCLUDED: All previous levels approved`);
+      } else {
+        console.log(`  ✅ INCLUDED: Finance step status is ${financeStep.status}`);
+      }
+      
+      return true;
+    });
+    
+    console.log(`Valid requests after hierarchy check: ${validRequests.length}`);
+
+    // Add detailed debug info for each request
+    const requestsWithDebug = validRequests.map(req => {
+      const financeStep = req.approvalChain.find(s => 
+        s.approver.email === user.email && s.approver.role === 'Finance Officer'
+      );
+      
+      const allPreviousLevels = req.approvalChain.filter(s => 
+        financeStep ? s.level < financeStep.level : true
       );
       
       return {
@@ -217,6 +272,7 @@ const getFinanceRequests = async (req, res) => {
           financeStepLevel: financeStep ? financeStep.level : 'Not found',
           financeStepStatus: financeStep ? financeStep.status : 'N/A',
           financeStepEmail: financeStep ? financeStep.approver.email : 'N/A',
+          previousLevelsApproved: financeStep ? isPreviousLevelApproved(req, financeStep.level) : 'N/A',
           allLevels: req.approvalChain.map(s => ({
             level: s.level,
             role: s.approver.role,
@@ -1796,24 +1852,35 @@ const processApprovalDecision = async (req, res) => {
       });
     }
 
-    // Handle approval - determine next status based on current level
+    // Handle approval - determine next status based on current level with enhanced logging
     let nextStatus;
     let nextApproverLevel = currentStep.level + 1;
+    
+    console.log(`\n🔄 APPROVAL TRANSITION:`);
+    console.log(`  Current level: ${currentStep.level} (${currentStep.approver.role})`);
+    console.log(`  Next level would be: ${nextApproverLevel}`);
+    console.log(`  Total approval levels: ${request.approvalChain.length}`);
     
     switch (currentStep.level) {
       case 1: // Supervisor approval
         nextStatus = 'pending_departmental_head';
+        console.log(`  ✅ Level 1 approved → ${nextStatus}`);
         break;
       case 2: // Departmental head approval  
         nextStatus = 'pending_head_of_business';
+        console.log(`  ✅ Level 2 approved → ${nextStatus}`);
         break;
       case 3: // Head of business approval
         nextStatus = 'pending_finance';
+        console.log(`  ✅ Level 3 approved → ${nextStatus}`);
         break;
       case 4: // Finance approval
         nextStatus = 'approved';
+        console.log(`  ✅ Level 4 (Finance) approved → ${nextStatus}`);
+        
         if (amountApproved) {
           request.amountApproved = parseFloat(amountApproved);
+          console.log(`  💰 Amount approved: XAF ${parseFloat(amountApproved).toLocaleString()}`);
         }
         
         // Handle disbursement if amount is provided
@@ -1826,10 +1893,12 @@ const processApprovalDecision = async (req, res) => {
             disbursedBy: req.user.userId
           };
           nextStatus = 'disbursed';
+          console.log(`  💵 Disbursed: XAF ${disbursedAmount.toLocaleString()}`);
         }
         break;
       default:
         nextStatus = 'approved';
+        console.log(`  ⚠️ Unknown level ${currentStep.level} → defaulting to approved`);
     }
 
     // Update request status
@@ -2013,7 +2082,7 @@ const getAdminApprovals = async (req, res) => {
   }
 };
 
-// Get pending approvals for supervisor/admin
+// Get team requests for supervisor/admin with filtering
 const getSupervisorRequests = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
@@ -2021,23 +2090,158 @@ const getSupervisorRequests = async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // Find requests where current user is in the approval chain and status is pending
-    const requests = await CashRequest.find({
+    console.log('=== GET SUPERVISOR/TEAM REQUESTS ===');
+    console.log(`User: ${user.fullName} (${user.email}) - Role: ${user.role}`);
+    
+    // Get query parameters for filtering
+    const { status, department, showAll = 'false' } = req.query;
+    
+    let baseQuery = {
+      // Show all requests where current user is in the approval chain (regardless of status)
       'approvalChain': {
         $elemMatch: {
-          'approver.email': user.email,
-          'status': 'pending'
+          'approver.email': user.email
         }
-      },
-      status: { $in: ['pending_supervisor', 'pending_finance'] }
-    })
-    .populate('employee', 'fullName email department')
-    .sort({ createdAt: -1 });
+      }
+    };
+    
+    // Apply status filter if provided
+    if (status && status !== 'all') {
+      if (status === 'pending') {
+        // Show only requests pending for this user
+        baseQuery['approvalChain.$elemMatch.status'] = 'pending';
+        baseQuery.status = { $regex: /pending/ };
+      } else if (status === 'approved') {
+        // Show requests this user has approved
+        baseQuery = {
+          $or: [
+            {
+              'approvalChain': {
+                $elemMatch: {
+                  'approver.email': user.email,
+                  'status': 'approved'
+                }
+              }
+            },
+            { status: { $in: ['approved', 'disbursed', 'completed'] } }
+          ]
+        };
+      } else if (status === 'denied') {
+        baseQuery.status = 'denied';
+      } else {
+        baseQuery.status = status;
+      }
+    }
+    
+    // Apply department filter if provided
+    if (department && department !== 'all') {
+      // Find users in the specified department
+      const departmentUsers = await User.find({ department }).select('_id');
+      baseQuery.employee = { $in: departmentUsers.map(u => u._id) };
+    }
+    
+    console.log('Query filter:', JSON.stringify(baseQuery, null, 2));
+    
+    const requests = await CashRequest.find(baseQuery)
+      .populate('employee', 'fullName email department position')
+      .populate({
+        path: 'approvalChain.decidedBy',
+        select: 'fullName email',
+        options: { strictPopulate: false }
+      })
+      .sort({ createdAt: -1 });
+    
+    console.log(`Found ${requests.length} team requests`);
+    
+    // Helper function to check if all previous levels are approved (reused)
+    const isPreviousLevelApproved = (request, currentLevel) => {
+      const previousLevels = request.approvalChain.filter(step => step.level < currentLevel);
+      return previousLevels.length === 0 || previousLevels.every(step => step.status === 'approved');
+    };
+    
+    // Filter requests to ensure proper approval hierarchy
+    const validRequests = requests.filter(req => {
+      const userSteps = req.approvalChain.filter(step => 
+        step.approver.email === user.email
+      );
+      
+      // If user has no steps in this request, they shouldn't see it unless it's for general visibility
+      if (userSteps.length === 0) {
+        return false;
+      }
+      
+      // Check each user step to ensure hierarchy is followed
+      const pendingUserSteps = userSteps.filter(step => step.status === 'pending');
+      
+      for (const step of pendingUserSteps) {
+        const allPreviousApproved = isPreviousLevelApproved(req, step.level);
+        if (!allPreviousApproved) {
+          console.log(`❌ Filtering out request ${req._id}: Previous levels not all approved for Level ${step.level}`);
+          return false;
+        }
+      }
+      
+      return true;
+    });
+    
+    console.log(`Valid requests after hierarchy check: ${validRequests.length}`);
+    
+    // Add additional metadata for each request
+    const enrichedRequests = validRequests.map(request => {
+      const userSteps = request.approvalChain.filter(step => 
+        step.approver.email === user.email
+      );
+      
+      const currentUserPendingSteps = userSteps.filter(step => step.status === 'pending');
+      const currentUserApprovedSteps = userSteps.filter(step => step.status === 'approved');
+      const currentUserRejectedSteps = userSteps.filter(step => step.status === 'rejected');
+      
+      return {
+        ...request.toObject(),
+        teamRequestMetadata: {
+          userHasPendingApproval: currentUserPendingSteps.length > 0,
+          userHasApproved: currentUserApprovedSteps.length > 0,
+          userHasRejected: currentUserRejectedSteps.length > 0,
+          userApprovalLevels: userSteps.map(s => s.level),
+          pendingLevels: currentUserPendingSteps.map(s => s.level),
+          approvedLevels: currentUserApprovedSteps.map(s => s.level)
+        }
+      };
+    });
+    
+    // Generate statistics
+    const stats = {
+      total: enrichedRequests.length,
+      pending: enrichedRequests.filter(r => r.teamRequestMetadata.userHasPendingApproval).length,
+      approved: enrichedRequests.filter(r => r.teamRequestMetadata.userHasApproved).length,
+      byStatus: {
+        pending_supervisor: enrichedRequests.filter(r => r.status === 'pending_supervisor').length,
+        pending_finance: enrichedRequests.filter(r => r.status === 'pending_finance').length,
+        approved: enrichedRequests.filter(r => r.status === 'approved').length,
+        disbursed: enrichedRequests.filter(r => r.status === 'disbursed').length,
+        completed: enrichedRequests.filter(r => r.status === 'completed').length,
+        denied: enrichedRequests.filter(r => r.status === 'denied').length
+      }
+    };
+    
+    console.log('Team requests stats:', stats);
 
     res.json({
       success: true,
-      data: requests,
-      count: requests.length
+      data: enrichedRequests,
+      count: enrichedRequests.length,
+      stats,
+      userInfo: {
+        name: user.fullName,
+        email: user.email,
+        role: user.role,
+        department: user.department
+      },
+      filters: {
+        status: status || 'all',
+        department: department || 'all',
+        showAll: showAll === 'true'
+      }
     });
 
   } catch (error) {

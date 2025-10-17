@@ -509,18 +509,37 @@ const getProjects = async (req, res) => {
 // Get active projects only
 const getActiveProjects = async (req, res) => {
     try {
+        console.log('=== FETCHING ACTIVE PROJECTS ===');
+        console.log('User:', req.user?.userId);
+        
         const projects = await Project.find({
             status: { $in: ['Planning', 'Approved', 'In Progress'] },
             isActive: true
         })
         .populate('projectManager', 'fullName email role department')
-        .populate('budgetCodeId', 'code name')
+        .populate('budgetCodeId', 'code name budget used remaining totalBudget')
         .populate('milestones.subMilestones.assignedTo', 'fullName email')
         .sort({ createdAt: -1 });
 
+        console.log(`Found ${projects.length} active projects`);
+        
+        // Log budget details for debugging
+        projects.forEach(project => {
+            if (project.budgetCodeId) {
+                console.log(`Project: ${project.name}`);
+                console.log(`Budget Code: ${project.budgetCodeId.code} - ${project.budgetCodeId.name}`);
+                console.log(`Budget: ${project.budgetCodeId.budget || project.budgetCodeId.totalBudget || 'N/A'}`);
+                console.log(`Used: ${project.budgetCodeId.used || 'N/A'}`);
+                console.log(`Remaining: ${project.budgetCodeId.remaining || 'N/A'}`);
+            } else {
+                console.log(`Project: ${project.name} - No budget code assigned`);
+            }
+        });
+
         res.status(200).json({
             success: true,
-            data: projects
+            data: projects,
+            count: projects.length
         });
 
     } catch (error) {
