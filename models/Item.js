@@ -1,3 +1,217 @@
+// const mongoose = require('mongoose');
+
+// const ItemSchema = new mongoose.Schema({
+//   code: {
+//     type: String,
+//     required: true,
+//     unique: true,
+//     uppercase: true,
+//     trim: true
+//   },
+//   description: {
+//     type: String,
+//     required: true,
+//     trim: true
+//   },
+//   category: {
+//     type: String,
+//     required: true,
+//     trim: true
+//   },
+//   subcategory: {
+//     type: String,
+//     trim: true
+//   },
+//   unitOfMeasure: {
+//     type: String,
+//     required: true,
+//     enum: ['Pieces', 'Sets', 'Boxes', 'Packs', 'Units', 'Kg', 'Litres', 'Meters', 'Pairs', 'Each', 'Reams']
+//   },
+//   itemType: {
+//     type: String,
+//     required: true,
+//     enum: ['asset', 'liability', 'expense'],
+//     default: 'expense'
+//   },
+//   imageUrl: {
+//     type: String,
+//     trim: true
+//   },
+  
+//   // Stock Management Fields
+//   stockQuantity: {
+//     type: Number,
+//     default: 0,
+//     min: 0
+//   },
+//   minimumStock: {
+//     type: Number,
+//     default: 0,
+//     min: 0
+//   },
+//   maximumStock: {
+//     type: Number,
+//     default: null
+//   },
+//   reorderPoint: {
+//     type: Number,
+//     default: 0,
+//     min: 0
+//   },
+//   location: {
+//     type: String,
+//     default: 'Main Warehouse'
+//   },
+//   binLocation: {
+//     type: String
+//   },
+//   batchTracking: {
+//     type: Boolean,
+//     default: false
+//   },
+//   serialTracking: {
+//     type: Boolean,
+//     default: false
+//   },
+//   lastStockUpdate: {
+//     type: Date,
+//     default: Date.now
+//   },
+  
+//   // Pricing
+//   standardPrice: {
+//     type: Number,
+//     min: 0
+//   },
+//   averageCost: {
+//     type: Number,
+//     default: 0,
+//     min: 0
+//   },
+  
+//   supplier: String,
+//   specifications: String,
+  
+//   // Fixed Asset Fields
+//   isFixedAsset: {
+//     type: Boolean,
+//     default: false
+//   },
+//   assetTag: {
+//     type: String,
+//     sparse: true,
+//     unique: true
+//   },
+//   assetDetails: {
+//     acquisitionDate: Date,
+//     acquisitionCost: Number,
+//     depreciationMethod: {
+//       type: String,
+//       enum: ['straight-line', 'declining-balance', 'none']
+//     },
+//     usefulLifeYears: Number,
+//     salvageValue: Number,
+//     currentBookValue: Number,
+//     assignedTo: {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: 'User'
+//     },
+//     assignedLocation: String,
+//     condition: {
+//       type: String,
+//       enum: ['excellent', 'good', 'fair', 'poor']
+//     },
+//     lastMaintenanceDate: Date,
+//     nextMaintenanceDue: Date
+//   },
+  
+//   isActive: {
+//     type: Boolean,
+//     default: true
+//   },
+//   createdBy: {
+//     type: mongoose.Schema.Types.ObjectId,
+//     ref: 'User',
+//     required: true
+//   },
+//   requestId: {
+//     type: mongoose.Schema.Types.ObjectId,
+//     ref: 'ItemRequest'
+//   },
+//   lastUpdatedBy: {
+//     type: mongoose.Schema.Types.ObjectId,
+//     ref: 'User'
+//   }
+// }, { 
+//   timestamps: true,
+//   toJSON: { virtuals: true },
+//   toObject: { virtuals: true }
+// });
+
+// // Indexes for better query performance
+// ItemSchema.index({ code: 1 });
+// ItemSchema.index({ category: 1, isActive: 1 });
+// ItemSchema.index({ description: 'text', specifications: 'text' });
+// ItemSchema.index({ isActive: 1 });
+// ItemSchema.index({ assetTag: 1 }, { sparse: true });
+// ItemSchema.index({ stockQuantity: 1 });
+// ItemSchema.index({ 'assetDetails.assignedTo': 1 });
+
+// // Virtual for display code
+// ItemSchema.virtual('displayCode').get(function() {
+//   return this.code || `ITM-${this._id.toString().slice(-6).toUpperCase()}`;
+// });
+
+// // Virtual for stock value
+// ItemSchema.virtual('stockValue').get(function() {
+//   return this.stockQuantity * (this.averageCost || this.standardPrice || 0);
+// });
+
+// // Virtual for reorder needed
+// ItemSchema.virtual('needsReorder').get(function() {
+//   return this.stockQuantity <= this.reorderPoint;
+// });
+
+// // Virtual for current depreciation (if fixed asset)
+// ItemSchema.virtual('accumulatedDepreciation').get(function() {
+//   if (!this.isFixedAsset || !this.assetDetails?.acquisitionDate) return 0;
+  
+//   const years = (Date.now() - this.assetDetails.acquisitionDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+//   const annualDepreciation = (this.assetDetails.acquisitionCost - (this.assetDetails.salvageValue || 0)) / 
+//                              (this.assetDetails.usefulLifeYears || 1);
+  
+//   return Math.min(annualDepreciation * years, this.assetDetails.acquisitionCost - (this.assetDetails.salvageValue || 0));
+// });
+
+// // Method to update stock quantity
+// ItemSchema.methods.updateStock = function(quantity, type = 'add') {
+//   if (type === 'add') {
+//     this.stockQuantity += quantity;
+//   } else if (type === 'subtract') {
+//     this.stockQuantity = Math.max(0, this.stockQuantity - quantity);
+//   } else if (type === 'set') {
+//     this.stockQuantity = quantity;
+//   }
+//   this.lastStockUpdate = new Date();
+//   return this.save();
+// };
+
+// // Method to calculate current book value
+// ItemSchema.methods.calculateBookValue = function() {
+//   if (!this.isFixedAsset || !this.assetDetails?.acquisitionCost) return 0;
+//   return this.assetDetails.acquisitionCost - this.accumulatedDepreciation;
+// };
+
+// module.exports = mongoose.model('Item', ItemSchema);
+
+
+
+
+
+
+
+
+
 const mongoose = require('mongoose');
 
 const ItemSchema = new mongoose.Schema({

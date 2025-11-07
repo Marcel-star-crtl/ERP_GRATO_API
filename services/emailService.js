@@ -2282,444 +2282,870 @@ const sendCashRequestEmail = {
 };
 
 
+// /**
+//  * Incident Report Email Templates
+//  */
+//  const sendIncidentReportEmail = {
+//   /**
+//    * Notify supervisor of new incident report with review link
+//    * @param {string} supervisorEmail 
+//    * @param {string} employeeName 
+//    * @param {string} incidentType
+//    * @param {string} severity
+//    * @param {string} reportId 
+//    * @param {boolean} hasInjuries
+//    * @param {string} location
+//    * @returns {Promise<Object>} 
+//    */
+//   newIncidentToSupervisor: async (supervisorEmail, employeeName, incidentType, severity, reportId, hasInjuries = false, location = '') => {
+//     try {
+//       // Validate inputs
+//       if (!supervisorEmail || !employeeName || !incidentType || !reportId) {
+//         throw new Error('Missing required parameters for supervisor email');
+//       }
+
+//       const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+//       const reviewLink = `${clientUrl}/supervisor/incident-reports/${reportId}`;
+
+//       const urgencyLevel = severity === 'critical' || severity === 'high' || hasInjuries ? 'URGENT' : 'IMPORTANT';
+//       const severityColor = {
+//         'critical': '#dc3545',
+//         'high': '#fd7e14', 
+//         'medium': '#ffc107',
+//         'low': '#28a745'
+//       }[severity] || '#ffc107';
+
+//       const subject = `${urgencyLevel}: Incident Report Review Required - ${employeeName}`;
+//       const text = `${urgencyLevel} - Incident Report Review Needed\n\nEmployee: ${employeeName}\nType: ${incidentType}\nSeverity: ${severity}\nInjuries: ${hasInjuries ? 'YES' : 'No'}\nLocation: ${location}\nReport ID: INC-${reportId.toString().slice(-6).toUpperCase()}\n\nPlease review immediately: ${reviewLink}\n\nBest regards,\nSafety Management System`;
+
+//       const html = `
+//         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+//           <div style="background-color: ${hasInjuries || severity === 'critical' ? '#f8d7da' : '#fff3cd'}; padding: 20px; border-radius: 8px; border-left: 4px solid ${hasInjuries || severity === 'critical' ? '#dc3545' : '#ffc107'};">
+//             <h2 style="color: ${hasInjuries || severity === 'critical' ? '#721c24' : '#856404'}; margin-top: 0;">
+//               ${hasInjuries ? '🚨' : '⚠️'} ${urgencyLevel}: Incident Report Review Required
+//             </h2>
+//             <p style="color: #666; margin: 5px 0 0 0;">
+//               An incident has been reported and requires your immediate supervisory review.
+//             </p>
+//           </div>
+
+//           <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+//             <table style="width: 100%; border-collapse: collapse;">
+//               <tr>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Employee:</strong></td>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${employeeName}</td>
+//               </tr>
+//               <tr>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Incident Type:</strong></td>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${incidentType.charAt(0).toUpperCase() + incidentType.slice(1).replace('_', ' ')}</td>
+//               </tr>
+//               <tr>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Severity Level:</strong></td>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">
+//                   <span style="color: ${severityColor}; font-weight: bold; text-transform: uppercase;">${severity}</span>
+//                 </td>
+//               </tr>
+//               <tr>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Report ID:</strong></td>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">INC-${reportId.toString().slice(-6).toUpperCase()}</td>
+//               </tr>
+//               ${location ? `
+//               <tr>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Location:</strong></td>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${location}</td>
+//               </tr>
+//               ` : ''}
+//               <tr>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Injuries Reported:</strong></td>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">
+//                   <span style="color: ${hasInjuries ? '#dc3545' : '#28a745'}; font-weight: bold;">
+//                     ${hasInjuries ? 'YES - INJURIES REPORTED' : 'No injuries reported'}
+//                   </span>
+//                 </td>
+//               </tr>
+//               <tr>
+//                 <td style="padding: 8px 0;"><strong>Status:</strong></td>
+//                 <td style="padding: 8px 0;">
+//                   <span style="background-color: #ffc107; color: #333; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
+//                     AWAITING YOUR REVIEW
+//                   </span>
+//                 </td>
+//               </tr>
+//             </table>
+//           </div>
+
+//           <div style="background-color: ${hasInjuries ? '#f8d7da' : '#fff3cd'}; border-left: 4px solid ${hasInjuries ? '#dc3545' : '#ffc107'}; padding: 15px; margin: 20px 0;">
+//             <h4 style="margin: 0 0 10px 0; color: ${hasInjuries ? '#721c24' : '#856404'};">Supervisor Action Required</h4>
+//             <p style="margin: 0; color: ${hasInjuries ? '#721c24' : '#856404'};">
+//               This incident requires your immediate review and decision. Please log into the system to process this report promptly.
+//             </p>
+//           </div>
+
+//           <div style="text-align: center; margin: 30px 0;">
+//             <a href="${reviewLink}" 
+//                style="display: inline-block; background-color: ${hasInjuries || severity === 'critical' ? '#dc3545' : '#fd7e14'}; color: white; 
+//                       padding: 15px 30px; text-decoration: none; border-radius: 8px;
+//                       font-weight: bold; font-size: 16px; transition: background-color 0.3s;">
+//               ${hasInjuries ? '🚨 URGENT: Review Incident' : '⚠️ Review Incident Report'}
+//             </a>
+//           </div>
+
+//           <div style="background-color: #e9ecef; padding: 15px; border-radius: 6px; margin-top: 20px;">
+//             <p style="color: #6c757d; margin: 0; font-size: 14px;">
+//               <strong>Direct Link:</strong> <a href="${reviewLink}" style="color: #007bff; text-decoration: none;">${reviewLink}</a>
+//             </p>
+//           </div>
+
+//           <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+//           <p style="color: #888; font-size: 12px; margin-bottom: 0; text-align: center;">
+//             This is an automated message from the Safety Management System. Please do not reply to this email.
+//           </p>
+//         </div>
+//       `;
+
+//       return await sendEmail({
+//         to: supervisorEmail,
+//         subject,
+//         text,
+//         html
+//       });
+
+//     } catch (error) {
+//       console.error('❌ Error in newIncidentToSupervisor:', error);
+//       return {
+//         success: false,
+//         error: error.message
+//       };
+//     }
+//   },
+
+//   /**
+//    * Notify HR team when supervisor approves/escalates
+//    * @param {Array|string} hrEmails 
+//    * @param {string} employeeName 
+//    * @param {string} incidentType
+//    * @param {string} severity
+//    * @param {string} reportId 
+//    * @param {string} supervisorName
+//    * @param {string} decision - 'approved', 'escalated'
+//    * @param {string} [comments]
+//    * @returns {Promise<Object>} 
+//    */
+//   supervisorDecisionToHR: async (hrEmails, employeeName, incidentType, severity, reportId, supervisorName, decision, comments = '') => {
+//     try {
+//       const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+//       const reviewLink = `${clientUrl}/hr/incident-reports/${reportId}`;
+
+//       const isEscalated = decision === 'escalated';
+//       const subject = `Incident Report ${isEscalated ? 'Escalated' : 'Ready'} for HR Review - ${employeeName}`;
+//       const text = `Incident Report ${isEscalated ? 'Escalated' : 'Approved'} by Supervisor\n\nEmployee: ${employeeName}\nType: ${incidentType}\nSeverity: ${severity}\nSupervisor: ${supervisorName}\nDecision: ${decision}\nReport ID: INC-${reportId.toString().slice(-6).toUpperCase()}\n${comments ? `Comments: ${comments}\n` : ''}\nReview link: ${reviewLink}\n\nBest regards,\nSafety Management System`;
+
+//       const html = `
+//         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+//           <div style="background-color: ${isEscalated ? '#f8d7da' : '#d1ecf1'}; padding: 20px; border-radius: 8px; border-left: 4px solid ${isEscalated ? '#dc3545' : '#17a2b8'};">
+//             <h2 style="color: #333; margin-top: 0;">
+//               📋 Incident Report ${isEscalated ? 'Escalated' : 'Ready'} for HR Review
+//             </h2>
+//             <p style="color: #555; line-height: 1.6;">
+//               Dear HR Team,
+//             </p>
+//             <p style="color: #555; line-height: 1.6;">
+//               An incident report has been ${isEscalated ? 'escalated' : 'approved'} by the supervisor and ${isEscalated ? 'requires immediate HR attention' : 'is ready for your review'}.
+//             </p>
+//           </div>
+
+//           <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+//             <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid ${isEscalated ? '#dc3545' : '#17a2b8'}; padding-bottom: 10px;">
+//               Incident Details
+//             </h3>
+//             <table style="width: 100%; border-collapse: collapse;">
+//               <tr>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Employee:</strong></td>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${employeeName}</td>
+//               </tr>
+//               <tr>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Incident Type:</strong></td>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${incidentType.charAt(0).toUpperCase() + incidentType.slice(1).replace('_', ' ')}</td>
+//               </tr>
+//               <tr>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Severity:</strong></td>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">
+//                   <span style="color: ${severity === 'critical' ? '#dc3545' : severity === 'high' ? '#fd7e14' : severity === 'medium' ? '#ffc107' : '#28a745'}; font-weight: bold;">
+//                     ${severity.toUpperCase()}
+//                   </span>
+//                 </td>
+//               </tr>
+//               <tr>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Report ID:</strong></td>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">INC-${reportId.toString().slice(-6).toUpperCase()}</td>
+//               </tr>
+//               <tr>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Supervisor:</strong></td>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${supervisorName}</td>
+//               </tr>
+//               <tr>
+//                 <td style="padding: 8px 0;"><strong>Status:</strong></td>
+//                 <td style="padding: 8px 0;">
+//                   <span style="background-color: ${isEscalated ? '#dc3545' : '#28a745'}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
+//                     ${isEscalated ? '🚨 ESCALATED' : '✅ SUPERVISOR APPROVED'}
+//                   </span>
+//                 </td>
+//               </tr>
+//             </table>
+//           </div>
+
+//           ${comments ? `
+//           <div style="background-color: #f8f9fa; border-left: 4px solid #6c757d; padding: 15px; margin: 20px 0;">
+//             <h4 style="margin: 0 0 10px 0; color: #495057;">Supervisor Comments</h4>
+//             <p style="margin: 0; color: #495057; font-style: italic;">${comments}</p>
+//           </div>
+//           ` : ''}
+
+//           <div style="text-align: center; margin: 30px 0;">
+//             <a href="${reviewLink}" 
+//                style="display: inline-block; background-color: ${isEscalated ? '#dc3545' : '#17a2b8'}; color: white; 
+//                       padding: 15px 30px; text-decoration: none; border-radius: 8px;
+//                       font-weight: bold; font-size: 16px; transition: background-color 0.3s;">
+//               ${isEscalated ? '🚨 Review Escalated Incident' : '📊 Review & Process Report'}
+//             </a>
+//           </div>
+
+//           <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+//           <p style="color: #888; font-size: 12px; margin-bottom: 0; text-align: center;">
+//             This is an automated message from the Safety Management System. Please do not reply to this email.
+//           </p>
+//         </div>
+//       `;
+
+//       return await sendEmail({
+//         to: hrEmails,
+//         subject,
+//         text,
+//         html
+//       });
+
+//     } catch (error) {
+//       console.error('❌ Error in supervisorDecisionToHR:', error);
+//       return {
+//         success: false,
+//         error: error.message
+//       };
+//     }
+//   },
+
+//   /**
+//    * Notify employee of report status update
+//    * @param {string} employeeEmail 
+//    * @param {string} reportNumber
+//    * @param {string} status
+//    * @param {string} reviewedBy
+//    * @param {string} [comments]
+//    * @returns {Promise<Object>}
+//    */
+//   statusUpdateToEmployee: async (employeeEmail, reportNumber, status, reviewedBy, comments = '') => {
+//     try {
+//       const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+//       const trackingLink = `${clientUrl}/employee/incident-reports`;
+
+//       const statusMap = {
+//         'approved': { text: 'Approved', color: '#28a745', icon: '✅' },
+//         'rejected': { text: 'Rejected', color: '#dc3545', icon: '❌' },
+//         'escalated': { text: 'Escalated for Investigation', color: '#fd7e14', icon: '🔍' },
+//         'resolved': { text: 'Resolved', color: '#28a745', icon: '✅' },
+//         'under_investigation': { text: 'Under Investigation', color: '#17a2b8', icon: '🔍' }
+//       };
+
+//       const statusInfo = statusMap[status] || { text: status, color: '#6c757d', icon: '📋' };
+
+//       const subject = `Incident Report Status Update - ${reportNumber}`;
+//       const text = `Incident Report Status Update\n\nYour incident report ${reportNumber} has been ${statusInfo.text.toLowerCase()}.\n\nReviewed by: ${reviewedBy}\n${comments ? `Comments: ${comments}\n` : ''}\nTrack your reports: ${trackingLink}\n\nBest regards,\nSafety Management Team`;
+
+//       const html = `
+//         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+//           <div style="background-color: ${status === 'rejected' ? '#f8d7da' : '#e6f7ff'}; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+//             <h2 style="color: ${status === 'rejected' ? '#721c24' : '#1890ff'}; margin: 0;">
+//               ${statusInfo.icon} Incident Report Status Update
+//             </h2>
+//             <p style="color: #666; margin: 5px 0 0 0;">Your incident report status has been updated.</p>
+//           </div>
+
+//           <div style="background-color: white; border: 1px solid #e8e8e8; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+//             <h3 style="color: #333; margin-top: 0;">Report Status</h3>
+//             <table style="width: 100%; border-collapse: collapse;">
+//               <tr>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Report Number:</strong></td>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${reportNumber}</td>
+//               </tr>
+//               <tr>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>New Status:</strong></td>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
+//                   <span style="color: ${statusInfo.color}; font-weight: bold;">${statusInfo.text}</span>
+//                 </td>
+//               </tr>
+//               <tr>
+//                 <td style="padding: 8px 0;"><strong>Reviewed by:</strong></td>
+//                 <td style="padding: 8px 0;">${reviewedBy}</td>
+//               </tr>
+//             </table>
+//           </div>
+
+//           ${comments ? `
+//           <div style="background-color: #f0f8ff; border-left: 4px solid #1890ff; padding: 15px; margin: 20px 0;">
+//             <h4 style="margin: 0 0 10px 0; color: #1890ff;">Comments</h4>
+//             <p style="margin: 0; color: #333;">${comments}</p>
+//           </div>
+//           ` : ''}
+
+//           <div style="text-align: center; margin: 30px 0;">
+//             <a href="${trackingLink}" 
+//                style="background-color: #1890ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+//               Track Your Reports
+//             </a>
+//           </div>
+
+//           <div style="border-top: 1px solid #e8e8e8; padding-top: 20px; color: #666; font-size: 14px;">
+//             <p style="margin: 0;">Thank you for reporting this incident and helping us maintain workplace safety.</p>
+//           </div>
+//         </div>
+//       `;
+
+//       return await sendEmail({
+//         to: employeeEmail,
+//         subject,
+//         text,
+//         html
+//       });
+
+//     } catch (error) {
+//       console.error('❌ Error in statusUpdateToEmployee:', error);
+//       return {
+//         success: false,
+//         error: error.message
+//       };
+//     }
+//   },
+
+//   /**
+//    * Notify about investigation assignment
+//    * @param {string} investigatorEmail 
+//    * @param {string} reportNumber
+//    * @param {string} employeeName
+//    * @param {string} incidentType
+//    * @param {string} severity
+//    * @param {string} assignedBy
+//    * @param {string} reportId
+//    * @returns {Promise<Object>}
+//    */
+//   investigationAssignment: async (investigatorEmail, reportNumber, employeeName, incidentType, severity, assignedBy, reportId) => {
+//     try {
+//       const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+//       const investigationLink = `${clientUrl}/hr/incident-reports/${reportId}`;
+
+//       const subject = `Investigation Assignment - ${reportNumber}`;
+//       const text = `Investigation Assignment\n\nYou have been assigned to investigate incident report ${reportNumber}.\n\nEmployee: ${employeeName}\nType: ${incidentType}\nSeverity: ${severity}\nAssigned by: ${assignedBy}\n\nAccess investigation: ${investigationLink}\n\nBest regards,\nHR Safety Team`;
+
+//       const html = `
+//         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+//           <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
+//             <h2 style="color: #856404; margin: 0;">🔍 Investigation Assignment</h2>
+//             <p style="color: #666; margin: 5px 0 0 0;">You have been assigned to investigate an incident report.</p>
+//           </div>
+
+//           <div style="background-color: white; border: 1px solid #e8e8e8; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+//             <h3 style="color: #333; margin-top: 0;">Investigation Details</h3>
+//             <table style="width: 100%; border-collapse: collapse;">
+//               <tr>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Report Number:</strong></td>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${reportNumber}</td>
+//               </tr>
+//               <tr>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Employee:</strong></td>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${employeeName}</td>
+//               </tr>
+//               <tr>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Incident Type:</strong></td>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${incidentType.charAt(0).toUpperCase() + incidentType.slice(1).replace('_', ' ')}</td>
+//               </tr>
+//               <tr>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Severity:</strong></td>
+//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
+//                   <span style="color: ${severity === 'critical' ? '#dc3545' : severity === 'high' ? '#fd7e14' : '#ffc107'}; font-weight: bold;">
+//                     ${severity.toUpperCase()}
+//                   </span>
+//                 </td>
+//               </tr>
+//               <tr>
+//                 <td style="padding: 8px 0;"><strong>Assigned by:</strong></td>
+//                 <td style="padding: 8px 0;">${assignedBy}</td>
+//               </tr>
+//             </table>
+//           </div>
+
+//           <div style="background-color: #d1ecf1; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #17a2b8;">
+//             <h4 style="color: #0c5460; margin-top: 0;">Investigation Requirements:</h4>
+//             <ul style="color: #0c5460; margin: 0; padding-left: 20px;">
+//               <li>Review all incident details and evidence</li>
+//               <li>Interview involved parties and witnesses</li>
+//               <li>Document findings and recommendations</li>
+//               <li>Submit investigation report to HR</li>
+//             </ul>
+//           </div>
+
+//           <div style="text-align: center; margin: 30px 0;">
+//             <a href="${investigationLink}" 
+//                style="background-color: #17a2b8; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: bold;">
+//               🔍 Begin Investigation
+//             </a>
+//           </div>
+
+//           <div style="border-top: 1px solid #e8e8e8; padding-top: 20px; color: #666; font-size: 14px;">
+//             <p style="margin: 0;">Please begin this investigation promptly to ensure workplace safety.</p>
+//           </div>
+//         </div>
+//       `;
+
+//       return await sendEmail({
+//         to: investigatorEmail,
+//         subject,
+//         text,
+//         html
+//       });
+
+//     } catch (error) {
+//       console.error('❌ Error in investigationAssignment:', error);
+//       return {
+//         success: false,
+//         error: error.message
+//       };
+//     }
+//   }
+// };
+
+
 /**
- * Incident Report Email Templates
+ * HSE Incident Report Email Templates (No Approval Workflow)
  */
- const sendIncidentReportEmail = {
+const sendIncidentReportEmail = {
   /**
-   * Notify supervisor of new incident report with review link
-   * @param {string} supervisorEmail 
-   * @param {string} employeeName 
-   * @param {string} incidentType
-   * @param {string} severity
-   * @param {string} reportId 
-   * @param {boolean} hasInjuries
-   * @param {string} location
-   * @returns {Promise<Object>} 
+   * Notify employee of status update from HSE
    */
-  newIncidentToSupervisor: async (supervisorEmail, employeeName, incidentType, severity, reportId, hasInjuries = false, location = '') => {
+  hseStatusUpdate: async (employeeEmail, reportNumber, status, message, hseCoordinator, additionalInfo = '') => {
     try {
-      // Validate inputs
-      if (!supervisorEmail || !employeeName || !incidentType || !reportId) {
-        throw new Error('Missing required parameters for supervisor email');
-      }
-
-      const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-      const reviewLink = `${clientUrl}/supervisor/incident-reports/${reportId}`;
-
-      const urgencyLevel = severity === 'critical' || severity === 'high' || hasInjuries ? 'URGENT' : 'IMPORTANT';
-      const severityColor = {
-        'critical': '#dc3545',
-        'high': '#fd7e14', 
-        'medium': '#ffc107',
-        'low': '#28a745'
-      }[severity] || '#ffc107';
-
-      const subject = `${urgencyLevel}: Incident Report Review Required - ${employeeName}`;
-      const text = `${urgencyLevel} - Incident Report Review Needed\n\nEmployee: ${employeeName}\nType: ${incidentType}\nSeverity: ${severity}\nInjuries: ${hasInjuries ? 'YES' : 'No'}\nLocation: ${location}\nReport ID: INC-${reportId.toString().slice(-6).toUpperCase()}\n\nPlease review immediately: ${reviewLink}\n\nBest regards,\nSafety Management System`;
-
-      const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: ${hasInjuries || severity === 'critical' ? '#f8d7da' : '#fff3cd'}; padding: 20px; border-radius: 8px; border-left: 4px solid ${hasInjuries || severity === 'critical' ? '#dc3545' : '#ffc107'};">
-            <h2 style="color: ${hasInjuries || severity === 'critical' ? '#721c24' : '#856404'}; margin-top: 0;">
-              ${hasInjuries ? '🚨' : '⚠️'} ${urgencyLevel}: Incident Report Review Required
-            </h2>
-            <p style="color: #666; margin: 5px 0 0 0;">
-              An incident has been reported and requires your immediate supervisory review.
-            </p>
-          </div>
-
-          <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-            <table style="width: 100%; border-collapse: collapse;">
-              <tr>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Employee:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${employeeName}</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Incident Type:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${incidentType.charAt(0).toUpperCase() + incidentType.slice(1).replace('_', ' ')}</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Severity Level:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">
-                  <span style="color: ${severityColor}; font-weight: bold; text-transform: uppercase;">${severity}</span>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Report ID:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">INC-${reportId.toString().slice(-6).toUpperCase()}</td>
-              </tr>
-              ${location ? `
-              <tr>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Location:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${location}</td>
-              </tr>
-              ` : ''}
-              <tr>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Injuries Reported:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">
-                  <span style="color: ${hasInjuries ? '#dc3545' : '#28a745'}; font-weight: bold;">
-                    ${hasInjuries ? 'YES - INJURIES REPORTED' : 'No injuries reported'}
-                  </span>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0;"><strong>Status:</strong></td>
-                <td style="padding: 8px 0;">
-                  <span style="background-color: #ffc107; color: #333; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
-                    AWAITING YOUR REVIEW
-                  </span>
-                </td>
-              </tr>
-            </table>
-          </div>
-
-          <div style="background-color: ${hasInjuries ? '#f8d7da' : '#fff3cd'}; border-left: 4px solid ${hasInjuries ? '#dc3545' : '#ffc107'}; padding: 15px; margin: 20px 0;">
-            <h4 style="margin: 0 0 10px 0; color: ${hasInjuries ? '#721c24' : '#856404'};">Supervisor Action Required</h4>
-            <p style="margin: 0; color: ${hasInjuries ? '#721c24' : '#856404'};">
-              This incident requires your immediate review and decision. Please log into the system to process this report promptly.
-            </p>
-          </div>
-
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${reviewLink}" 
-               style="display: inline-block; background-color: ${hasInjuries || severity === 'critical' ? '#dc3545' : '#fd7e14'}; color: white; 
-                      padding: 15px 30px; text-decoration: none; border-radius: 8px;
-                      font-weight: bold; font-size: 16px; transition: background-color 0.3s;">
-              ${hasInjuries ? '🚨 URGENT: Review Incident' : '⚠️ Review Incident Report'}
-            </a>
-          </div>
-
-          <div style="background-color: #e9ecef; padding: 15px; border-radius: 6px; margin-top: 20px;">
-            <p style="color: #6c757d; margin: 0; font-size: 14px;">
-              <strong>Direct Link:</strong> <a href="${reviewLink}" style="color: #007bff; text-decoration: none;">${reviewLink}</a>
-            </p>
-          </div>
-
-          <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-          <p style="color: #888; font-size: 12px; margin-bottom: 0; text-align: center;">
-            This is an automated message from the Safety Management System. Please do not reply to this email.
-          </p>
-        </div>
-      `;
-
-      return await sendEmail({
-        to: supervisorEmail,
-        subject,
-        text,
-        html
-      });
-
-    } catch (error) {
-      console.error('❌ Error in newIncidentToSupervisor:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  },
-
-  /**
-   * Notify HR team when supervisor approves/escalates
-   * @param {Array|string} hrEmails 
-   * @param {string} employeeName 
-   * @param {string} incidentType
-   * @param {string} severity
-   * @param {string} reportId 
-   * @param {string} supervisorName
-   * @param {string} decision - 'approved', 'escalated'
-   * @param {string} [comments]
-   * @returns {Promise<Object>} 
-   */
-  supervisorDecisionToHR: async (hrEmails, employeeName, incidentType, severity, reportId, supervisorName, decision, comments = '') => {
-    try {
-      const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-      const reviewLink = `${clientUrl}/hr/incident-reports/${reportId}`;
-
-      const isEscalated = decision === 'escalated';
-      const subject = `Incident Report ${isEscalated ? 'Escalated' : 'Ready'} for HR Review - ${employeeName}`;
-      const text = `Incident Report ${isEscalated ? 'Escalated' : 'Approved'} by Supervisor\n\nEmployee: ${employeeName}\nType: ${incidentType}\nSeverity: ${severity}\nSupervisor: ${supervisorName}\nDecision: ${decision}\nReport ID: INC-${reportId.toString().slice(-6).toUpperCase()}\n${comments ? `Comments: ${comments}\n` : ''}\nReview link: ${reviewLink}\n\nBest regards,\nSafety Management System`;
-
-      const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: ${isEscalated ? '#f8d7da' : '#d1ecf1'}; padding: 20px; border-radius: 8px; border-left: 4px solid ${isEscalated ? '#dc3545' : '#17a2b8'};">
-            <h2 style="color: #333; margin-top: 0;">
-              📋 Incident Report ${isEscalated ? 'Escalated' : 'Ready'} for HR Review
-            </h2>
-            <p style="color: #555; line-height: 1.6;">
-              Dear HR Team,
-            </p>
-            <p style="color: #555; line-height: 1.6;">
-              An incident report has been ${isEscalated ? 'escalated' : 'approved'} by the supervisor and ${isEscalated ? 'requires immediate HR attention' : 'is ready for your review'}.
-            </p>
-          </div>
-
-          <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-            <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid ${isEscalated ? '#dc3545' : '#17a2b8'}; padding-bottom: 10px;">
-              Incident Details
-            </h3>
-            <table style="width: 100%; border-collapse: collapse;">
-              <tr>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Employee:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${employeeName}</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Incident Type:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${incidentType.charAt(0).toUpperCase() + incidentType.slice(1).replace('_', ' ')}</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Severity:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">
-                  <span style="color: ${severity === 'critical' ? '#dc3545' : severity === 'high' ? '#fd7e14' : severity === 'medium' ? '#ffc107' : '#28a745'}; font-weight: bold;">
-                    ${severity.toUpperCase()}
-                  </span>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Report ID:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">INC-${reportId.toString().slice(-6).toUpperCase()}</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Supervisor:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${supervisorName}</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0;"><strong>Status:</strong></td>
-                <td style="padding: 8px 0;">
-                  <span style="background-color: ${isEscalated ? '#dc3545' : '#28a745'}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
-                    ${isEscalated ? '🚨 ESCALATED' : '✅ SUPERVISOR APPROVED'}
-                  </span>
-                </td>
-              </tr>
-            </table>
-          </div>
-
-          ${comments ? `
-          <div style="background-color: #f8f9fa; border-left: 4px solid #6c757d; padding: 15px; margin: 20px 0;">
-            <h4 style="margin: 0 0 10px 0; color: #495057;">Supervisor Comments</h4>
-            <p style="margin: 0; color: #495057; font-style: italic;">${comments}</p>
-          </div>
-          ` : ''}
-
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${reviewLink}" 
-               style="display: inline-block; background-color: ${isEscalated ? '#dc3545' : '#17a2b8'}; color: white; 
-                      padding: 15px 30px; text-decoration: none; border-radius: 8px;
-                      font-weight: bold; font-size: 16px; transition: background-color 0.3s;">
-              ${isEscalated ? '🚨 Review Escalated Incident' : '📊 Review & Process Report'}
-            </a>
-          </div>
-
-          <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-          <p style="color: #888; font-size: 12px; margin-bottom: 0; text-align: center;">
-            This is an automated message from the Safety Management System. Please do not reply to this email.
-          </p>
-        </div>
-      `;
-
-      return await sendEmail({
-        to: hrEmails,
-        subject,
-        text,
-        html
-      });
-
-    } catch (error) {
-      console.error('❌ Error in supervisorDecisionToHR:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  },
-
-  /**
-   * Notify employee of report status update
-   * @param {string} employeeEmail 
-   * @param {string} reportNumber
-   * @param {string} status
-   * @param {string} reviewedBy
-   * @param {string} [comments]
-   * @returns {Promise<Object>}
-   */
-  statusUpdateToEmployee: async (employeeEmail, reportNumber, status, reviewedBy, comments = '') => {
-    try {
-      const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-      const trackingLink = `${clientUrl}/employee/incident-reports`;
-
-      const statusMap = {
-        'approved': { text: 'Approved', color: '#28a745', icon: '✅' },
-        'rejected': { text: 'Rejected', color: '#dc3545', icon: '❌' },
-        'escalated': { text: 'Escalated for Investigation', color: '#fd7e14', icon: '🔍' },
-        'resolved': { text: 'Resolved', color: '#28a745', icon: '✅' },
-        'under_investigation': { text: 'Under Investigation', color: '#17a2b8', icon: '🔍' }
+      const statusColors = {
+        'submitted': '#52c41a',
+        'under_review': '#1890ff',
+        'under_investigation': '#fa8c16',
+        'action_required': '#faad14',
+        'resolved': '#52c41a',
+        'archived': '#8c8c8c'
       };
 
-      const statusInfo = statusMap[status] || { text: status, color: '#6c757d', icon: '📋' };
+      const statusIcons = {
+        'submitted': '✅',
+        'under_review': '🔍',
+        'under_investigation': '🔬',
+        'action_required': '⚠️',
+        'resolved': '✅',
+        'archived': '📁'
+      };
 
       const subject = `Incident Report Status Update - ${reportNumber}`;
-      const text = `Incident Report Status Update\n\nYour incident report ${reportNumber} has been ${statusInfo.text.toLowerCase()}.\n\nReviewed by: ${reviewedBy}\n${comments ? `Comments: ${comments}\n` : ''}\nTrack your reports: ${trackingLink}\n\nBest regards,\nSafety Management Team`;
-
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: ${status === 'rejected' ? '#f8d7da' : '#e6f7ff'}; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-            <h2 style="color: ${status === 'rejected' ? '#721c24' : '#1890ff'}; margin: 0;">
-              ${statusInfo.icon} Incident Report Status Update
+          <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px; border-left: 4px solid ${statusColors[status] || '#1890ff'};">
+            <h2 style="color: #1890ff; margin-top: 0;">
+              ${statusIcons[status] || '📋'} Incident Report Status Update
             </h2>
-            <p style="color: #666; margin: 5px 0 0 0;">Your incident report status has been updated.</p>
+            <p style="color: #666;">Your incident report has been updated by HSE.</p>
           </div>
 
-          <div style="background-color: white; border: 1px solid #e8e8e8; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-            <h3 style="color: #333; margin-top: 0;">Report Status</h3>
+          <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #ddd;">
+            <h3 style="color: #333; margin-top: 0;">Update Details</h3>
             <table style="width: 100%; border-collapse: collapse;">
               <tr>
-                <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Report Number:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${reportNumber}</td>
+                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Report Number:</strong></td>
+                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${reportNumber}</td>
               </tr>
               <tr>
-                <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>New Status:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
-                  <span style="color: ${statusInfo.color}; font-weight: bold;">${statusInfo.text}</span>
+                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>New Status:</strong></td>
+                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">
+                  <span style="color: ${statusColors[status] || '#1890ff'}; font-weight: bold; text-transform: uppercase;">
+                    ${status.replace('_', ' ')}
+                  </span>
                 </td>
               </tr>
               <tr>
-                <td style="padding: 8px 0;"><strong>Reviewed by:</strong></td>
-                <td style="padding: 8px 0;">${reviewedBy}</td>
+                <td style="padding: 8px 0;"><strong>Updated By:</strong></td>
+                <td style="padding: 8px 0;">${hseCoordinator}</td>
               </tr>
             </table>
           </div>
 
-          ${comments ? `
           <div style="background-color: #f0f8ff; border-left: 4px solid #1890ff; padding: 15px; margin: 20px 0;">
-            <h4 style="margin: 0 0 10px 0; color: #1890ff;">Comments</h4>
-            <p style="margin: 0; color: #333;">${comments}</p>
+            <h4 style="margin-top: 0; color: #1890ff;">Message from HSE:</h4>
+            <p style="margin: 0; color: #333;">${message}</p>
+          </div>
+
+          ${additionalInfo ? `
+          <div style="background-color: #fff7e6; border-left: 4px solid #faad14; padding: 15px; margin: 20px 0;">
+            <h4 style="margin-top: 0; color: #d48806;">Additional Information:</h4>
+            <p style="margin: 0; color: #333;">${additionalInfo}</p>
           </div>
           ` : ''}
 
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${trackingLink}" 
-               style="background-color: #1890ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-              Track Your Reports
+            <a href="${process.env.CLIENT_URL || 'http://localhost:3000'}/employee/incident-reports" 
+               style="display: inline-block; background-color: #1890ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
+              View Your Reports
             </a>
           </div>
 
-          <div style="border-top: 1px solid #e8e8e8; padding-top: 20px; color: #666; font-size: 14px;">
-            <p style="margin: 0;">Thank you for reporting this incident and helping us maintain workplace safety.</p>
-          </div>
+          <p style="color: #888; font-size: 12px; text-align: center;">
+            This is an automated message from the Safety Management System.
+          </p>
         </div>
       `;
 
       return await sendEmail({
         to: employeeEmail,
         subject,
-        text,
         html
       });
 
     } catch (error) {
-      console.error('❌ Error in statusUpdateToEmployee:', error);
-      return {
-        success: false,
-        error: error.message
-      };
+      console.error('❌ Error in hseStatusUpdate:', error);
+      return { success: false, error: error.message };
     }
   },
 
   /**
-   * Notify about investigation assignment
-   * @param {string} investigatorEmail 
-   * @param {string} reportNumber
-   * @param {string} employeeName
-   * @param {string} incidentType
-   * @param {string} severity
-   * @param {string} assignedBy
-   * @param {string} reportId
-   * @returns {Promise<Object>}
+   * Notify employee that investigation has started
    */
-  investigationAssignment: async (investigatorEmail, reportNumber, employeeName, incidentType, severity, assignedBy, reportId) => {
+  investigationStarted: async (employeeEmail, reportNumber, incidentType, hseCoordinator, estimatedDuration) => {
     try {
-      const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-      const investigationLink = `${clientUrl}/hr/incident-reports/${reportId}`;
-
-      const subject = `Investigation Assignment - ${reportNumber}`;
-      const text = `Investigation Assignment\n\nYou have been assigned to investigate incident report ${reportNumber}.\n\nEmployee: ${employeeName}\nType: ${incidentType}\nSeverity: ${severity}\nAssigned by: ${assignedBy}\n\nAccess investigation: ${investigationLink}\n\nBest regards,\nHR Safety Team`;
-
+      const subject = `Investigation Started - ${reportNumber}`;
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
-            <h2 style="color: #856404; margin: 0;">🔍 Investigation Assignment</h2>
-            <p style="color: #666; margin: 5px 0 0 0;">You have been assigned to investigate an incident report.</p>
+          <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;">
+            <h2 style="color: #856404; margin-top: 0;">🔬 Investigation Started</h2>
+            <p style="color: #666;">HSE has initiated an investigation into your reported incident.</p>
           </div>
 
-          <div style="background-color: white; border: 1px solid #e8e8e8; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-            <h3 style="color: #333; margin-top: 0;">Investigation Details</h3>
-            <table style="width: 100%; border-collapse: collapse;">
-              <tr>
-                <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Report Number:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${reportNumber}</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Employee:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${employeeName}</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Incident Type:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${incidentType.charAt(0).toUpperCase() + incidentType.slice(1).replace('_', ' ')}</td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Severity:</strong></td>
-                <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
-                  <span style="color: ${severity === 'critical' ? '#dc3545' : severity === 'high' ? '#fd7e14' : '#ffc107'}; font-weight: bold;">
-                    ${severity.toUpperCase()}
-                  </span>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding: 8px 0;"><strong>Assigned by:</strong></td>
-                <td style="padding: 8px 0;">${assignedBy}</td>
-              </tr>
-            </table>
-          </div>
-
-          <div style="background-color: #d1ecf1; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #17a2b8;">
-            <h4 style="color: #0c5460; margin-top: 0;">Investigation Requirements:</h4>
-            <ul style="color: #0c5460; margin: 0; padding-left: 20px;">
-              <li>Review all incident details and evidence</li>
-              <li>Interview involved parties and witnesses</li>
-              <li>Document findings and recommendations</li>
-              <li>Submit investigation report to HR</li>
+          <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #ddd;">
+            <h3 style="color: #333;">Investigation Details</h3>
+            <ul style="list-style: none; padding: 0;">
+              <li style="padding: 5px 0;"><strong>Report Number:</strong> ${reportNumber}</li>
+              <li style="padding: 5px 0;"><strong>Incident Type:</strong> ${incidentType}</li>
+              <li style="padding: 5px 0;"><strong>Investigator:</strong> ${hseCoordinator}</li>
+              ${estimatedDuration ? `<li style="padding: 5px 0;"><strong>Estimated Duration:</strong> ${estimatedDuration}</li>` : ''}
             </ul>
           </div>
 
+          <div style="background-color: #e7f3ff; border-left: 4px solid #2196F3; padding: 15px; margin: 20px 0;">
+            <h4 style="margin-top: 0; color: #1565c0;">What This Means:</h4>
+            <ul style="margin: 0; padding-left: 20px; color: #333;">
+              <li>HSE will conduct a thorough investigation</li>
+              <li>You may be contacted for additional information or interviews</li>
+              <li>Root causes and contributing factors will be identified</li>
+              <li>Recommendations will be made to prevent recurrence</li>
+              <li>You'll be notified when the investigation is complete</li>
+            </ul>
+          </div>
+
+          <div style="background-color: #fff7e6; border-left: 4px solid #faad14; padding: 15px; margin: 20px 0;">
+            <p style="margin: 0; color: #d48806;">
+              <strong>Please Note:</strong> Your cooperation during this investigation is important. 
+              Please be available to provide any additional information that may be requested.
+            </p>
+          </div>
+
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${investigationLink}" 
-               style="background-color: #17a2b8; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: bold;">
-              🔍 Begin Investigation
+            <a href="${process.env.CLIENT_URL || 'http://localhost:3000'}/employee/incident-reports" 
+               style="display: inline-block; background-color: #ffc107; color: #333; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+              View Report Status
             </a>
           </div>
 
-          <div style="border-top: 1px solid #e8e8e8; padding-top: 20px; color: #666; font-size: 14px;">
-            <p style="margin: 0;">Please begin this investigation promptly to ensure workplace safety.</p>
-          </div>
+          <p style="color: #888; font-size: 12px; text-align: center;">
+            This is an automated message from the Safety Management System.
+          </p>
         </div>
       `;
 
       return await sendEmail({
-        to: investigatorEmail,
+        to: employeeEmail,
         subject,
-        text,
         html
       });
 
     } catch (error) {
-      console.error('❌ Error in investigationAssignment:', error);
-      return {
-        success: false,
-        error: error.message
-      };
+      console.error('❌ Error in investigationStarted:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Notify employee that incident is resolved
+   */
+  incidentResolved: async (employeeEmail, reportNumber, resolutionSummary, correctiveActions, preventiveActions, lessonsLearned) => {
+    try {
+      const subject = `✅ Incident Report Resolved - ${reportNumber}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #d4edda; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
+            <h2 style="color: #155724; margin-top: 0;">✅ Incident Report Resolved</h2>
+            <p style="color: #666;">Your incident report has been successfully resolved by HSE.</p>
+          </div>
+
+          <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #ddd;">
+            <h3 style="color: #333; margin-top: 0;">Report Details</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Report Number:</strong></td>
+                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${reportNumber}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0;"><strong>Status:</strong></td>
+                <td style="padding: 8px 0;">
+                  <span style="background-color: #28a745; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
+                    RESOLVED
+                  </span>
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          ${resolutionSummary ? `
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 6px; margin: 20px 0;">
+            <h4 style="margin-top: 0; color: #333;">Resolution Summary:</h4>
+            <p style="color: #555; line-height: 1.6; margin-bottom: 0;">${resolutionSummary}</p>
+          </div>
+          ` : ''}
+
+          ${correctiveActions && correctiveActions.length > 0 ? `
+          <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">
+            <h4 style="margin-top: 0; color: #856404;">Corrective Actions Taken:</h4>
+            <ul style="margin: 0; padding-left: 20px; color: #856404;">
+              ${correctiveActions.map(action => `<li style="margin-bottom: 8px;">${action.action}</li>`).join('')}
+            </ul>
+          </div>
+          ` : ''}
+
+          ${preventiveActions && preventiveActions.length > 0 ? `
+          <div style="background-color: #e7f3ff; border-left: 4px solid #2196F3; padding: 15px; margin: 20px 0;">
+            <h4 style="margin-top: 0; color: #1565c0;">Preventive Measures Implemented:</h4>
+            <ul style="margin: 0; padding-left: 20px; color: #1565c0;">
+              ${preventiveActions.map(action => `<li style="margin-bottom: 8px;">${action.action}</li>`).join('')}
+            </ul>
+          </div>
+          ` : ''}
+
+          ${lessonsLearned ? `
+          <div style="background-color: #e8f5e9; border-left: 4px solid #4caf50; padding: 15px; margin: 20px 0;">
+            <h4 style="margin-top: 0; color: #2e7d32;">Lessons Learned:</h4>
+            <p style="margin: 0; color: #2e7d32;">${lessonsLearned}</p>
+          </div>
+          ` : ''}
+
+          <div style="background-color: #d1ecf1; border-left: 4px solid #17a2b8; padding: 15px; margin: 20px 0;">
+            <p style="margin: 0; color: #0c5460;">
+              <strong>Thank You:</strong> Your incident report has helped us improve workplace safety. 
+              We appreciate your contribution to maintaining a safe working environment.
+            </p>
+          </div>
+
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${process.env.CLIENT_URL || 'http://localhost:3000'}/employee/incident-reports" 
+               style="display: inline-block; background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
+              View Your Reports
+            </a>
+          </div>
+
+          <p style="color: #888; font-size: 12px; text-align: center;">
+            This is an automated message from the Safety Management System.
+          </p>
+        </div>
+      `;
+
+      return await sendEmail({
+        to: employeeEmail,
+        subject,
+        html
+      });
+
+    } catch (error) {
+      console.error('❌ Error in incidentResolved:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Notify about corrective action assignment
+   */
+  correctiveActionAssigned: async (assigneeEmail, reportNumber, action, dueDate, incidentSummary) => {
+    try {
+      const subject = `Corrective Action Assigned - ${reportNumber}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;">
+            <h2 style="color: #856404; margin-top: 0;">📋 Corrective Action Assigned</h2>
+            <p style="color: #666;">You have been assigned a corrective action for an incident report.</p>
+          </div>
+
+          <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #ddd;">
+            <h3 style="color: #333;">Action Details</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Report Number:</strong></td>
+                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${reportNumber}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Action Required:</strong></td>
+                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${action}</td>
+              </tr>
+              ${dueDate ? `
+              <tr>
+                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Due Date:</strong></td>
+                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">
+                  <span style="color: #dc3545; font-weight: bold;">${new Date(dueDate).toLocaleDateString()}</span>
+                </td>
+              </tr>
+              ` : ''}
+              <tr>
+                <td style="padding: 8px 0;"><strong>Status:</strong></td>
+                <td style="padding: 8px 0;">
+                  <span style="background-color: #ffc107; color: #333; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
+                    PENDING
+                  </span>
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          ${incidentSummary ? `
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 6px; margin: 20px 0;">
+            <h4 style="margin-top: 0; color: #333;">Incident Background:</h4>
+            <p style="color: #555; line-height: 1.6; margin-bottom: 0;">${incidentSummary}</p>
+          </div>
+          ` : ''}
+
+          <div style="background-color: #fff7e6; border-left: 4px solid #faad14; padding: 15px; margin: 20px 0;">
+            <h4 style="margin-top: 0; color: #d48806;">Important:</h4>
+            <p style="margin: 0; color: #d48806;">
+              Please complete this action by the due date and update the status in the system. 
+              Contact HSE if you need clarification or assistance.
+            </p>
+          </div>
+
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${process.env.CLIENT_URL || 'http://localhost:3000'}/hse/incident-reports/${reportNumber}" 
+               style="display: inline-block; background-color: #ffc107; color: #333; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+              View Action Details
+            </a>
+          </div>
+
+          <p style="color: #888; font-size: 12px; text-align: center;">
+            This is an automated message from the Safety Management System.
+          </p>
+        </div>
+      `;
+
+      return await sendEmail({
+        to: assigneeEmail,
+        subject,
+        html
+      });
+
+    } catch (error) {
+      console.error('❌ Error in correctiveActionAssigned:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Send investigation findings to stakeholders
+   */
+  investigationComplete: async (recipientEmails, reportNumber, findings, recommendations, hseCoordinator) => {
+    try {
+      const subject = `Investigation Complete - ${reportNumber}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #e7f3ff; padding: 20px; border-radius: 8px; border-left: 4px solid #2196F3;">
+            <h2 style="color: #1565c0; margin-top: 0;">🔬 Investigation Complete</h2>
+            <p style="color: #666;">HSE has completed the investigation for incident report ${reportNumber}.</p>
+          </div>
+
+          <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; border: 1px solid #ddd;">
+            <h3 style="color: #333;">Investigation Summary</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Report Number:</strong></td>
+                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${reportNumber}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Investigator:</strong></td>
+                <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${hseCoordinator}</td>
+              </tr>
+              <tr>
+                <td style="padding: 8px 0;"><strong>Status:</strong></td>
+                <td style="padding: 8px 0;">
+                  <span style="background-color: #28a745; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
+                    COMPLETE
+                  </span>
+                </td>
+              </tr>
+            </table>
+          </div>
+
+          ${findings ? `
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 6px; margin: 20px 0;">
+            <h4 style="margin-top: 0; color: #333;">Key Findings:</h4>
+            <p style="color: #555; line-height: 1.6; margin-bottom: 0;">${findings}</p>
+          </div>
+          ` : ''}
+
+          ${recommendations && recommendations.length > 0 ? `
+          <div style="background-color: #e7f3ff; border-left: 4px solid #2196F3; padding: 15px; margin: 20px 0;">
+            <h4 style="margin-top: 0; color: #1565c0;">Recommendations:</h4>
+            <ul style="margin: 0; padding-left: 20px; color: #1565c0;">
+              ${recommendations.map(rec => `<li style="margin-bottom: 8px;">${rec}</li>`).join('')}
+            </ul>
+          </div>
+          ` : ''}
+
+          <div style="background-color: #fff7e6; border-left: 4px solid #faad14; padding: 15px; margin: 20px 0;">
+            <p style="margin: 0; color: #d48806;">
+              <strong>Next Steps:</strong> Corrective and preventive actions will be assigned based on these findings. 
+              You may be contacted to implement specific measures.
+            </p>
+          </div>
+
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${process.env.CLIENT_URL || 'http://localhost:3000'}/hse/incident-reports/${reportNumber}" 
+               style="display: inline-block; background-color: #2196F3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
+              View Full Report
+            </a>
+          </div>
+
+          <p style="color: #888; font-size: 12px; text-align: center;">
+            This is an automated message from the Safety Management System.
+          </p>
+        </div>
+      `;
+
+      return await sendEmail({
+        to: recipientEmails,
+        subject,
+        html
+      });
+
+    } catch (error) {
+      console.error('❌ Error in investigationComplete:', error);
+      return { success: false, error: error.message };
     }
   }
 };
+
 
 /**
  * Employee Suggestion Email Templates
@@ -4014,398 +4440,6 @@ const sendITSupportEmail = {
 };
 
 
-// /**
-//  * Budget Code Management Email Templates
-//  * Add these to your existing emailService.js file
-//  */
-
-// const sendBudgetCodeEmail = {
-//   /**
-//    * Notify approver of new budget code requiring approval
-//    * @param {string} approverEmail - Approver's email
-//    * @param {string} approverName - Approver's name
-//    * @param {string} creatorName - Budget code creator's name
-//    * @param {Object} budgetCode - Budget code object
-//    * @param {string} approvalLevel - Current approval level (departmental_head, head_of_business, finance)
-//    * @returns {Promise<Object>}
-//    */
-//   newBudgetCodeForApproval: async (approverEmail, approverName, creatorName, budgetCode, approvalLevel) => {
-//     try {
-//       const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-//       const approvalLink = `${clientUrl}/admin/budget-codes/${budgetCode._id}/approve`;
-
-//       const levelLabels = {
-//         'departmental_head': 'Department Head Approval',
-//         'head_of_business': 'Executive Approval',
-//         'finance': 'Finance Activation'
-//       };
-
-//       const subject = `Budget Code Approval Required: ${budgetCode.code}`;
-//       const text = `Dear ${approverName},\n\nA new budget code has been submitted for your approval.\n\nCode: ${budgetCode.code}\nName: ${budgetCode.name}\nDepartment: ${budgetCode.department}\nAmount: XAF ${budgetCode.budget.toLocaleString()}\nType: ${budgetCode.budgetType}\nCreated by: ${creatorName}\nApproval Level: ${levelLabels[approvalLevel]}\n\nPlease review and approve: ${approvalLink}\n\nBest regards,\nBudget Management System`;
-
-//       const html = `
-//         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-//           <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #faad14;">
-//             <h2 style="color: #333; margin-top: 0;">💰 Budget Code Approval Required</h2>
-//             <p style="color: #555; line-height: 1.6;">
-//               Dear ${approverName},
-//             </p>
-//             <p style="color: #555; line-height: 1.6;">
-//               A new budget code has been submitted for your ${levelLabels[approvalLevel].toLowerCase()}.
-//             </p>
-
-//             <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-//               <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #faad14; padding-bottom: 10px;">Budget Code Details</h3>
-//               <table style="width: 100%; border-collapse: collapse;">
-//                 <tr>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Budget Code:</strong></td>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><code style="background-color: #f0f0f0; padding: 4px 8px; border-radius: 4px;">${budgetCode.code}</code></td>
-//                 </tr>
-//                 <tr>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Budget Name:</strong></td>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${budgetCode.name}</td>
-//                 </tr>
-//                 <tr>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Department:</strong></td>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${budgetCode.department}</td>
-//                 </tr>
-//                 <tr>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Budget Amount:</strong></td>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee; color: #52c41a; font-weight: bold; font-size: 16px;">XAF ${budgetCode.budget.toLocaleString()}</td>
-//                 </tr>
-//                 <tr>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Budget Type:</strong></td>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${budgetCode.budgetType.replace('_', ' ').toUpperCase()}</td>
-//                 </tr>
-//                 <tr>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Budget Period:</strong></td>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${budgetCode.budgetPeriod.toUpperCase()}</td>
-//                 </tr>
-//                 <tr>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Created By:</strong></td>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${creatorName}</td>
-//                 </tr>
-//                 <tr>
-//                   <td style="padding: 8px 0;"><strong>Approval Level:</strong></td>
-//                   <td style="padding: 8px 0;"><span style="background-color: #faad14; color: #333; padding: 4px 8px; border-radius: 4px; font-size: 12px;">${levelLabels[approvalLevel].toUpperCase()}</span></td>
-//                 </tr>
-//               </table>
-//             </div>
-
-//             ${budgetCode.description ? `
-//             <div style="background-color: #e6f7ff; border-left: 4px solid #1890ff; padding: 15px; margin: 20px 0;">
-//               <h4 style="color: #1890ff; margin-top: 0;">Budget Description:</h4>
-//               <p style="color: #333; margin-bottom: 0;">${budgetCode.description}</p>
-//             </div>
-//             ` : ''}
-
-//             ${budgetCode.justification ? `
-//             <div style="background-color: #f0f8ff; border-left: 4px solid #722ed1; padding: 15px; margin: 20px 0;">
-//               <h4 style="color: #722ed1; margin-top: 0;">Justification:</h4>
-//               <p style="color: #333; margin-bottom: 0;">${budgetCode.justification}</p>
-//             </div>
-//             ` : ''}
-
-//             <div style="background-color: #f6ffed; padding: 15px; border-radius: 6px; margin: 20px 0;">
-//               <h4 style="color: #52c41a; margin-top: 0;">Your Responsibilities:</h4>
-//               <ul style="color: #52c41a; margin-bottom: 0; padding-left: 20px;">
-//                 ${approvalLevel === 'departmental_head' ? `
-//                   <li>Validate department needs and resource alignment</li>
-//                   <li>Confirm budget justification</li>
-//                   <li>Verify budget allocation is appropriate</li>
-//                 ` : approvalLevel === 'head_of_business' ? `
-//                   <li>Assess strategic alignment with business goals</li>
-//                   <li>Review budget allocation across departments</li>
-//                   <li>Evaluate cross-departmental impact</li>
-//                   <li>Provide final business approval</li>
-//                 ` : `
-//                   <li>Create budget code in accounting system</li>
-//                   <li>Set up budget tracking and monitoring</li>
-//                   <li>Ensure financial compliance</li>
-//                   <li>Activate budget code for use</li>
-//                 `}
-//               </ul>
-//             </div>
-
-//             <div style="text-align: center; margin: 30px 0;">
-//               <a href="${approvalLink}" 
-//                  style="display: inline-block; background-color: #faad14; color: #333; 
-//                         padding: 15px 30px; text-decoration: none; border-radius: 8px;
-//                         font-weight: bold; font-size: 16px;">
-//                 📋 Review & ${approvalLevel === 'finance' ? 'Activate' : 'Approve'} Budget Code
-//               </a>
-//             </div>
-
-//             <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-//             <p style="color: #888; font-size: 12px; margin-bottom: 0; text-align: center;">
-//               This is an automated message from the Budget Management System. Please do not reply to this email.
-//             </p>
-//           </div>
-//         </div>
-//       `;
-
-//       return await sendEmail({
-//         to: approverEmail,
-//         subject,
-//         text,
-//         html
-//       });
-
-//     } catch (error) {
-//       console.error('Error in newBudgetCodeForApproval:', error);
-//       return {
-//         success: false,
-//         error: error.message
-//       };
-//     }
-//   },
-
-//   /**
-//    * Notify creator that budget code was approved at current level
-//    * @param {string} creatorEmail - Creator's email
-//    * @param {string} creatorName - Creator's name
-//    * @param {string} approverName - Approver's name
-//    * @param {Object} budgetCode - Budget code object
-//    * @param {string} currentLevel - Current approval level completed
-//    * @param {string} nextLevel - Next approval level (or null if final)
-//    * @returns {Promise<Object>}
-//    */
-//   budgetCodeLevelApproved: async (creatorEmail, creatorName, approverName, budgetCode, currentLevel, nextLevel) => {
-//     try {
-//       const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-//       const trackingLink = `${clientUrl}/employee/budget-codes/${budgetCode._id}`;
-
-//       const subject = nextLevel 
-//         ? `Budget Code Progress Update: ${budgetCode.code}` 
-//         : `Budget Code Activated: ${budgetCode.code}`;
-
-//       const text = nextLevel
-//         ? `Dear ${creatorName},\n\nYour budget code has been approved at ${currentLevel} and is progressing to ${nextLevel}.\n\nCode: ${budgetCode.code}\nName: ${budgetCode.name}\nAmount: XAF ${budgetCode.budget.toLocaleString()}\nApproved by: ${approverName}\n\nTrack progress: ${trackingLink}\n\nBest regards,\nBudget Management System`
-//         : `Dear ${creatorName},\n\nCongratulations! Your budget code has been fully approved and is now active.\n\nCode: ${budgetCode.code}\nName: ${budgetCode.name}\nAmount: XAF ${budgetCode.budget.toLocaleString()}\nActivated by: ${approverName}\n\nYou can now use this budget code for requisitions: ${trackingLink}\n\nBest regards,\nBudget Management System`;
-
-//       const html = nextLevel ? `
-//         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-//           <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px; border-left: 4px solid #1890ff;">
-//             <h2 style="color: #1890ff; margin-top: 0;">✅ Budget Code Approval Progress</h2>
-//             <p style="color: #555; line-height: 1.6;">
-//               Dear ${creatorName},
-//             </p>
-//             <p style="color: #555; line-height: 1.6;">
-//               Your budget code has successfully passed ${currentLevel} approval and is progressing to the next stage.
-//             </p>
-
-//             <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
-//               <h3 style="color: #333; margin-top: 0;">Budget Code: ${budgetCode.code}</h3>
-//               <p><strong>Name:</strong> ${budgetCode.name}</p>
-//               <p><strong>Amount:</strong> <span style="color: #52c41a; font-weight: bold;">XAF ${budgetCode.budget.toLocaleString()}</span></p>
-//               <p><strong>Approved by:</strong> ${approverName}</p>
-//               <p><strong>Next Stage:</strong> <span style="background-color: #faad14; color: #333; padding: 4px 8px; border-radius: 4px;">${nextLevel}</span></p>
-//             </div>
-
-//             <div style="text-align: center; margin: 30px 0;">
-//               <a href="${trackingLink}" 
-//                  style="display: inline-block; background-color: #1890ff; color: white; 
-//                         padding: 12px 25px; text-decoration: none; border-radius: 6px;
-//                         font-weight: bold;">
-//                 📊 Track Approval Progress
-//               </a>
-//             </div>
-//           </div>
-//         </div>
-//       ` : `
-//         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-//           <div style="background-color: #f6ffed; padding: 20px; border-radius: 8px; border-left: 4px solid #52c41a;">
-//             <h2 style="color: #389e0d; margin-top: 0;">🎉 Budget Code Activated!</h2>
-//             <p style="color: #389e0d; line-height: 1.6; font-size: 16px;">
-//               Dear ${creatorName},
-//             </p>
-//             <p style="color: #389e0d; line-height: 1.6; font-size: 16px;">
-//               Congratulations! Your budget code has completed all approval stages and is now active.
-//             </p>
-
-//             <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-//               <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #52c41a; padding-bottom: 10px;">Active Budget Code</h3>
-//               <table style="width: 100%; border-collapse: collapse;">
-//                 <tr>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Budget Code:</strong></td>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><code style="background-color: #52c41a; color: white; padding: 4px 8px; border-radius: 4px;">${budgetCode.code}</code></td>
-//                 </tr>
-//                 <tr>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Budget Name:</strong></td>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${budgetCode.name}</td>
-//                 </tr>
-//                 <tr>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Total Budget:</strong></td>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee; color: #52c41a; font-weight: bold; font-size: 16px;">XAF ${budgetCode.budget.toLocaleString()}</td>
-//                 </tr>
-//                 <tr>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Activated By:</strong></td>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${approverName}</td>
-//                 </tr>
-//                 <tr>
-//                   <td style="padding: 8px 0;"><strong>Status:</strong></td>
-//                   <td style="padding: 8px 0;"><span style="background-color: #52c41a; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">✅ ACTIVE</span></td>
-//                 </tr>
-//               </table>
-//             </div>
-
-//             <div style="background-color: #e6f7ff; padding: 15px; border-radius: 6px; margin: 20px 0;">
-//               <h4 style="color: #1890ff; margin-top: 0;">What You Can Do Now:</h4>
-//               <ul style="color: #1890ff; margin-bottom: 0; padding-left: 20px;">
-//                 <li>Use this budget code for purchase requisitions</li>
-//                 <li>Track budget utilization in real-time</li>
-//                 <li>Monitor remaining budget allocation</li>
-//                 <li>Generate budget reports and analytics</li>
-//               </ul>
-//             </div>
-
-//             <div style="text-align: center; margin: 30px 0;">
-//               <a href="${trackingLink}" 
-//                  style="display: inline-block; background-color: #52c41a; color: white; 
-//                         padding: 12px 25px; text-decoration: none; border-radius: 6px;
-//                         font-weight: bold; margin-right: 10px;">
-//                 📊 View Budget Code
-//               </a>
-//               <a href="${clientUrl}/employee/requisitions/new" 
-//                  style="display: inline-block; background-color: #1890ff; color: white; 
-//                         padding: 12px 25px; text-decoration: none; border-radius: 6px;
-//                         font-weight: bold;">
-//                 📝 Create Requisition
-//               </a>
-//             </div>
-
-//             <hr style="border: none; border-top: 1px solid #b7eb8f; margin: 20px 0;">
-//             <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; text-align: center;">
-//               Your budget code is now ready for use. Thank you for following the approval process!
-//             </p>
-//           </div>
-//         </div>
-//       `;
-
-//       return await sendEmail({
-//         to: creatorEmail,
-//         subject,
-//         text,
-//         html
-//       });
-
-//     } catch (error) {
-//       console.error('Error in budgetCodeLevelApproved:', error);
-//       return {
-//         success: false,
-//         error: error.message
-//       };
-//     }
-//   },
-
-//   /**
-//    * Notify creator that budget code was rejected
-//    * @param {string} creatorEmail - Creator's email
-//    * @param {string} creatorName - Creator's name
-//    * @param {string} rejectorName - Rejector's name
-//    * @param {Object} budgetCode - Budget code object
-//    * @param {string} rejectionReason - Reason for rejection
-//    * @param {string} rejectionLevel - Level at which rejection occurred
-//    * @returns {Promise<Object>}
-//    */
-//   budgetCodeRejected: async (creatorEmail, creatorName, rejectorName, budgetCode, rejectionReason, rejectionLevel) => {
-//     try {
-//       const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-//       const resubmitLink = `${clientUrl}/employee/budget-codes/new`;
-
-//       const subject = `Budget Code Request Rejected: ${budgetCode.code}`;
-//       const text = `Dear ${creatorName},\n\nYour budget code request has been rejected at ${rejectionLevel}.\n\nCode: ${budgetCode.code}\nName: ${budgetCode.name}\nAmount: XAF ${budgetCode.budget.toLocaleString()}\nRejected by: ${rejectorName}\nReason: ${rejectionReason}\n\nPlease review the feedback and submit a revised request: ${resubmitLink}\n\nBest regards,\nBudget Management System`;
-
-//       const html = `
-//         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-//           <div style="background-color: #fff2f0; padding: 20px; border-radius: 8px; border-left: 4px solid #ff4d4f;">
-//             <h2 style="color: #cf1322; margin-top: 0;">❌ Budget Code Request Not Approved</h2>
-//             <p style="color: #555; line-height: 1.6;">
-//               Dear ${creatorName},
-//             </p>
-//             <p style="color: #555; line-height: 1.6;">
-//               Your budget code request has not been approved at the ${rejectionLevel} stage.
-//             </p>
-
-//             <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-//               <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #ff4d4f; padding-bottom: 10px;">Rejection Details</h3>
-//               <table style="width: 100%; border-collapse: collapse;">
-//                 <tr>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Budget Code:</strong></td>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${budgetCode.code}</td>
-//                 </tr>
-//                 <tr>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Budget Name:</strong></td>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${budgetCode.name}</td>
-//                 </tr>
-//                 <tr>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Amount:</strong></td>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">XAF ${budgetCode.budget.toLocaleString()}</td>
-//                 </tr>
-//                 <tr>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Rejected By:</strong></td>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${rejectorName}</td>
-//                 </tr>
-//                 <tr>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Rejection Stage:</strong></td>
-//                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${rejectionLevel}</td>
-//                 </tr>
-//                 <tr>
-//                   <td style="padding: 8px 0;"><strong>Status:</strong></td>
-//                   <td style="padding: 8px 0;"><span style="background-color: #ff4d4f; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">REJECTED</span></td>
-//                 </tr>
-//               </table>
-//             </div>
-
-//             <div style="background-color: #fff3cd; border-left: 4px solid #faad14; padding: 15px; margin: 20px 0;">
-//               <h4 style="color: #ad6800; margin-top: 0;">Reason for Rejection:</h4>
-//               <p style="color: #333; margin-bottom: 0; font-style: italic;">"${rejectionReason}"</p>
-//             </div>
-
-//             <div style="background-color: #e6f7ff; padding: 15px; border-radius: 6px; margin: 20px 0;">
-//               <h4 style="color: #1890ff; margin-top: 0;">Next Steps:</h4>
-//               <ul style="color: #1890ff; margin-bottom: 0; padding-left: 20px;">
-//                 <li>Review the rejection feedback carefully</li>
-//                 <li>Address the concerns raised by the approver</li>
-//                 <li>Revise your budget request accordingly</li>
-//                 <li>Submit a new budget code request when ready</li>
-//               </ul>
-//             </div>
-
-//             <div style="text-align: center; margin: 30px 0;">
-//               <a href="${resubmitLink}" 
-//                  style="display: inline-block; background-color: #1890ff; color: white; 
-//                         padding: 12px 25px; text-decoration: none; border-radius: 6px;
-//                         font-weight: bold;">
-//                 📝 Submit Revised Request
-//               </a>
-//             </div>
-
-//             <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-//             <p style="color: #888; font-size: 12px; margin-bottom: 0; text-align: center;">
-//               This is an automated message from the Budget Management System. Please do not reply to this email.
-//             </p>
-//           </div>
-//         </div>
-//       `;
-
-//       return await sendEmail({
-//         to: creatorEmail,
-//         subject,
-//         text,
-//         html
-//       });
-
-//     } catch (error) {
-//       console.error('Error in budgetCodeRejected:', error);
-//       return {
-//         success: false,
-//         error: error.message
-//       };
-//     }
-//   }
-// };
-
 
 /**
  * Budget Code Approval Email Templates
@@ -5034,7 +5068,280 @@ const sendBudgetCodeEmail = {
 };
 
 
+
+
 const sendActionItemEmail = {
+  /**
+   * Send email when task is assigned to a user
+   */
+  taskAssigned: async (
+    recipientEmail,
+    recipientName,
+    assignedByName,
+    taskTitle,
+    taskDescription,
+    priority,
+    dueDate,
+    taskId,
+    projectName = null
+  ) => {
+    try {
+      const priorityEmoji = {
+        'LOW': '🟢',
+        'MEDIUM': '🟡',
+        'HIGH': '🟠',
+        'CRITICAL': '🔴'
+      };
+
+      const priorityLabel = priorityEmoji[priority] || '○';
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; color: #333; line-height: 1.6; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background-color: #1890ff; color: white; padding: 20px; border-radius: 5px 5px 0 0; }
+            .content { background-color: #f9f9f9; padding: 20px; border: 1px solid #ddd; border-radius: 0 0 5px 5px; }
+            .task-details { background-color: white; padding: 15px; border-left: 4px solid #1890ff; margin: 15px 0; }
+            .label { font-weight: bold; color: #555; }
+            .value { color: #333; margin-bottom: 10px; }
+            .priority { display: inline-block; padding: 5px 10px; border-radius: 3px; font-weight: bold; }
+            .priority-low { background-color: #f6ffed; color: #52c41a; }
+            .priority-medium { background-color: #e6f7ff; color: #1890ff; }
+            .priority-high { background-color: #fff7e6; color: #fa8c16; }
+            .priority-critical { background-color: #fff1f0; color: #ff4d4f; }
+            .action-button { 
+              display: inline-block; 
+              background-color: #1890ff; 
+              color: white; 
+              padding: 10px 20px; 
+              text-decoration: none; 
+              border-radius: 5px; 
+              margin-top: 15px;
+            }
+            .footer { text-align: center; padding-top: 20px; color: #999; font-size: 12px; }
+            .divider { border-top: 1px solid #ddd; margin: 15px 0; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h2 style="margin: 0; font-size: 24px;">📋 New Task Assigned</h2>
+            </div>
+            
+            <div class="content">
+              <p>Hello <strong>${recipientName}</strong>,</p>
+              
+              <p><strong>${assignedByName}</strong> has assigned a new task to you:</p>
+              
+              <div class="task-details">
+                <div class="value">
+                  <span class="label">Task Title:</span><br>
+                  <strong style="font-size: 18px; color: #1890ff;">${taskTitle}</strong>
+                </div>
+                
+                ${projectName ? `
+                <div class="value">
+                  <span class="label">Project:</span><br>
+                  ${projectName}
+                </div>
+                ` : ''}
+                
+                <div class="value">
+                  <span class="label">Description:</span><br>
+                  ${taskDescription}
+                </div>
+                
+                <div class="divider"></div>
+                
+                <div style="display: flex; justify-content: space-between;">
+                  <div class="value">
+                    <span class="label">Priority:</span><br>
+                    <span class="priority ${
+                      priority === 'LOW' ? 'priority-low' :
+                      priority === 'MEDIUM' ? 'priority-medium' :
+                      priority === 'HIGH' ? 'priority-high' :
+                      'priority-critical'
+                    }">
+                      ${priorityLabel} ${priority}
+                    </span>
+                  </div>
+                  
+                  <div class="value">
+                    <span class="label">Due Date:</span><br>
+                    ${new Date(dueDate).toLocaleDateString('en-US', { 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                  </div>
+                </div>
+              </div>
+              
+              <p>The task is now available on your dashboard and ready to start. You can begin work immediately.</p>
+              
+              <a href="${process.env.CLIENT_URL}/action-items/${taskId}" class="action-button">
+                View Task in Dashboard
+              </a>
+              
+              <div class="footer">
+                <p>
+                  This is an automated message from the Action Items Management System.<br>
+                  Please do not reply to this email.
+                </p>
+              </div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      const textContent = `
+New Task Assigned
+
+Hello ${recipientName},
+
+${assignedByName} has assigned a new task to you:
+
+Task Title: ${taskTitle}
+${projectName ? `Project: ${projectName}\n` : ''}Description: ${taskDescription}
+Priority: ${priority}
+Due Date: ${new Date(dueDate).toLocaleDateString('en-US', { 
+  year: 'numeric', 
+  month: 'long', 
+  day: 'numeric' 
+})}
+
+The task is now available on your dashboard and ready to start.
+
+View the task: ${process.env.CLIENT_URL}/action-items/${taskId}
+
+This is an automated message from the Action Items Management System.
+      `;
+
+      await transporter.sendMail({
+        from: process.env.EMAIL_FROM || 'noreply@gratoglobal.com',
+        to: recipientEmail,
+        subject: `📋 New Task Assigned: ${taskTitle}`,
+        text: textContent,
+        html: htmlContent,
+        headers: {
+          'X-Priority': priority === 'CRITICAL' ? '1' : priority === 'HIGH' ? '2' : '3',
+          'X-MSMail-Priority': priority === 'CRITICAL' ? 'High' : priority === 'HIGH' ? 'High' : 'Normal'
+        }
+      });
+
+      console.log(`✅ Task assignment email sent to: ${recipientEmail}`);
+      return { success: true };
+    } catch (error) {
+      console.error('Error sending task assignment email:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Send summary email to supervisor about assigned tasks
+   */
+  taskAssignmentSummary: async (
+    supervisorEmail,
+    supervisorName,
+    assignedTasks
+  ) => {
+    try {
+      const tasksHtml = assignedTasks.map((task, index) => `
+        <tr>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">${index + 1}</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">
+            <strong>${task.title}</strong><br>
+            <span style="color: #999; font-size: 12px;">${task.description.substring(0, 50)}...</span>
+          </td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">${task.assignedTo.fullName}</td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">
+            <span style="
+              padding: 3px 8px; 
+              border-radius: 3px; 
+              background-color: ${task.priority === 'CRITICAL' ? '#ff4d4f' : task.priority === 'HIGH' ? '#fa8c16' : '#1890ff'};
+              color: white;
+              font-size: 12px;
+            ">${task.priority}</span>
+          </td>
+          <td style="padding: 10px; border-bottom: 1px solid #eee;">
+            ${new Date(task.dueDate).toLocaleDateString('en-GB')}
+          </td>
+        </tr>
+      `).join('');
+
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; color: #333; line-height: 1.6; }
+            .container { max-width: 700px; margin: 0 auto; padding: 20px; }
+            .header { background-color: #1890ff; color: white; padding: 20px; border-radius: 5px 5px 0 0; }
+            .content { background-color: #f9f9f9; padding: 20px; border: 1px solid #ddd; border-radius: 0 0 5px 5px; }
+            table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+            th { background-color: #f0f0f0; padding: 10px; text-align: left; font-weight: bold; border-bottom: 2px solid #1890ff; }
+            .footer { text-align: center; padding-top: 20px; color: #999; font-size: 12px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h2 style="margin: 0; font-size: 24px;">📊 Task Assignment Summary</h2>
+            </div>
+            
+            <div class="content">
+              <p>Hello <strong>${supervisorName}</strong>,</p>
+              
+              <p>Here is a summary of tasks that have been assigned today:</p>
+              
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Task</th>
+                    <th>Assigned To</th>
+                    <th>Priority</th>
+                    <th>Due Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${tasksHtml}
+                </tbody>
+              </table>
+              
+              <p>Total assigned: <strong>${assignedTasks.length}</strong> tasks</p>
+              
+              <div class="footer">
+                <p>
+                  This is an automated summary from the Action Items Management System.<br>
+                  Please do not reply to this email.
+                </p>
+              </div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      await transporter.sendMail({
+        from: process.env.EMAIL_FROM || 'noreply@gratoglobal.com',
+        to: supervisorEmail,
+        subject: `📊 Task Assignment Summary - ${assignedTasks.length} tasks assigned`,
+        html: htmlContent
+      });
+
+      console.log(`✅ Task assignment summary sent to: ${supervisorEmail}`);
+      return { success: true };
+    } catch (error) {
+      console.error('Error sending task assignment summary:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
   /**
    * Notify supervisor of new task creation (for approval before starting)
    */
@@ -5323,7 +5630,7 @@ const sendActionItemEmail = {
               <a href="${taskLink}" 
                  style="display: inline-block; background-color: #17a2b8; color: white; 
                         padding: 15px 30px; text-decoration: none; border-radius: 8px;
-                                         font-weight: bold; font-size: 16px;">
+                        font-weight: bold; font-size: 16px;">
                 🔍 Review & Approve Completion
               </a>
             </div>
@@ -5351,10 +5658,20 @@ const sendActionItemEmail = {
   /**
    * Notify employee that task completion was approved
    */
-  taskCompletionApproved: async (userEmail, userName, supervisorName, title, taskId, comments = '') => {
+   taskCompletionApproved: async (userEmail, userName, supervisorName, title, taskId, comments = '', grade = null) => {
     try {
       const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
       const taskLink = `${clientUrl}/action-items/${taskId}`;
+
+      const gradeDisplay = grade ? `
+        <div style="background-color: #fff3cd; padding: 15px; border-radius: 6px; margin: 20px 0; text-align: center;">
+          <p style="color: #856404; margin: 0; font-size: 14px;"><strong>Performance Grade:</strong></p>
+          <p style="color: #856404; font-size: 32px; font-weight: bold; margin: 10px 0;">${grade}/5</p>
+          <p style="color: #856404; margin: 0; font-size: 12px;">
+            ${'⭐'.repeat(grade)}${'☆'.repeat(5 - grade)}
+          </p>
+        </div>
+      ` : '';
 
       const subject = `🎉 Task Completed & Approved: ${title}`;
       const html = `
@@ -5367,6 +5684,8 @@ const sendActionItemEmail = {
             <p style="color: #155724; line-height: 1.6; font-size: 16px;">
               Excellent work! Your supervisor <strong>${supervisorName}</strong> has approved the completion of your task "<strong>${title}</strong>".
             </p>
+
+            ${gradeDisplay}
 
             <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
               <p style="color: #28a745; font-size: 24px; font-weight: bold; text-align: center; margin: 0;">
@@ -5476,6 +5795,327 @@ const sendActionItemEmail = {
   }
 };
 
+// KPI Email Notifications
+const sendKPIEmail = {
+  kpiSubmittedForApproval: async (supervisorEmail, supervisorName, employeeName, quarter, kpiCount, kpiId) => {
+    try {
+      const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+      const kpiLink = `${clientUrl}/supervisor/kpis/approve/${kpiId}`;
+
+      const subject = `📊 KPI Approval Needed: ${employeeName} - ${quarter}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;">
+            <h2 style="color: #856404; margin-top: 0;">📊 KPI Approval Request</h2>
+            <p style="color: #856404; line-height: 1.6;">
+              Dear ${supervisorName},
+            </p>
+            <p style="color: #856404; line-height: 1.6;">
+              <strong>${employeeName}</strong> has submitted their quarterly KPIs for <strong>${quarter}</strong> and needs your approval.
+            </p>
+
+            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+              <p style="text-align: center; margin: 0;">
+                <span style="font-size: 48px; font-weight: bold; color: #ffc107;">${kpiCount}</span>
+                <br>
+                <span style="color: #666; font-size: 14px;">KPIs Submitted</span>
+              </p>
+            </div>
+
+            <div style="background-color: #d1ecf1; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #17a2b8;">
+              <p style="color: #0c5460; margin: 0; font-weight: bold;">
+                ⚠️ Action Required: Please review and approve the KPIs so ${employeeName} can link tasks to them.
+              </p>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${kpiLink}" 
+                 style="display: inline-block; background-color: #ffc107; color: #333; 
+                        padding: 15px 30px; text-decoration: none; border-radius: 8px;
+                        font-weight: bold; font-size: 16px; border: 2px solid #ffc107;">
+                ✅ Review & Approve KPIs
+              </a>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #ffeeba; margin: 20px 0;">
+            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; text-align: center;">
+              This is an automated message from the Performance Evaluation System.
+            </p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({
+        to: supervisorEmail,
+        subject,
+        html
+      });
+    } catch (error) {
+      console.error('❌ Error in kpiSubmittedForApproval:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  kpiApproved: async (userEmail, userName, supervisorName, quarter, kpiId, comments = '') => {
+    try {
+      const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+      const kpiLink = `${clientUrl}/kpis/${kpiId}`;
+
+      const subject = `✅ KPIs Approved: ${quarter}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #d4edda; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
+            <h2 style="color: #155724; margin-top: 0;">✅ KPIs Approved!</h2>
+            <p style="color: #155724; line-height: 1.6;">
+              Dear ${userName},
+            </p>
+            <p style="color: #155724; line-height: 1.6; font-size: 16px;">
+              Great news! Your supervisor <strong>${supervisorName}</strong> has approved your KPIs for <strong>${quarter}</strong>.
+            </p>
+
+            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+              <p style="color: #28a745; font-size: 24px; font-weight: bold; text-align: center; margin: 0;">
+                ✓ KPIs APPROVED
+              </p>
+              <p style="text-align: center; color: #666; margin: 10px 0 0 0; font-size: 14px;">
+                You can now start linking tasks to your approved KPIs
+              </p>
+            </div>
+
+            ${comments ? `
+            <div style="background-color: #e9ecef; padding: 15px; border-radius: 6px; margin: 20px 0;">
+              <p style="color: #333; margin: 0;"><strong>Supervisor Comments:</strong></p>
+              <p style="color: #555; margin: 10px 0 0 0; font-style: italic;">${comments}</p>
+            </div>
+            ` : ''}
+
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${kpiLink}" 
+                 style="display: inline-block; background-color: #28a745; color: white; 
+                        padding: 15px 30px; text-decoration: none; border-radius: 8px;
+                        font-weight: bold; font-size: 16px;">
+                📊 View Approved KPIs
+              </a>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #c3e6cb; margin: 20px 0;">
+            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; text-align: center;">
+              This is an automated message from the Performance Evaluation System.
+            </p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({
+        to: userEmail,
+        subject,
+        html
+      });
+    } catch (error) {
+      console.error('❌ Error in kpiApproved:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  kpiRejected: async (userEmail, userName, supervisorName, quarter, kpiId, reason) => {
+    try {
+      const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+      const kpiLink = `${clientUrl}/kpis/${kpiId}`;
+
+      const subject = `❌ KPIs Need Revision: ${quarter}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #f8d7da; padding: 20px; border-radius: 8px; border-left: 4px solid #dc3545;">
+            <h2 style="color: #721c24; margin-top: 0;">🔄 KPIs Need Revision</h2>
+            <p style="color: #721c24; line-height: 1.6;">
+              Dear ${userName},
+            </p>
+            <p style="color: #721c24; line-height: 1.6;">
+              Your supervisor <strong>${supervisorName}</strong> has reviewed your KPIs for <strong>${quarter}</strong> and requires some revisions.
+            </p>
+
+            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #dc3545; padding-bottom: 10px;">Supervisor Feedback</h3>
+              <p style="color: #555; font-style: italic; line-height: 1.6;">${reason || 'Please discuss with your supervisor for specific requirements'}</p>
+            </div>
+
+            <div style="background-color: #d1ecf1; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #17a2b8;">
+              <p style="color: #0c5460; margin: 0;">
+                <strong>💡 Next Steps:</strong> Review the feedback, make necessary adjustments, and resubmit your KPIs.
+              </p>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${kpiLink}" 
+                 style="display: inline-block; background-color: #dc3545; color: white; 
+                        padding: 15px 30px; text-decoration: none; border-radius: 8px;
+                        font-weight: bold; font-size: 16px;">
+                🔧 Revise KPIs
+              </a>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #f5c6cb; margin: 20px 0;">
+            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; text-align: center;">
+              This is an automated message from the Performance Evaluation System.
+            </p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({
+        to: userEmail,
+        subject,
+        html
+      });
+    } catch (error) {
+      console.error('❌ Error in kpiRejected:', error);
+      return { success: false, error: error.message };
+    }
+  }
+};
+
+// Evaluation Email Notifications
+const sendEvaluationEmail = {
+  behavioralEvaluationSubmitted: async (userEmail, userName, supervisorName, quarter, score, evaluationId) => {
+    try {
+      const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+      const evaluationLink = `${clientUrl}/evaluations/behavioral/${evaluationId}`;
+
+      const subject = `📋 Behavioral Evaluation Ready: ${quarter}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #d1ecf1; padding: 20px; border-radius: 8px; border-left: 4px solid #17a2b8;">
+            <h2 style="color: #0c5460; margin-top: 0;">📋 Behavioral Evaluation Submitted</h2>
+            <p style="color: #0c5460; line-height: 1.6;">
+            Dear ${userName},
+            </p>
+            <p style="color: #0c5460; line-height: 1.6;">
+              Your supervisor <strong>${supervisorName}</strong> has completed your behavioral evaluation for <strong>${quarter}</strong>.
+            </p>
+
+            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center;">
+              <p style="color: #666; margin: 0; font-size: 14px;">Overall Behavioral Score</p>
+              <p style="font-size: 48px; font-weight: bold; color: #17a2b8; margin: 10px 0;">${score.toFixed(1)}%</p>
+              <div style="width: 100%; background-color: #e9ecef; height: 20px; border-radius: 10px; overflow: hidden; margin-top: 15px;">
+                <div style="width: ${score}%; background-color: #17a2b8; height: 100%;"></div>
+              </div>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${evaluationLink}" 
+                 style="display: inline-block; background-color: #17a2b8; color: white; 
+                        padding: 15px 30px; text-decoration: none; border-radius: 8px;
+                        font-weight: bold; font-size: 16px;">
+                📊 View Detailed Evaluation
+              </a>
+            </div>
+
+            <div style="background-color: #fff3cd; padding: 15px; border-radius: 6px; margin: 20px 0;">
+              <p style="color: #856404; margin: 0;">
+                <strong>💡 Action Required:</strong> Please review and acknowledge your evaluation.
+              </p>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #bee5eb; margin: 20px 0;">
+            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; text-align: center;">
+              This is an automated message from the Performance Evaluation System.
+            </p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({
+        to: userEmail,
+        subject,
+        html
+      });
+    } catch (error) {
+      console.error('❌ Error in behavioralEvaluationSubmitted:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  quarterlyEvaluationReady: async (userEmail, userName, supervisorName, quarter, finalScore, grade, evaluationId) => {
+    try {
+      const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+      const evaluationLink = `${clientUrl}/evaluations/quarterly/${evaluationId}`;
+
+      const gradeColor = 
+        grade.startsWith('A') ? '#28a745' :
+        grade.startsWith('B') ? '#17a2b8' :
+        grade.startsWith('C') ? '#ffc107' :
+        grade.startsWith('D') ? '#fd7e14' :
+        '#dc3545';
+
+      const subject = `🏆 Quarterly Performance Evaluation: ${quarter}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #e7f3ff; padding: 20px; border-radius: 8px; border-left: 4px solid #007bff;">
+            <h2 style="color: #004085; margin-top: 0;">🏆 Your Quarterly Evaluation is Ready</h2>
+            <p style="color: #004085; line-height: 1.6;">
+              Dear ${userName},
+            </p>
+            <p style="color: #004085; line-height: 1.6;">
+              Your supervisor <strong>${supervisorName}</strong> has completed your quarterly performance evaluation for <strong>${quarter}</strong>.
+            </p>
+
+            <div style="background-color: white; padding: 30px; border-radius: 8px; margin: 20px 0; box-shadow: 0 4px 8px rgba(0,0,0,0.1); text-align: center;">
+              <p style="color: #666; margin: 0; font-size: 16px;">Final Performance Score</p>
+              <p style="font-size: 64px; font-weight: bold; color: ${gradeColor}; margin: 15px 0;">${finalScore.toFixed(1)}%</p>
+              <p style="font-size: 32px; font-weight: bold; color: ${gradeColor}; margin: 10px 0; padding: 10px 20px; background-color: ${gradeColor}20; border-radius: 8px; display: inline-block;">
+                Grade: ${grade}
+              </p>
+              
+              <div style="margin-top: 25px; text-align: left;">
+                <div style="margin-bottom: 15px;">
+                  <p style="color: #666; margin: 0; font-size: 14px;">Task Performance (70%)</p>
+                  <div style="width: 100%; background-color: #e9ecef; height: 20px; border-radius: 10px; overflow: hidden; margin-top: 5px;">
+                    <div style="width: ${finalScore * 0.7 / 0.7}%; background-color: #007bff; height: 100%;"></div>
+                  </div>
+                </div>
+                <div>
+                  <p style="color: #666; margin: 0; font-size: 14px;">Behavioral Assessment (30%)</p>
+                  <div style="width: 100%; background-color: #e9ecef; height: 20px; border-radius: 10px; overflow: hidden; margin-top: 5px;">
+                    <div style="width: ${finalScore * 0.3 / 0.3}%; background-color: #17a2b8; height: 100%;"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${evaluationLink}" 
+                 style="display: inline-block; background-color: #007bff; color: white; 
+                        padding: 15px 30px; text-decoration: none; border-radius: 8px;
+                        font-weight: bold; font-size: 16px;">
+                📊 View Complete Evaluation
+              </a>
+            </div>
+
+            <div style="background-color: #fff3cd; padding: 15px; border-radius: 6px; margin: 20px 0;">
+              <p style="color: #856404; margin: 0;">
+                <strong>💡 Action Required:</strong> Please review your evaluation and acknowledge receipt.
+              </p>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #cce5ff; margin: 20px 0;">
+            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; text-align: center;">
+              This is an automated message from the Performance Evaluation System.
+            </p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({
+        to: userEmail,
+        subject,
+        html
+      });
+    } catch (error) {
+      console.error('❌ Error in quarterlyEvaluationReady:', error);
+      return { success: false, error: error.message };
+    }
+  }
+};
 
 module.exports = {
   sendEmail,
@@ -5489,5 +6129,8 @@ module.exports = {
   budgetCodeEmailTemplates,
   sendBudgetCodeEmail,
   sendActionItemEmail,
+  sendKPIEmail,
+  sendEvaluationEmail,
   getTransporter
 };
+

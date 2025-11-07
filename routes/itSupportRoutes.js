@@ -14,8 +14,8 @@ const {
   processITDepartmentDecision,
   updateFulfillmentStatus,
   updateAssetAssignment,
-  getFinanceITRequests,
-  processFinanceDecision,
+  // getFinanceITRequests,
+  // processFinanceDecision,
   getAllITRequests,
   getApprovalChainPreview,
   getITRequestsByRole,
@@ -119,7 +119,7 @@ router.post('/draft',
 // Supervisor routes 
 router.get('/supervisor', 
   authMiddleware, 
-  requireRoles('supervisor', 'admin'), 
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'), 
   getSupervisorITRequests
 );
 
@@ -131,11 +131,11 @@ router.get('/it-department',
 );
 
 // Finance routes 
-router.get('/finance', 
-  authMiddleware, 
-  requireRoles('finance', 'admin'),
-  getFinanceITRequests
-);
+// router.get('/finance', 
+//   authMiddleware, 
+//   requireRoles('finance', 'admin'),
+//   getFinanceITRequests
+// );
 
 // Admin routes 
 router.get('/admin', 
@@ -154,7 +154,7 @@ router.post('/',
 // SPECIFIC parameterized routes with static suffixes 
 router.get('/supervisor/:requestId', 
   authMiddleware, 
-  requireRoles('supervisor', 'admin'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
   getITRequestDetails
 );
 
@@ -179,7 +179,7 @@ router.get('/admin/:requestId',
 // PUT routes for decision processing 
 router.put('/:requestId/supervisor', 
   authMiddleware, 
-  requireRoles('supervisor', 'admin'), 
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'), 
   processSupervisorDecision
 );
 
@@ -189,11 +189,11 @@ router.put('/:requestId/it-department',
   processITDepartmentDecision
 );
 
-router.put('/:requestId/finance', 
-  authMiddleware, 
-  requireRoles('finance', 'admin'),
-  processFinanceDecision
-);
+// router.put('/:requestId/finance', 
+//   authMiddleware, 
+//   requireRoles('finance', 'admin'),
+//   processFinanceDecision
+// );
 
 router.put('/:requestId/fulfillment', 
   authMiddleware, 

@@ -35,7 +35,7 @@ const UserSchema = new mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ['employee', 'supervisor', 'finance', 'admin', 'supplier', 'it', 'hr', 'supply_chain', 'buyer'], // NEW: Added buyer role
+        enum: ['employee', 'supervisor', 'finance', 'admin', 'supplier', 'it', 'hr', 'supply_chain', 'buyer', 'hse'], 
         required: true,
         default: 'employee'
     },
@@ -49,67 +49,99 @@ const UserSchema = new mongoose.Schema({
             return this.role !== 'supplier';
         }
     },
-    
+
+    // UNIFIED SUPPLIER PROFILE
     supplierDetails: {
-        companyName: {
-            type: String,
-            required: function() {
-                return this.role === 'supplier';
-            }
-        },
-        contactName: {
-            type: String,
-            required: function() {
-                return this.role === 'supplier';
-            }
-        },
-        phoneNumber: {
-            type: String,
-            required: function() {
-                return this.role === 'supplier';
-            }
-        },
+        companyName: { type: String, required: function() { return this.role === 'supplier'; } },
+        contactName: { type: String, required: function() { return this.role === 'supplier'; } },
+        phoneNumber: { type: String, required: function() { return this.role === 'supplier'; } },
+        alternatePhone: String,
+        website: String,
+        
+        // Address
         address: {
-            street: String,
-            city: String,
-            state: String,
-            country: String,
-            postalCode: String
+        street: String,
+        city: String,
+        state: String,
+        country: { type: String, default: 'Cameroon' },
+        postalCode: String
+        },
+        
+        // Business Information
+        supplierType: {
+        type: String,
+        enum: ['General', 'Supply Chain', 'HR/Admin', 'Operations', 'HSE', 'Refurbishment', 'IT Services', 'Construction'],
+        required: function() { return this.role === 'supplier'; }
+        },
+        businessType: {
+        type: String,
+        enum: ['Corporation', 'Limited Company', 'Partnership', 'Sole Proprietorship', 'Cooperative', 'Other']
         },
         businessRegistrationNumber: String,
         taxIdNumber: String,
-        supplierType: {
-            type: String,
-            enum: ['HSE', 'Refurbishment', 'Project', 'Operations', 'Diesel', 'Supply Chain', 'HR/Admin', 'General'],
-            required: function() {
-                return this.role === 'supplier';
-            }
-        },
+        establishedYear: Number,
+        employeeCount: String,
+        
+        // Services & Categories
+        servicesOffered: [String],
+        businessDescription: String,
+        
+        // Financial
         bankDetails: {
-            bankName: String,
-            accountName: String,
-            accountNumber: String,
-            routingNumber: String
+        bankName: String,
+        accountNumber: String,
+        accountName: String,
+        swiftCode: String,
+        routingNumber: String
         },
-        businessInfo: {
-            yearsInBusiness: Number,
-            primaryServices: [String],
-            certifications: [String],
-            website: String
+        paymentTerms: {
+        type: String,
+        enum: ['15 days NET', '30 days NET', '45 days NET', '60 days NET', 'Cash on Delivery', 'Advance Payment'],
+        default: '30 days NET'
         },
-        contractInfo: {
-            contractNumber: String,
-            contractStartDate: Date,
-            contractEndDate: Date,
-            contractValue: Number,
-            paymentTerms: String
-        },
+        
+        // Documents - following project pattern
         documents: {
-            businessRegistrationCertificate: documentSchema,
-            taxClearanceCertificate: documentSchema,
-            bankStatement: documentSchema,
-            insuranceCertificate: documentSchema,
-            additionalDocuments: [documentSchema]
+        businessRegistrationCertificate: {
+            name: String,
+            url: String,
+            publicId: String,
+            size: Number,
+            mimetype: String,
+            uploadedAt: Date
+        },
+        taxClearanceCertificate: {
+            name: String,
+            url: String,
+            publicId: String,
+            size: Number,
+            mimetype: String,
+            uploadedAt: Date
+        },
+        bankStatement: {
+            name: String,
+            url: String,
+            publicId: String,
+            size: Number,
+            mimetype: String,
+            uploadedAt: Date
+        },
+        insuranceCertificate: {
+            name: String,
+            url: String,
+            publicId: String,
+            size: Number,
+            mimetype: String,
+            uploadedAt: Date
+        },
+        additionalDocuments: [{
+            name: String,
+            url: String,
+            publicId: String,
+            size: Number,
+            mimetype: String,
+            uploadedAt: Date
+        }]
         }
     },
 
@@ -121,7 +153,7 @@ const UserSchema = new mongoose.Schema({
         }],
         maxOrderValue: {
             type: Number,
-            default: 1000000 // Default max order value of 1M XAF
+            default: 1000000 
         },
         workload: {
             currentAssignments: {
@@ -159,29 +191,26 @@ const UserSchema = new mongoose.Schema({
         }
     },
 
-    // Enhanced supplier status
     supplierStatus: {
         accountStatus: {
-            type: String,
-            enum: ['pending', 'approved', 'suspended', 'rejected'],
-            default: function() {
-                return this.role === 'supplier' ? 'pending' : undefined;
-            }
+        type: String,
+        enum: ['pending', 'approved', 'rejected', 'suspended', 'inactive'],
+        default: 'pending'
         },
-        isVerified: {
-            type: Boolean,
-            default: false
-        },
-        approvalDate: Date,
-        approvedBy: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'User'
-        },
+        emailVerified: { type: Boolean, default: false },
+        isVerified: { type: Boolean, default: false },
         verificationToken: String,
-        emailVerified: {
-            type: Boolean,
-            default: false
-        }
+        verificationTokenExpiry: Date,
+        approvalDate: Date,
+        approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        rejectionReason: String,
+        suspensionReason: String
+    },
+
+    // References to related entities
+    onboardingApplicationId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'SupplierOnboardingApplication'
     },
 
     // Employee hierarchy fields
@@ -234,7 +263,109 @@ UserSchema.index({ role: 1 });
 UserSchema.index({ department: 1, hierarchyLevel: -1 });
 UserSchema.index({ 'supplierDetails.supplierType': 1 });
 UserSchema.index({ 'supplierStatus.accountStatus': 1 });
-UserSchema.index({ 'buyerDetails.specializations': 1 }); // NEW: Index for buyer specializations
+UserSchema.index({ 'buyerDetails.specializations': 1 }); 
+
+// Virtual for contracts
+UserSchema.virtual('contracts', {
+  ref: 'Contract',
+  localField: '_id',
+  foreignField: 'supplier'
+});
+
+// Virtual for invoices
+UserSchema.virtual('invoices', {
+  ref: 'SupplierInvoice',
+  localField: '_id',
+  foreignField: 'supplier'
+});
+
+// Virtual for performance evaluations
+UserSchema.virtual('performanceEvaluations', {
+  ref: 'SupplierPerformance',
+  localField: '_id',
+  foreignField: 'supplier'
+});
+
+// Methods for supplier
+UserSchema.methods.getActiveContracts = async function() {
+  const Contract = mongoose.model('Contract');
+  return await Contract.find({
+    supplier: this._id,
+    status: 'active',
+    'dates.endDate': { $gte: new Date() }
+  });
+};
+
+UserSchema.methods.getPendingInvoices = async function() {
+  const SupplierInvoice = mongoose.model('SupplierInvoice');
+  return await SupplierInvoice.find({
+    supplier: this._id,
+    approvalStatus: { $in: ['pending_finance_assignment', 'pending_department_approval', 'pending_finance_processing'] }
+  });
+};
+
+UserSchema.methods.getPerformanceScore = async function() {
+  const SupplierPerformance = mongoose.model('SupplierPerformance');
+  const evaluations = await SupplierPerformance.find({
+    supplier: this._id,
+    status: { $in: ['submitted', 'reviewed'] }
+  }).sort({ evaluationDate: -1 }).limit(5);
+  
+  if (evaluations.length === 0) return null;
+  
+  const avgScore = evaluations.reduce((sum, eval) => sum + eval.overallScore, 0) / evaluations.length;
+  return {
+    averageScore: avgScore.toFixed(2),
+    latestScore: evaluations[0].overallScore,
+    evaluationCount: evaluations.length,
+    latestEvaluationDate: evaluations[0].evaluationDate
+  };
+};
+
+UserSchema.methods.canSubmitInvoice = async function() {
+  // Check if supplier is approved and active
+  if (this.supplierStatus.accountStatus !== 'approved' || !this.isActive) {
+    return { allowed: false, reason: 'Supplier account not approved or inactive' };
+  }
+  
+  // Invoices can be submitted with or without contract (as per requirements)
+  return { allowed: true };
+};
+
+UserSchema.methods.getSupplierSummary = async function() {
+  const Contract = mongoose.model('Contract');
+  const SupplierInvoice = mongoose.model('SupplierInvoice');
+  
+  const [contracts, invoices, performance] = await Promise.all([
+    Contract.find({ supplier: this._id }),
+    SupplierInvoice.find({ supplier: this._id }),
+    this.getPerformanceScore()
+  ]);
+  
+  const activeContracts = contracts.filter(c => c.status === 'active').length;
+  const totalContractValue = contracts.reduce((sum, c) => sum + (c.financials?.totalValue || 0), 0);
+  
+  const totalInvoiced = invoices.reduce((sum, inv) => sum + inv.invoiceAmount, 0);
+  const pendingInvoices = invoices.filter(inv => 
+    ['pending_finance_assignment', 'pending_department_approval'].includes(inv.approvalStatus)
+  ).length;
+  const paidInvoices = invoices.filter(inv => inv.approvalStatus === 'paid').length;
+  
+  return {
+    contracts: {
+      total: contracts.length,
+      active: activeContracts,
+      totalValue: totalContractValue
+    },
+    invoices: {
+      total: invoices.length,
+      pending: pendingInvoices,
+      paid: paidInvoices,
+      totalInvoiced
+    },
+    performance: performance || { averageScore: 0, evaluationCount: 0 }
+  };
+};
 
 // Virtual for display name
 UserSchema.virtual('displayName').get(function() {
@@ -293,18 +424,17 @@ UserSchema.methods.isApprovedSupplier = function() {
            this.supplierStatus.emailVerified;
 };
 
-// Password hashing middleware
+// Password methods (existing)
 UserSchema.pre('save', async function(next) {
-    if (this.isModified('password')) {
-        this.password = await bcrypt.hash(this.password, 10);
-    }
-    next();
+  if (!this.isModified('password')) return next();
+  this.password = await bcrypt.hash(this.password, 12);
+  next();
 });
 
-// Method to compare password
 UserSchema.methods.comparePassword = async function(candidatePassword) {
-    return await bcrypt.compare(candidatePassword, this.password);
+  return await bcrypt.compare(candidatePassword, this.password);
 };
+
 
 module.exports = mongoose.model('User', UserSchema);
 

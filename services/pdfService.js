@@ -540,6 +540,613 @@ class PDFService {
     if (safeText.length <= maxLength) return safeText;
     return safeText.substring(0, maxLength - 3) + '...';
   }
+
+
+
+  // Cash Reuest Download 
+  /**
+   * Generate Cash Request PDF with approval chain - FIXED
+   */
+  async generateCashRequestPDF(requestData, outputPath) {
+    return new Promise((resolve, reject) => {
+      try {
+        console.log('=== STARTING CASH REQUEST PDF GENERATION ===');
+        console.log('Request ID:', requestData._id);
+        console.log('Employee:', requestData.employee?.fullName);
+
+        const doc = new PDFDocument({ 
+          size: 'A4', 
+          margins: { top: 50, bottom: 80, left: 40, right: 40 },
+          info: {
+            Title: `Cash Request - ${requestData.displayId || requestData._id}`,
+            Author: 'GRATO ENGINEERING GLOBAL LTD',
+            Subject: 'Cash Request Document',
+            Creator: 'Cash Request System'
+          }
+        });
+
+        if (outputPath) {
+          doc.pipe(fs.createWriteStream(outputPath));
+        }
+
+        const chunks = [];
+        doc.on('data', chunk => chunks.push(chunk));
+        doc.on('end', () => {
+          const pdfBuffer = Buffer.concat(chunks);
+          console.log('=== CASH REQUEST PDF GENERATION COMPLETED ===');
+          resolve({
+            success: true,
+            buffer: pdfBuffer,
+            filename: `Cash_Request_${requestData.displayId || requestData._id.toString().slice(-6).toUpperCase()}_${Date.now()}.pdf`
+          });
+        });
+
+        this.generateCashRequestContent(doc, requestData);
+        doc.end();
+      } catch (error) {
+        console.error('Cash Request PDF generation error:', error);
+        reject({
+          success: false,
+          error: error.message
+        });
+      }
+    });
+  }
+
+  generateCashRequestContent(doc, data) {
+    let yPos = 50;
+
+    // Header with logo and company info
+    this.drawCashRequestHeader(doc, yPos, data);
+    yPos += 90;
+
+    // Request title bar
+    this.drawCashRequestTitleBar(doc, yPos, data);
+    yPos += 60;
+
+    // Employee and Request Details
+    yPos = this.drawCashRequestDetails(doc, yPos, data);
+
+    // Check page break before approval chain
+    if (yPos > 600) {
+      doc.addPage();
+      yPos = 50;
+    }
+
+    // Approval Chain Timeline
+    yPos = this.drawApprovalChainTimeline(doc, yPos, data);
+
+    // Check page break before financial summary
+    if (yPos > 650) {
+      doc.addPage();
+      yPos = 50;
+    }
+
+    // Financial Summary
+    yPos = this.drawCashRequestFinancialSummary(doc, yPos, data);
+
+    // Budget Allocation (if exists)
+    if (data.budgetAllocation && data.budgetAllocation.budgetCodeId) {
+      // Check page break before budget
+      if (yPos > 650) {
+        doc.addPage();
+        yPos = 50;
+      }
+      yPos = this.drawBudgetAllocation(doc, yPos, data);
+    }
+
+    // Check page break before signatures
+    if (yPos > 680) {
+      doc.addPage();
+      yPos = 50;
+    }
+
+    // Signature Section
+    this.drawCashRequestSignatureSection(doc, yPos, data);
+
+    // Footer (always at bottom of CURRENT page only)
+    this.drawCashRequestFooter(doc, data);
+  }
+
+  drawCashRequestHeader(doc, yPos, data) {
+    // Company Logo
+    try {
+      if (fs.existsSync(this.logoPath)) {
+        doc.image(this.logoPath, 40, yPos, { width: 60, height: 56 });
+      } else {
+        doc.rect(40, yPos, 60, 60)
+           .strokeColor('#E63946')
+           .lineWidth(2)
+           .stroke();
+        
+        doc.fontSize(8)
+           .fillColor('#E63946')
+           .font(this.boldFont)
+           .text('GRATO', 48, yPos + 20)
+           .text('ENGINEERING', 43, yPos + 32)
+           .fillColor('#000000');
+      }
+    } catch (error) {
+      console.log('Logo loading error:', error.message);
+      doc.rect(40, yPos, 60, 60)
+         .strokeColor('#E63946')
+         .lineWidth(2)
+         .stroke();
+    }
+
+    // Company name and address
+    doc.fontSize(11)
+       .font(this.boldFont)
+       .fillColor('#000000')
+       .text('GRATO ENGINEERING GLOBAL LTD', 110, yPos);
+
+    doc.fontSize(9)
+       .font(this.defaultFont)
+       .text('Bonaberi', 110, yPos + 15)
+       .text('Douala Cameroon', 110, yPos + 28)
+       .text('☎ 680726107/653738918', 110, yPos + 41);
+  }
+
+  drawCashRequestTitleBar(doc, yPos, data) {
+    // Title
+    doc.fillColor('#C5504B') 
+       .fontSize(14)
+       .font(this.boldFont)
+       .text(`CASH REQUEST #${data.displayId || data._id.toString().slice(-6).toUpperCase()}`, 40, yPos);
+
+    const detailsY = yPos + 25;
+    
+    // Three columns
+    doc.fillColor('#888888')
+       .fontSize(8)
+       .font(this.defaultFont)
+       .text('Status:', 40, detailsY);
+    
+    doc.fillColor('#000000')
+       .fontSize(9)
+       .font(this.boldFont)
+       .text(this.formatStatus(data.status), 40, detailsY + 12);
+
+    doc.fillColor('#888888')
+       .fontSize(8)
+       .text('Request Date:', 220, detailsY);
+    
+    doc.fillColor('#000000')
+       .fontSize(9)
+       .text(this.formatDateExact(data.createdAt), 220, detailsY + 12);
+
+    doc.fillColor('#888888')
+       .fontSize(8)
+       .text('Disbursed Date:', 400, detailsY);
+    
+    doc.fillColor('#000000')
+       .fontSize(9)
+       .text(this.formatDateExact(data.disbursementDetails?.date), 400, detailsY + 12);
+  }
+
+  drawCashRequestDetails(doc, yPos, data) {
+    yPos += 10;
+    
+    // Section header
+    doc.fontSize(11)
+       .font(this.boldFont)
+       .fillColor('#000000')
+       .text('Request Details', 40, yPos);
+    
+    yPos += 20;
+
+    // Compact details box
+    const boxStartY = yPos;
+    const boxHeight = 100;
+    
+    doc.rect(40, yPos, 515, boxHeight)
+       .strokeColor('#CCCCCC')
+       .lineWidth(0.5)
+       .stroke();
+
+    yPos += 10;
+
+    // Left Column - Employee Info
+    doc.fontSize(8)
+       .font(this.boldFont)
+       .fillColor('#000000')
+       .text('Requested By:', 50, yPos);
+    
+    doc.font(this.defaultFont)
+       .fontSize(9)
+       .text(data.employee?.fullName || 'N/A', 50, yPos + 12);
+    
+    doc.fontSize(8)
+       .fillColor('#666666')
+       .text(`${data.employee?.department || 'N/A'}`, 50, yPos + 25);
+
+    // Right Column - Request Info
+    doc.fillColor('#000000')
+       .fontSize(8)
+       .font(this.boldFont)
+       .text('Request Type:', 280, yPos);
+    
+    doc.font(this.defaultFont)
+       .fontSize(9)
+       .text(this.formatRequestType(data.requestType), 280, yPos + 12);
+
+    doc.font(this.boldFont)
+       .fontSize(8)
+       .text('Urgency:', 280, yPos + 30);
+    
+    doc.font(this.defaultFont)
+       .fontSize(9)
+       .text(this.formatUrgency(data.urgency), 280, yPos + 42);
+
+    if (data.projectId) {
+      doc.font(this.boldFont)
+         .fontSize(8)
+         .text('Project:', 280, yPos + 60);
+      
+      doc.font(this.defaultFont)
+         .fontSize(8)
+         .text((data.projectId.name || 'N/A').substring(0, 30), 280, yPos + 72);
+    }
+
+    yPos = boxStartY + boxHeight + 15;
+
+    // Purpose - Compact
+    doc.fontSize(8)
+       .font(this.boldFont)
+       .fillColor('#000000')
+       .text('Purpose:', 40, yPos);
+    
+    yPos += 12;
+
+    const purposeText = (data.purpose || 'N/A').substring(0, 200);
+    doc.fontSize(8)
+       .font(this.defaultFont)
+       .fillColor('#333333')
+       .text(purposeText, 40, yPos, {
+         width: 515,
+         align: 'justify',
+         lineGap: 2
+       });
+
+    // Calculate actual height used
+    const purposeHeight = Math.min(doc.heightOfString(purposeText, { width: 515 }), 40);
+    yPos += purposeHeight + 10;
+
+    // Business Justification - Compact
+    doc.fontSize(8)
+       .font(this.boldFont)
+       .fillColor('#000000')
+       .text('Business Justification:', 40, yPos);
+    
+    yPos += 12;
+
+    const justificationText = (data.businessJustification || 'N/A').substring(0, 250);
+    doc.fontSize(8)
+       .font(this.defaultFont)
+       .fillColor('#333333')
+       .text(justificationText, 40, yPos, {
+         width: 515,
+         align: 'justify',
+         lineGap: 2
+       });
+
+    const justificationHeight = Math.min(doc.heightOfString(justificationText, { width: 515 }), 50);
+    yPos += justificationHeight + 15;
+
+    return yPos;
+  }
+
+  drawApprovalChainTimeline(doc, yPos, data) {
+    // Section header
+    doc.fontSize(11)
+       .font(this.boldFont)
+       .fillColor('#000000')
+       .text('Approval Chain', 40, yPos);
+    
+    yPos += 20;
+
+    if (!data.approvalChain || data.approvalChain.length === 0) {
+      doc.fontSize(9)
+         .font(this.defaultFont)
+         .fillColor('#999999')
+         .text('No approval chain data', 40, yPos);
+      return yPos + 20;
+    }
+
+    // Draw each approval step - COMPACT VERSION
+    data.approvalChain.forEach((step, index) => {
+      // Check if we need a new page (leave room for footer)
+      if (yPos > 680) {
+        doc.addPage();
+        yPos = 50;
+        
+        // Redraw section header on new page
+        doc.fontSize(11)
+           .font(this.boldFont)
+           .fillColor('#000000')
+           .text('Approval Chain (continued)', 40, yPos);
+        yPos += 20;
+      }
+
+      // Draw timeline connector line (if not first)
+      if (index > 0) {
+        doc.moveTo(55, yPos - 10)
+           .lineTo(55, yPos)
+           .strokeColor('#CCCCCC')
+           .lineWidth(2)
+           .stroke();
+      }
+
+      // Draw status circle
+      const statusColor = step.status === 'approved' ? '#52c41a' : 
+                         step.status === 'rejected' ? '#f5222d' : '#d9d9d9';
+      
+      doc.circle(55, yPos + 6, 5)
+         .fillAndStroke(statusColor, statusColor);
+
+      // Step details - COMPACT
+      doc.fontSize(8)
+         .font(this.boldFont)
+         .fillColor('#000000')
+         .text(`Level ${step.level}: ${step.approver.name}`, 75, yPos);
+
+      doc.fontSize(7)
+         .font(this.defaultFont)
+         .fillColor('#666666')
+         .text(`${step.approver.role}`, 75, yPos + 10);
+
+      // Status and date - COMPACT
+      if (step.status === 'approved') {
+        doc.fillColor('#52c41a')
+           .fontSize(7)
+           .font(this.boldFont)
+           .text('✓ APPROVED', 75, yPos + 20);
+        
+        doc.fillColor('#666666')
+           .font(this.defaultFont)
+           .fontSize(7)
+           .text(`${this.formatDateExact(step.actionDate)} ${step.actionTime || ''}`, 75, yPos + 30);
+
+        if (step.comments) {
+          const shortComment = step.comments.substring(0, 80);
+          doc.fillColor('#333333')
+             .fontSize(7)
+             .text(`"${shortComment}${step.comments.length > 80 ? '...' : ''}"`, 75, yPos + 40, {
+               width: 450
+             });
+          yPos += 55;
+        } else {
+          yPos += 45;
+        }
+      } else if (step.status === 'rejected') {
+        doc.fillColor('#f5222d')
+           .fontSize(7)
+           .font(this.boldFont)
+           .text('✗ REJECTED', 75, yPos + 20);
+        
+        doc.fillColor('#666666')
+           .font(this.defaultFont)
+           .fontSize(7)
+           .text(`${this.formatDateExact(step.actionDate)} ${step.actionTime || ''}`, 75, yPos + 30);
+
+        if (step.comments) {
+          const shortComment = step.comments.substring(0, 80);
+          doc.fillColor('#f5222d')
+             .fontSize(7)
+             .text(`"${shortComment}${step.comments.length > 80 ? '...' : ''}"`, 75, yPos + 40, {
+               width: 450
+             });
+          yPos += 55;
+        } else {
+          yPos += 45;
+        }
+      } else {
+        doc.fillColor('#999999')
+           .fontSize(7)
+           .font(this.defaultFont)
+           .text('Pending', 75, yPos + 20);
+        yPos += 35;
+      }
+    });
+
+    return yPos + 10;
+  }
+
+  drawCashRequestFinancialSummary(doc, yPos, data) {
+    yPos += 5;
+    
+    // Section header
+    doc.fontSize(11)
+       .font(this.boldFont)
+       .fillColor('#000000')
+       .text('Financial Summary', 40, yPos);
+    
+    yPos += 20;
+
+    // Compact summary box
+    const boxHeight = 70;
+    doc.rect(40, yPos, 515, boxHeight)
+       .fillAndStroke('#F5F5F5', '#CCCCCC');
+
+    yPos += 12;
+
+    // Amount Requested
+    doc.fontSize(8)
+       .font(this.boldFont)
+       .fillColor('#000000')
+       .text('Amount Requested:', 50, yPos);
+    
+    doc.text(`XAF ${this.formatCurrency(data.amountRequested)}`, 380, yPos, {
+      width: 165,
+      align: 'right'
+    });
+
+    yPos += 18;
+
+    // Amount Approved
+    doc.text('Amount Approved:', 50, yPos);
+    
+    doc.fillColor(data.amountApproved ? '#52c41a' : '#000000')
+       .text(`XAF ${this.formatCurrency(data.amountApproved || data.amountRequested)}`, 380, yPos, {
+         width: 165,
+         align: 'right'
+       });
+
+    yPos += 18;
+
+    // Amount Disbursed
+    doc.fillColor('#000000')
+       .text('Amount Disbursed:', 50, yPos);
+    
+    const disbursedAmount = data.disbursementDetails?.amount || data.amountApproved || data.amountRequested;
+    
+    doc.fillColor('#1890ff')
+       .font(this.boldFont)
+       .fontSize(9)
+       .text(`XAF ${this.formatCurrency(disbursedAmount)}`, 380, yPos, {
+         width: 165,
+         align: 'right'
+       });
+
+    return yPos + 25;
+  }
+
+  drawBudgetAllocation(doc, yPos, data) {
+    const budget = data.budgetAllocation;
+    
+    yPos += 5;
+    
+    // Section header
+    doc.fontSize(11)
+       .font(this.boldFont)
+       .fillColor('#000000')
+       .text('Budget Allocation', 40, yPos);
+    
+    yPos += 20;
+
+    // Compact budget box
+    const boxHeight = 75;
+    doc.rect(40, yPos, 515, boxHeight)
+       .strokeColor('#CCCCCC')
+       .lineWidth(0.5)
+       .stroke();
+
+    yPos += 12;
+
+    // Budget Code
+    doc.fontSize(8)
+       .font(this.boldFont)
+       .text('Budget Code:', 50, yPos);
+    
+    doc.font(this.defaultFont)
+       .text(budget.budgetCode || 'N/A', 200, yPos);
+
+    yPos += 15;
+
+    // Budget Name
+    if (budget.budgetCodeId?.name) {
+      doc.font(this.boldFont)
+         .text('Budget Name:', 50, yPos);
+      
+      doc.font(this.defaultFont)
+         .text((budget.budgetCodeId.name || '').substring(0, 50), 200, yPos, { width: 300 });
+      
+      yPos += 15;
+    }
+
+    // Allocated Amount
+    doc.font(this.boldFont)
+       .text('Allocated Amount:', 50, yPos);
+    
+    doc.font(this.defaultFont)
+       .text(`XAF ${this.formatCurrency(budget.allocatedAmount)}`, 200, yPos);
+
+    yPos += 15;
+
+    // Status
+    doc.font(this.boldFont)
+       .text('Status:', 50, yPos);
+    
+    doc.font(this.defaultFont)
+       .text(this.formatAllocationStatus(budget.allocationStatus), 200, yPos);
+
+    return yPos + 20;
+  }
+
+  drawCashRequestSignatureSection(doc, yPos, data) {
+    yPos += 15;
+    
+    const signatureY = yPos;
+    const lineWidth = 120;
+    const lineSpacing = 160;
+    
+    // Three signature lines
+    for (let i = 0; i < 3; i++) {
+      const xPos = 40 + (i * lineSpacing);
+      
+      doc.moveTo(xPos, signatureY + 25)
+         .lineTo(xPos + lineWidth, signatureY + 25)
+         .strokeColor('#000000')
+         .lineWidth(0.5)
+         .stroke();
+    }
+  }
+
+  drawCashRequestFooter(doc, data) {
+    // Get current page number and total pages
+    const range = doc.bufferedPageRange();
+    const currentPage = range.start + range.count;
+    
+    // Only draw footer on the LAST page
+    const footerY = doc.page.height - 70;
+    
+    // Horizontal line
+    doc.strokeColor('#CCCCCC')
+       .lineWidth(0.5)
+       .moveTo(40, footerY)
+       .lineTo(555, footerY)
+       .stroke();
+
+    // Footer content
+    doc.fontSize(7)
+       .font(this.defaultFont)
+       .fillColor('#666666');
+
+    // Registration
+    doc.text('RC/DLA/2014/B/2690 NIU: M061421030521', 40, footerY + 8);
+    
+    // Generation timestamp
+    doc.text(`Generated: ${new Date().toLocaleString('en-GB')}`, 40, footerY + 20);
+    
+    // Page number
+    doc.text(`Page ${currentPage}`, 510, footerY + 8);
+
+    // Contact
+    doc.text('679586444 | info@gratoengineering.com', 40, footerY + 32);
+  }
+
+  // Helper methods
+  formatStatus(status) {
+    return (status || 'Unknown').replace(/_/g, ' ').toUpperCase();
+  }
+
+  formatRequestType(type) {
+    return (type || 'N/A').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  }
+
+  formatUrgency(urgency) {
+    const map = {
+      'urgent': 'URGENT',
+      'high': 'HIGH',
+      'medium': 'MEDIUM',
+      'low': 'LOW'
+    };
+    return map[urgency] || (urgency || 'N/A').toUpperCase();
+  }
+
+  formatAllocationStatus(status) {
+    return (status || 'N/A').replace(/_/g, ' ').toUpperCase();
+  }
 }
 
 module.exports = new PDFService();

@@ -14,7 +14,7 @@ const PurchaseOrderSchema = new mongoose.Schema({
   supplierId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Supplier', 
-    required: false // Allow null for external suppliers
+    required: false 
   },
 
   buyerId: {

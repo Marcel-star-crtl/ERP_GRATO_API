@@ -321,6 +321,19 @@ const supplierInvoiceSchema = new mongoose.Schema({
     description: { type: Boolean, default: false },
     serviceCategory: { type: Boolean, default: false }
   },
+
+  // OPTIONAL CONTRACT LINK
+  linkedContract: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Contract'
+  },
+  
+  // Track if manually linked by admin
+  contractLinkMethod: {
+    type: String,
+    enum: ['automatic', 'manual', 'none'],
+    default: 'none'
+  },
   
   metadata: {
     ipAddress: String,
@@ -771,6 +784,30 @@ supplierInvoiceSchema.methods.deleteCloudinaryFiles = async function() {
   if (deletionPromises.length > 0) {
     await Promise.allSettled(deletionPromises);
   }
+};
+
+// Add method to link to contract
+supplierInvoiceSchema.methods.linkToContract = async function(contractId, method = 'manual') {
+  const Contract = mongoose.model('Contract');
+  const contract = await Contract.findById(contractId);
+  
+  if (!contract) {
+    throw new Error('Contract not found');
+  }
+  
+  // Verify contract belongs to same supplier
+  if (contract.supplier.toString() !== this.supplier.toString()) {
+    throw new Error('Contract does not belong to this supplier');
+  }
+  
+  this.linkedContract = contractId;
+  this.contractLinkMethod = method;
+  await this.save();
+  
+  // Add invoice to contract's linked invoices
+  await contract.linkInvoice(this._id);
+  
+  console.log(`Invoice ${this.invoiceNumber} linked to contract ${contract.contractNumber}`);
 };
 
 // Pre-remove middleware

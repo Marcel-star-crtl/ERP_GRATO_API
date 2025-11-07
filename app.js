@@ -37,6 +37,17 @@ const projectRoutes = require('./routes/projectRoutes');
 const supplierOnboardingRoutes = require('./routes/supplierOnboardingRoutes');
 const sharepointRoutes = require('./routes/sharepoint');
 const actionItemRoutes = require('./routes/actionItemRoutes');
+const communicationRoutes = require('./routes/communicationRoutes');
+const quarterlyKPIRoutes = require('./routes/quarterlyKPIRoutes');
+const behavioralEvaluationRoutes = require('./routes/behavioralEvaluationRoutes');
+const quarterlyEvaluationRoutes = require('./routes/quarterlyEvaluationRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
+const fixedAssetRoutes = require('./routes/fixedAssetRoutes');
+const supplierPerformanceRoutes = require('./routes/supplierPerformanceRoutes');
+const enhancedUserRoutes = require('./routes/enhancedUserRoutes');
+const enhancedBehavioralRoutes = require('./routes/enhancedBehavioralEvaluationRoutes');
+const migrationRoutes = require('./routes/migrationRoutes');
+const { initializeScheduledMessagesCron } = require('./utils/scheduledMessagesCron');
 const cron = require('node-cron');
 
 
@@ -46,6 +57,8 @@ const server = http.createServer(app);
 socketService.initialize(server);
 
 connectDB();
+
+initializeScheduledMessagesCron();
 
 // CORS Configuration - Fixed
 app.use(cors({
@@ -165,6 +178,17 @@ app.use('/api/projects', projectRoutes);
 app.use('/api/supplier-onboarding', supplierOnboardingRoutes);
 app.use('/api/sharepoint', sharepointRoutes);
 app.use('/api/action-items', actionItemRoutes);
+app.use('/api/communications', communicationRoutes);
+app.use('/api/kpis', quarterlyKPIRoutes);
+app.use('/api/behavioral-evaluations', behavioralEvaluationRoutes);
+app.use('/api/quarterly-evaluations', quarterlyEvaluationRoutes);
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/fixed-assets', fixedAssetRoutes);
+app.use('/api/supplier-performance', supplierPerformanceRoutes);
+app.use('/api/enhanced-users', enhancedUserRoutes);
+app.use('/api/behavioral-evaluations', enhancedBehavioralRoutes);
+app.use('/api/migration', migrationRoutes);
+app.use('/api/hr', require('./routes/hrRoutes')); 
 
 app.use(handleMulterError);
 
@@ -252,7 +276,5 @@ app.listen(PORT, () => {
   console.log(`Server started on port http://localhost:${PORT}`);
   console.log(`Swagger UI available at http://localhost:${PORT}/api-docs`);
 });
-
-
 
 

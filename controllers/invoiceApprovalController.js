@@ -3,6 +3,19 @@ const User = require('../models/User');
 const { sendEmail } = require('../services/emailService');
 const { getInvoiceApprovalChain } = require('../config/invoiceApprovalChain');
 
+// Helper function for status display
+function getStatusDisplay(status) {
+  const statusMap = {
+    'pending_finance_assignment': 'Pending Assignment',
+    'pending_department_approval': 'In Approval Chain',
+    'approved': 'Fully Approved',
+    'rejected': 'Rejected',
+    'processed': 'Processed'
+  };
+  return statusMap[status] || status;
+}
+
+
 // Upload invoice with approval chain
 exports.uploadInvoiceWithApprovalChain = async (req, res) => {
   try {
@@ -300,6 +313,95 @@ exports.uploadInvoiceWithApprovalChain = async (req, res) => {
     });
   }
 };
+
+// Get all invoices for finance management
+exports.getInvoicesForFinance = async (req, res) => {
+  try {
+    const { status, department, startDate, endDate, employee, page = 1, limit = 50 } = req.query;
+    
+    console.log('=== FETCHING INVOICES FOR FINANCE ===');
+    console.log('Filters:', { status, department, startDate, endDate, employee });
+    
+    const filter = {};
+    
+    // Status filter
+    if (status) {
+      filter.approvalStatus = status;
+    }
+    
+    // Department filter
+    if (department) {
+      filter.assignedDepartment = department;
+    }
+    
+    // Employee search filter
+    if (employee) {
+      filter.$or = [
+        { 'employeeDetails.name': { $regex: employee, $options: 'i' } },
+        { 'employeeDetails.email': { $regex: employee, $options: 'i' } }
+      ];
+    }
+    
+    // Date range filter
+    if (startDate || endDate) {
+      filter.uploadedDate = {};
+      if (startDate) filter.uploadedDate.$gte = new Date(startDate);
+      if (endDate) filter.uploadedDate.$lte = new Date(endDate);
+    }
+    
+    const skip = (page - 1) * limit;
+    
+    console.log('Query filter:', JSON.stringify(filter, null, 2));
+    
+    const [invoices, total] = await Promise.all([
+      Invoice.find(filter)
+        .populate('employee', 'fullName email department')
+        .populate('assignedBy', 'fullName email')
+        .sort({ uploadedDate: -1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      Invoice.countDocuments(filter)
+    ]);
+    
+    // Add computed fields
+    const enrichedInvoices = invoices.map(invoice => ({
+      ...invoice,
+      formattedUploadDateTime: invoice.uploadedDate 
+        ? `${new Date(invoice.uploadedDate).toLocaleDateString('en-GB')} at ${invoice.uploadedTime || new Date(invoice.uploadedDate).toTimeString().split(' ')[0]}`
+        : 'N/A',
+      currentApprovalStep: invoice.approvalChain && invoice.currentApprovalLevel > 0
+        ? invoice.approvalChain.find(step => step.level === invoice.currentApprovalLevel)
+        : null,
+      approvalProgress: invoice.approvalChain && invoice.approvalChain.length > 0
+        ? Math.round((invoice.approvalChain.filter(step => step.status === 'approved').length / invoice.approvalChain.length) * 100)
+        : 0,
+      statusDisplay: getStatusDisplay(invoice.approvalStatus)
+    }));
+    
+    console.log(`Found ${enrichedInvoices.length} invoices (Total: ${total})`);
+    
+    res.json({
+      success: true,
+      data: enrichedInvoices,
+      pagination: {
+        current: parseInt(page),
+        pageSize: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+    
+  } catch (error) {
+    console.error('=== ERROR FETCHING FINANCE INVOICES ===', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch invoices',
+      error: error.message
+    });
+  }
+};
+
 
 // Process approval step (sequential approval)
 exports.processApprovalStep = async (req, res) => {

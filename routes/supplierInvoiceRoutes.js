@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const supplierController = require('../controllers/supplierController');
+const unifiedSupplierController = require('../controllers/unifiedSupplierController');
+const contractController = require('../controllers/contractController');
 const supplierInvoiceController = require('../controllers/supplierInvoiceController');
 const supplierOnboardingController = require('../controllers/supplierOnboardingController');
 const supplierRfqController = require('../controllers/supplierRfqController');
@@ -13,6 +15,18 @@ const {
 } = require('../middlewares/supplierAuthMiddleware');
 const upload = require('../middlewares/uploadMiddleware');
 
+
+router.post('/register-onboard',
+  upload.fields([
+    { name: 'businessRegistrationCertificate', maxCount: 1 },
+    { name: 'taxClearanceCertificate', maxCount: 1 },
+    { name: 'bankStatement', maxCount: 1 },
+    { name: 'insuranceCertificate', maxCount: 1 },
+    { name: 'additionalDocuments', maxCount: 5 }
+  ]),
+  unifiedSupplierController.registerAndOnboardSupplier
+);
+
 router.post('/register', supplierController.registerSupplier);
 
 // Email verification (public)
@@ -20,6 +34,29 @@ router.get('/verify-email/:token', supplierController.verifySupplierEmail);
 
 // Supplier login (public)
 router.post('/login', supplierController.loginSupplier);
+
+// ===============================
+// SUPPLIER PROFILE MANAGEMENT
+// ===============================
+
+// Get complete supplier profile (admin or supplier)
+router.get('/:supplierId/complete-profile',
+  authMiddleware, // Works for both admin and supplier auth
+  unifiedSupplierController.getCompleteSupplierProfile
+);
+
+// Update supplier profile
+router.put('/:supplierId/profile',
+  authMiddleware,
+  unifiedSupplierController.updateSupplierProfile
+);
+
+// Supplier's own dashboard
+router.get('/dashboard',
+  supplierAuthMiddleware,
+  requireActiveSupplier,
+  unifiedSupplierController.getSupplierDashboard
+);
 
 router.get('/profile', 
   supplierAuthMiddleware, 
@@ -43,6 +80,90 @@ router.get('/rfq-requests/:rfqId',
   supplierAuthMiddleware,
   requireActiveSupplier,
   supplierRfqController.getSupplierRfqById
+);
+
+// ===============================
+// ADMIN OPERATIONS
+// ===============================
+
+// Bulk import suppliers
+router.post('/bulk-import',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain'),
+  unifiedSupplierController.bulkImportSuppliers
+);
+
+// Approve/Reject supplier
+router.post('/:supplierId/approve-reject',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  unifiedSupplierController.approveOrRejectSupplier
+);
+
+// Get all suppliers (existing - keep for backward compatibility)
+router.get('/admin/all',
+  authMiddleware,
+  requireRoles('admin', 'finance', 'supply_chain'),
+  supplierController.getAllSuppliers
+);
+
+// ===============================
+// CONTRACT MANAGEMENT
+// ===============================
+
+// Create contract for supplier (admin)
+router.post('/contracts',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain'),
+  contractController.createContract
+);
+
+// Get supplier's contracts
+router.get('/:supplierId/contracts',
+  authMiddleware,
+  contractController.getSupplierContracts
+);
+
+// Link invoice to contract (manual)
+router.post('/contracts/:contractId/link-invoice',
+  authMiddleware,
+  requireRoles('admin', 'finance'),
+  contractController.linkInvoiceToContract
+);
+
+// Unlink invoice from contract
+router.delete('/contracts/:contractId/invoices/:invoiceId',
+  authMiddleware,
+  requireRoles('admin', 'finance'),
+  contractController.unlinkInvoiceFromContract
+);
+
+// Get contract with linked invoices
+router.get('/contracts/:contractId/with-invoices',
+  authMiddleware,
+  contractController.getContractWithInvoices
+);
+
+// ===============================
+// INVOICE MANAGEMENT (Existing)
+// ===============================
+
+// Submit invoice (existing)
+router.post('/invoices',
+  supplierAuthMiddleware,
+  requireActiveSupplier,
+  upload.fields([
+    { name: 'invoiceFile', maxCount: 1 },
+    { name: 'poFile', maxCount: 1 }
+  ]),
+  supplierInvoiceController.submitSupplierInvoice
+);
+
+// Get supplier's invoices (existing)
+router.get('/invoices',
+  supplierAuthMiddleware,
+  requireActiveSupplier,
+  supplierInvoiceController.getSupplierInvoices
 );
 
 // Submit quote for RFQ

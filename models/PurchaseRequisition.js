@@ -183,6 +183,35 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
     }
   },
 
+  // Reference to generated petty cash form
+  pettyCashForm: {
+    formId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'PettyCashForm'
+    },
+    generated: {
+      type: Boolean,
+      default: false
+    },
+    generatedDate: Date,
+    generatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  },
+
+  paymentMethod: {
+    type: String,
+    enum: ['bank', 'cash'],
+    default: 'bank',
+    required: function() {
+      // Only required after finance verification
+      return this.status !== 'draft' && 
+             this.status !== 'pending_supervisor' && 
+             this.status !== 'pending_finance_verification';
+    }
+  },
+
   // Enhanced Supply Chain Review with Buyer Assignment
   supplyChainReview: {
     assignedOfficer: String,

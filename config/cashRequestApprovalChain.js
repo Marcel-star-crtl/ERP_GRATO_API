@@ -1,5 +1,3 @@
-// config/cashRequestApprovalChain.js - COMPLETELY FIXED VERSION
-
 const { DEPARTMENT_STRUCTURE } = require('./departmentStructure');
 
 /**

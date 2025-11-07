@@ -135,6 +135,45 @@ router.get('/users/:userId', authMiddleware, async (req, res) => {
   }
 });
 
+// Get user by email (for fallback user resolution)
+router.get('/user-by-email', authMiddleware, async (req, res) => {
+  try {
+    const { email } = req.query;
+    
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    const user = await User.findOne({ 
+      email: email.toLowerCase(),
+      isActive: true 
+    }).select('_id fullName email department position role');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found or not active'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: user
+    });
+
+  } catch (error) {
+    console.error('Find user by email error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to find user',
+      error: error.message
+    });
+  }
+});
+
 // Search users
 router.get('/users/search', authMiddleware, requireRoles('admin'), async (req, res) => {
   try {
@@ -182,7 +221,7 @@ router.get('/users/departments', authMiddleware, async (req, res) => {
     const departments = await User.distinct('department');
     res.json({
       success: true,
-      data: departments.filter(dept => dept) // Remove null/undefined values
+      data: departments.filter(dept => dept) 
     });
   } catch (error) {
     console.error('Error fetching departments:', error);
@@ -232,14 +271,14 @@ router.post('/users/admin/create', authMiddleware, requireRoles('admin'), async 
     // Create new user
     const newUser = new User({
       email,
-      password, // Will be hashed by the pre-save middleware
+      password, 
       fullName,
       department,
       position,
       role: role || 'employee',
       phone,
       isActive: isActive !== false,
-      emailVerified: true // Admin created users are automatically verified
+      emailVerified: true 
     });
 
     await newUser.save();

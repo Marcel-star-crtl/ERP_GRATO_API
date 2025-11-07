@@ -246,10 +246,6 @@ router.post('/purchase-orders/validate-bulk',
   }
 );
 
-// =============================================
-// SUPPLIER MANAGEMENT ROUTES
-// =============================================
-
 // Get suppliers for PO creation
 router.get('/suppliers', 
   authMiddleware, 
@@ -540,9 +536,6 @@ router.post('/deliveries/:deliveryId/report-issue',
   })
 );
 
-// =============================================
-// DASHBOARD & ANALYTICS ROUTES
-// =============================================
 
 // Get buyer dashboard data
 router.get('/dashboard', 
@@ -722,6 +715,19 @@ router.param('requisitionId', async (req, res, next, requisitionId) => {
     next(error);
   }
 });
+
+router.get(
+  '/petty-cash-forms', 
+  buyerRequisitionController.getPettyCashForms
+);
+router.get(
+  '/petty-cash-forms/:formId', 
+  buyerRequisitionController.getPettyCashFormDetails
+);
+router.get(
+  '/petty-cash-forms/:formId/download', 
+  buyerRequisitionController.downloadPettyCashFormPDF
+);
 
 // Validate supplier ID parameter
 router.param('supplierId', async (req, res, next, supplierId) => {

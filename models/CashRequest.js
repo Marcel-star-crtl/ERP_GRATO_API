@@ -8,13 +8,58 @@ const CashRequestSchema = new mongoose.Schema({
   },
   requestType: {
     type: String,
-    enum: ['travel', 'office-supplies', 'client-entertainment', 'emergency', 'project-materials', 'training', 'other'],
+    enum: [
+      'travel', 
+      'office-supplies', 
+      'client-entertainment', 
+      'emergency', 
+      'project-materials', 
+      'training', 
+      'accommodation',      
+      'perdiem',           
+      'bills',             
+      'staff-transportation', 
+      'staff-entertainment',  
+      'toll-gates',        
+      'office-items',      
+      'other'
+    ],
     required: true
   },
+  requestMode: {
+    type: String,
+    enum: ['advance', 'reimbursement'],
+    default: 'advance',
+    required: true
+  },
+  // amountRequested: {
+  //   type: Number,
+  //   // required: true,
+  //   min: 0,
+  //   max: function() {
+  //     return this.requestMode === 'reimbursement' ? 100000 : Number.MAX_SAFE_INTEGER;
+  //   }
+  // },
   amountRequested: {
     type: Number,
     required: true,
-    min: 0
+    min: [0, 'Amount must be greater than 0'],
+    validate: {
+      validator: function(value) {
+        // For reimbursement mode, enforce 100,000 limit
+        if (this.requestMode === 'reimbursement') {
+          return value <= 100000;
+        }
+        // For advance mode, allow any reasonable amount
+        return value > 0 && value <= 999999999; // 999 million max
+      },
+      message: function(props) {
+        if (props.instance.requestMode === 'reimbursement') {
+          return `Reimbursement amount cannot exceed XAF 100,000. Requested: XAF ${props.value.toLocaleString()}`;
+        }
+        return `Amount must be between XAF 1 and XAF 999,999,999. Requested: XAF ${props.value.toLocaleString()}`;
+      }
+    }
   },
   amountApproved: {
     type: Number,
@@ -114,6 +159,35 @@ const CashRequestSchema = new mongoose.Schema({
     }
   }],
 
+  justificationApprovalChain: [{
+    level: {
+      type: Number,
+      required: true
+    },
+    approver: {
+      name: { type: String, required: true },
+      email: { type: String, required: true },
+      role: { type: String, required: true },
+      department: { type: String, required: true }
+    },
+    status: {
+      type: String,
+      enum: ['pending', 'approved', 'rejected'],
+      default: 'pending'
+    },
+    comments: String,
+    actionDate: Date,
+    actionTime: String,
+    decidedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    assignedDate: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+
   status: {
     type: String,
     enum: [
@@ -124,10 +198,16 @@ const CashRequestSchema = new mongoose.Schema({
       'approved',                     
       'denied',                       
       'disbursed',                    
-      'justification_pending_supervisor',     
-      'justification_pending_departmental_head', 
-      'justification_pending_finance',        
-      'justification_rejected',               
+      // Justification statuses (same 4-level hierarchy)
+      'justification_pending_supervisor',
+      'justification_pending_departmental_head',
+      'justification_pending_head_of_business',
+      'justification_pending_finance',
+      // Rejection statuses
+      'justification_rejected_supervisor',
+      'justification_rejected_departmental_head',
+      'justification_rejected_head_of_business',
+      'justification_rejected_finance',
       'completed'                            
     ],
     default: 'pending_supervisor'
@@ -187,31 +267,11 @@ const CashRequestSchema = new mongoose.Schema({
     justificationDate: Date
   },
 
-  // Justification approval workflow
-  justificationApproval: {
-    supervisorDecision: {
-      decision: {
-        type: String,
-        enum: ['approve', 'reject']
-      },
-      comments: String,
-      decisionDate: Date,
-      decidedBy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
-      }
-    },
-    financeDecision: {
-      decision: {
-        type: String,
-        enum: ['approve', 'reject']
-      },
-      comments: String,
-      decisionDate: Date,
-      decidedBy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
-      }
+   justificationApproval: {
+    submittedDate: Date,
+    submittedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
     }
   },
 
@@ -223,6 +283,72 @@ const CashRequestSchema = new mongoose.Schema({
     size: Number,
     mimetype: String
   }],
+
+  // In CashRequest model
+  itemizedBreakdown: [{
+    description: {
+      type: String,
+      required: true
+    },
+    amount: {
+      type: Number,
+      required: true,
+      min: 0
+    },
+    category: String 
+  }],
+
+  pdfDownloadHistory: [{
+    downloadedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    downloadedAt: {
+      type: Date,
+      default: Date.now
+    },
+    filename: String
+  }],
+
+  // NEW: Reimbursement-specific details
+  reimbursementDetails: {
+    amountSpent: {
+      type: Number,
+      min: 0
+    },
+    receiptDocuments: [{
+      name: String,
+      url: String,
+      publicId: String,
+      size: Number,
+      mimetype: String,
+      uploadedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+    itemizedBreakdown: [{
+      description: {
+        type: String,
+        required: true
+      },
+      amount: {
+        type: Number,
+        required: true,
+        min: 0
+      },
+      category: String,
+      receiptReference: String
+    }],
+    submittedDate: {
+      type: Date,
+      default: Date.now
+    },
+    receiptVerified: {
+      type: Boolean,
+      default: false
+    }
+  },
 
   // Audit trail
   createdAt: {
@@ -343,18 +469,49 @@ CashRequestSchema.methods.getBudgetInfo = function() {
   };
 };
 
-// Pre-save middleware to update timestamps
+
 CashRequestSchema.pre('save', function(next) {
-  this.updatedAt = new Date();
-  
-  // Auto-populate supervisor field from first approval chain entry for backward compatibility
-  if (this.approvalChain && this.approvalChain.length > 0 && !this.supervisor) {
-    const firstApprover = this.approvalChain[0];
-    // You might want to populate this with actual User ObjectId if needed
+  if (this.requestMode === 'reimbursement') {
+    // Enforce 100,000 limit
+    if (this.amountRequested > 100000) {
+      return next(new Error('Reimbursement amount cannot exceed XAF 100,000'));
+    }
+    
+    // Receipts are mandatory
+    if (!this.reimbursementDetails?.receiptDocuments || 
+        this.reimbursementDetails.receiptDocuments.length === 0) {
+      return next(new Error('Receipt documents are mandatory for reimbursement requests'));
+    }
+    
+    // Itemized breakdown required
+    if (!this.reimbursementDetails?.itemizedBreakdown || 
+        this.reimbursementDetails.itemizedBreakdown.length === 0) {
+      return next(new Error('Itemized breakdown is required for reimbursement requests'));
+    }
   }
-  
   next();
 });
+
+// NEW: Check monthly reimbursement limit (5 per employee)
+CashRequestSchema.statics.checkMonthlyReimbursementLimit = async function(employeeId) {
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+  
+  const count = await this.countDocuments({
+    employee: employeeId,
+    requestMode: 'reimbursement',
+    createdAt: { $gte: startOfMonth },
+    status: { $ne: 'denied' } // Don't count rejected ones
+  });
+  
+  return {
+    count,
+    limit: 5,
+    remaining: Math.max(0, 5 - count),
+    canSubmit: count < 5
+  };
+};
 
 // Pre-update middleware to update timestamps
 CashRequestSchema.pre(['findOneAndUpdate', 'updateOne', 'updateMany'], function(next) {

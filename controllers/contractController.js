@@ -1,5 +1,6 @@
 const Contract = require('../models/Contract');
 const User = require('../models/User');
+const SupplierInvoice = require('../models/SupplierInvoice');
 const { sendEmail } = require('../services/emailService');
 const { uploadFile, deleteFile } = require('../services/fileUploadService');
 const ExcelJS = require('exceljs');
@@ -7,52 +8,34 @@ const PDFDocument = require('pdfkit');
 const moment = require('moment');
 
 
+/**
+ * CREATE CONTRACT (Admin can create directly)
+ */
 exports.createContract = async (req, res) => {
   try {
+    console.log('=== CREATING CONTRACT ===');
+    
     const {
+      supplierId,
       title,
       description,
       type,
       category,
-      supplierId,
-      supplierName,
-      contactPerson,
-      contactEmail,
-      contactPhone,
+      startDate,
+      endDate,
       totalValue,
       currency,
       paymentTerms,
       deliveryTerms,
-      startDate,
-      endDate,
       department,
       contractManager,
-      priority,
       isRenewable,
       autoRenewal,
-      renewalPeriod,
-      renewalNotificationDays,
-      milestones,
-      internalNotes
+      terms,
+      milestones
     } = req.body;
-
-    // Validate required fields
-    if (!title || !description || !type || !category || !supplierId || !totalValue || !startDate || !endDate) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required fields'
-      });
-    }
-
-    // Validate dates
-    if (new Date(startDate) >= new Date(endDate)) {
-      return res.status(400).json({
-        success: false,
-        message: 'End date must be after start date'
-      });
-    }
-
-    // Check if supplier exists
+    
+    // Validate supplier exists
     const supplier = await User.findById(supplierId);
     if (!supplier || supplier.role !== 'supplier') {
       return res.status(404).json({
@@ -60,123 +43,281 @@ exports.createContract = async (req, res) => {
         message: 'Supplier not found'
       });
     }
-
-    // Check if contract manager exists
-    if (contractManager) {
-      const manager = await User.findById(contractManager);
-      if (!manager) {
-        return res.status(404).json({
-          success: false,
-          message: 'Contract manager not found'
-        });
-      }
+    
+    // Check supplier is approved
+    if (supplier.supplierStatus.accountStatus !== 'approved') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot create contract with unapproved supplier'
+      });
     }
-
-    // Process uploaded documents
-    const documents = [];
-    if (req.files && req.files.contractDocuments) {
-      for (const file of req.files.contractDocuments) {
-        try {
-          const uploadResult = await uploadFile(file, 'contract-documents');
-          
-          documents.push({
-            name: file.originalname,
-            type: this.getDocumentType(file.originalname),
-            filename: uploadResult.filename,
-            originalName: file.originalname,
-            mimetype: file.mimetype,
-            size: file.size,
-            url: uploadResult.url,
-            publicId: uploadResult.publicId,
-            uploadedBy: req.user.userId
-          });
-        } catch (uploadError) {
-          console.error('Failed to upload document:', uploadError);
-        }
-      }
-    }
-
-    // Generate unique contract number
-    const year = new Date().getFullYear();
-    const count = await Contract.countDocuments({
-      'dates.creationDate': {
-        $gte: new Date(`${year}-01-01`),
-        $lt: new Date(`${year + 1}-01-01`)
-      }
-    });
-    const contractNumber = `CON-${year}-${String(count + 1).padStart(4, '0')}`;
-
+    
     // Create contract
-    const contractData = {
-      contractNumber,
-      title: title.trim(),
-      description: description.trim(),
+    const contract = await Contract.create({
+      supplier: supplierId,
+      title,
+      description,
       type,
       category,
-      
-      supplier: {
-        supplierId,
-        supplierName: supplierName || supplier.fullName,
-        contactPerson: contactPerson || supplier.supplierDetails?.contactName,
-        contactEmail: contactEmail || supplier.email,
-        contactPhone: contactPhone || supplier.supplierDetails?.phoneNumber
+      dates: {
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        signedDate: new Date()
       },
-      
       financials: {
         totalValue: parseFloat(totalValue),
         currency: currency || 'XAF',
         paymentTerms,
         deliveryTerms
       },
-      
-      dates: {
-        startDate: new Date(startDate),
-        endDate: new Date(endDate)
-      },
-      
+      status: 'active',
       management: {
-        contractManager: contractManager || req.user.userId,
-        department: department || 'Supply Chain',
-        createdBy: req.user.userId
+        contractManager,
+        department
       },
-      
-      priority: priority || 'Medium',
-      
       renewal: {
-        isRenewable: isRenewable === true || isRenewable === 'true',
-        autoRenewal: autoRenewal === true || autoRenewal === 'true',
-        renewalPeriod: parseInt(renewalPeriod) || 12,
-        renewalNotificationDays: parseInt(renewalNotificationDays) || 30
+        isRenewable: isRenewable || false,
+        autoRenewal: autoRenewal || false
       },
-      
-      documents,
-      internalNotes: internalNotes || '',
-      
-      // Parse milestones if provided
-      milestones: milestones ? JSON.parse(milestones).map(milestone => ({
-        ...milestone,
-        dueDate: new Date(milestone.dueDate),
-        createdBy: req.user.userId
-      })) : []
-    };
-
-    const contract = await Contract.create(contractData);
-
-    // Send notification emails
-    await this.sendContractCreationNotifications(contract);
-
+      terms: terms || {},
+      milestones: milestones || [],
+      createdBy: req.user.userId
+    });
+    
+    console.log(`Contract created: ${contract.contractNumber} for supplier: ${supplier.supplierDetails.companyName}`);
+    
+    // Send notification to supplier
+    await require('../services/emailService').sendEmail({
+      to: supplier.email,
+      subject: `New Contract Created - ${contract.contractNumber}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2>New Contract Created</h2>
+          <p>Dear ${supplier.supplierDetails.contactName},</p>
+          <p>A new contract has been created for ${supplier.supplierDetails.companyName}.</p>
+          
+          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px;">
+            <h3>Contract Details:</h3>
+            <ul>
+              <li><strong>Contract Number:</strong> ${contract.contractNumber}</li>
+              <li><strong>Title:</strong> ${contract.title}</li>
+              <li><strong>Type:</strong> ${contract.type}</li>
+              <li><strong>Value:</strong> ${contract.financials.currency} ${contract.financials.totalValue.toLocaleString()}</li>
+              <li><strong>Start Date:</strong> ${new Date(startDate).toLocaleDateString()}</li>
+              <li><strong>End Date:</strong> ${new Date(endDate).toLocaleDateString()}</li>
+            </ul>
+          </div>
+          
+          <p>You can view contract details in your supplier portal.</p>
+        </div>
+      `
+    }).catch(err => console.error('Failed to send contract notification:', err));
+    
     res.status(201).json({
       success: true,
       message: 'Contract created successfully',
       data: contract
     });
-
+    
   } catch (error) {
     console.error('Error creating contract:', error);
-    res.status(500).json({
+    res.status(400).json({
       success: false,
       message: 'Failed to create contract',
       error: error.message
+    });
+  }
+};
+
+/**
+ * GET CONTRACTS FOR SUPPLIER
+ */
+exports.getSupplierContracts = async (req, res) => {
+  try {
+    const { supplierId } = req.params;
+    const { status, category, startDate, endDate } = req.query;
+    
+    const filter = { supplier: supplierId };
+    if (status) filter.status = status;
+    if (category) filter.category = category;
+    if (startDate || endDate) {
+      filter['dates.startDate'] = {};
+      if (startDate) filter['dates.startDate'].$gte = new Date(startDate);
+      if (endDate) filter['dates.startDate'].$lte = new Date(endDate);
+    }
+    
+    const contracts = await Contract.find(filter)
+      .populate('supplier', 'supplierDetails email')
+      .populate('management.contractManager', 'fullName email')
+      .sort({ createdAt: -1 });
+    
+    // Get invoice totals for each contract
+    const contractsWithInvoices = await Promise.all(
+      contracts.map(async (contract) => {
+        const invoiceTotal = await contract.getInvoiceTotal();
+        const remainingValue = await contract.getRemainingValue();
+        
+        return {
+          ...contract.toObject(),
+          invoiceTotal,
+          remainingValue,
+          utilizationPercentage: contract.financials.totalValue > 0 
+            ? Math.round((invoiceTotal / contract.financials.totalValue) * 100)
+            : 0
+        };
+      })
+    );
+    
+    res.json({
+      success: true,
+      data: contractsWithInvoices
+    });
+    
+  } catch (error) {
+    console.error('Error fetching supplier contracts:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch contracts'
+    });
+  }
+};
+
+/**
+ * LINK INVOICE TO CONTRACT (Manual)
+ */
+exports.linkInvoiceToContract = async (req, res) => {
+  try {
+    const { contractId } = req.params;
+    const { invoiceId } = req.body;
+    
+    const [contract, invoice] = await Promise.all([
+      Contract.findById(contractId),
+      SupplierInvoice.findById(invoiceId)
+    ]);
+    
+    if (!contract) {
+      return res.status(404).json({
+        success: false,
+        message: 'Contract not found'
+      });
+    }
+    
+    if (!invoice) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invoice not found'
+      });
+    }
+    
+    // Verify same supplier
+    if (contract.supplier.toString() !== invoice.supplier.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Contract and invoice belong to different suppliers'
+      });
+    }
+    
+    // Link invoice to contract
+    await invoice.linkToContract(contractId, 'manual');
+    
+    res.json({
+      success: true,
+      message: 'Invoice linked to contract successfully',
+      data: {
+        contract: contract,
+        invoice: invoice
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error linking invoice to contract:', error);
+    res.status(400).json({
+      success: false,
+      message: 'Failed to link invoice to contract',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * UNLINK INVOICE FROM CONTRACT
+ */
+exports.unlinkInvoiceFromContract = async (req, res) => {
+  try {
+    const { contractId, invoiceId } = req.params;
+    
+    const [contract, invoice] = await Promise.all([
+      Contract.findById(contractId),
+      SupplierInvoice.findById(invoiceId)
+    ]);
+    
+    if (!contract || !invoice) {
+      return res.status(404).json({
+        success: false,
+        message: 'Contract or invoice not found'
+      });
+    }
+    
+    // Unlink
+    await contract.unlinkInvoice(invoiceId);
+    invoice.linkedContract = null;
+    invoice.contractLinkMethod = 'none';
+    await invoice.save();
+    
+    res.json({
+      success: true,
+      message: 'Invoice unlinked from contract successfully'
+    });
+    
+  } catch (error) {
+    console.error('Error unlinking invoice:', error);
+    res.status(400).json({
+      success: false,
+      message: 'Failed to unlink invoice',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * GET CONTRACT WITH LINKED INVOICES
+ */
+exports.getContractWithInvoices = async (req, res) => {
+  try {
+    const { contractId } = req.params;
+    
+    const contract = await Contract.findById(contractId)
+      .populate('supplier', 'supplierDetails email')
+      .populate('linkedInvoices')
+      .populate('management.contractManager', 'fullName email');
+    
+    if (!contract) {
+      return res.status(404).json({
+        success: false,
+        message: 'Contract not found'
+      });
+    }
+    
+    const invoiceTotal = await contract.getInvoiceTotal();
+    const remainingValue = await contract.getRemainingValue();
+    
+    res.json({
+      success: true,
+      data: {
+        ...contract.toObject(),
+        invoiceTotal,
+        remainingValue,
+        utilizationPercentage: contract.financials.totalValue > 0 
+          ? Math.round((invoiceTotal / contract.financials.totalValue) * 100)
+          : 0
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error fetching contract with invoices:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch contract details'
     });
   }
 };

@@ -2,6 +2,7 @@ const ITSupportRequest = require('../models/ITSupportRequest');
 const User = require('../models/User');
 const { getApprovalChain } = require('../config/departmentStructure');
 const { sendITSupportEmail, sendEmail } = require('../services/emailService');
+const { getITSupportApprovalChain } = require('../config/itSupportApprovalChain');
 const fs = require('fs');
 const path = require('path');
 
@@ -183,7 +184,7 @@ const createITRequest = async (req, res) => {
     }
 
     // Generate approval chain based on employee name and department
-    const approvalChain = getApprovalChain(employee.fullName, employee.department);
+    const approvalChain = getITSupportApprovalChain(employee.fullName, employee.department);
     console.log('Generated approval chain:', JSON.stringify(approvalChain, null, 2));
 
     if (!approvalChain || approvalChain.length === 0) {
@@ -231,60 +232,111 @@ const createITRequest = async (req, res) => {
       }, 0);
     }
 
+    // // FIXED: Create the IT support request with proper approval chain structure
+    // const request = new ITSupportRequest({
+    //   ticketNumber,
+    //   employee: req.user.userId,
+    //   requestType,
+    //   title,
+    //   description: finalDescription,
+    //   department: employee.department,
+    //   category: validCategory, 
+    //   subcategory: validSubcategory, 
+    //   priority: priority || 'medium',
+    //   urgency: urgency || 'normal',
+    //   businessJustification: businessJustification || '',
+    //   businessImpact: businessImpact || '',
+    //   location: location || 'Office',
+    //   contactInfo: {
+    //     phone: parsedContactInfo.phone || employee.phone || '',
+    //     email: employee.email,
+    //     alternateContact: parsedContactInfo.alternateContact || ''
+    //   },
+    //   preferredContactMethod: preferredContactMethod || 'email',
+    //   requestedItems: parsedRequestedItems,
+    //   totalEstimatedCost,
+    //   deviceDetails: parsedDeviceDetails,
+    //   issueDetails: parsedIssueDetails,
+    //   troubleshootingAttempted: troubleshootingAttempted === 'true' || troubleshootingAttempted === true,
+    //   troubleshootingSteps: parsedTroubleshootingSteps,
+    //   attachments,
+    //   status: 'pending_supervisor',
+    //   submittedBy: employee.email,
+    //   submittedAt: new Date(),
+    //   // FIXED: Proper approval chain structure with all required fields
+    //   approvalChain: approvalChain.map(step => ({
+    //     level: step.level,
+    //     approver: {
+    //       name: step.approver || step.name || 'Unknown', 
+    //       email: step.email || step.approverEmail || '',
+    //       role: step.role || 'Approver',
+    //       department: step.department || employee.department 
+    //     },
+    //     status: 'pending',
+    //     comments: '',
+    //     actionDate: null,
+    //     actionTime: null,
+    //     decidedBy: null,
+    //     assignedDate: new Date()
+    //   })),
+    //   slaMetrics: {
+    //     submittedDate: new Date(),
+    //     targetResponseTime: priority === 'critical' ? 4 : priority === 'high' ? 8 : 24, 
+    //     targetResolutionTime: priority === 'critical' ? 24 : priority === 'high' ? 48 : 120, 
+    //     slaBreached: false
+    //   }
+    // });
+
+
     // FIXED: Create the IT support request with proper approval chain structure
-    const request = new ITSupportRequest({
-      ticketNumber,
-      employee: req.user.userId,
-      requestType,
-      title,
-      description: finalDescription,
-      department: employee.department,
-      category: validCategory, 
-      subcategory: validSubcategory, 
-      priority: priority || 'medium',
-      urgency: urgency || 'normal',
-      businessJustification: businessJustification || '',
-      businessImpact: businessImpact || '',
-      location: location || 'Office',
-      contactInfo: {
-        phone: parsedContactInfo.phone || employee.phone || '',
-        email: employee.email,
-        alternateContact: parsedContactInfo.alternateContact || ''
-      },
-      preferredContactMethod: preferredContactMethod || 'email',
-      requestedItems: parsedRequestedItems,
-      totalEstimatedCost,
-      deviceDetails: parsedDeviceDetails,
-      issueDetails: parsedIssueDetails,
-      troubleshootingAttempted: troubleshootingAttempted === 'true' || troubleshootingAttempted === true,
-      troubleshootingSteps: parsedTroubleshootingSteps,
-      attachments,
-      status: 'pending_supervisor',
-      submittedBy: employee.email,
-      submittedAt: new Date(),
-      // FIXED: Proper approval chain structure with all required fields
-      approvalChain: approvalChain.map(step => ({
-        level: step.level,
-        approver: {
-          name: step.approver || step.name || 'Unknown', 
-          email: step.email || step.approverEmail || '',
-          role: step.role || 'Approver',
-          department: step.department || employee.department 
-        },
-        status: 'pending',
-        comments: '',
-        actionDate: null,
-        actionTime: null,
-        decidedBy: null,
-        assignedDate: new Date()
-      })),
-      slaMetrics: {
-        submittedDate: new Date(),
-        targetResponseTime: priority === 'critical' ? 4 : priority === 'high' ? 8 : 24, 
-        targetResolutionTime: priority === 'critical' ? 24 : priority === 'high' ? 48 : 120, 
-        slaBreached: false
-      }
-    });
+const request = new ITSupportRequest({
+  ticketNumber,
+  employee: req.user.userId,
+  requestType,
+  title,
+  description: finalDescription,
+  department: employee.department,
+  category: validCategory, 
+  subcategory: validSubcategory, 
+  priority: priority || 'medium',
+  urgency: urgency || 'normal',
+  businessJustification: businessJustification || '',
+  businessImpact: businessImpact || '',
+  location: location || 'Office',
+  contactInfo: {
+    phone: parsedContactInfo.phone || employee.phone || '',
+    email: employee.email,
+    alternateContact: parsedContactInfo.alternateContact || ''
+  },
+  preferredContactMethod: preferredContactMethod || 'email',
+  requestedItems: parsedRequestedItems,
+  totalEstimatedCost,
+  deviceDetails: parsedDeviceDetails,
+  issueDetails: parsedIssueDetails,
+  troubleshootingAttempted: troubleshootingAttempted === 'true' || troubleshootingAttempted === true,
+  troubleshootingSteps: parsedTroubleshootingSteps,
+  attachments,
+  status: 'pending_supervisor',
+  submittedBy: employee.email,
+  submittedAt: new Date(),
+  // FIXED: Proper approval chain - direct assignment since structure already matches
+  approvalChain: approvalChain.map(step => ({
+    level: step.level,
+    approver: step.approver, // Already has correct structure from getITSupportApprovalChain
+    status: step.status || 'pending',
+    comments: '',
+    actionDate: null,
+    actionTime: null,
+    decidedBy: null,
+    assignedDate: step.assignedDate || new Date()
+  })),
+  slaMetrics: {
+    submittedDate: new Date(),
+    targetResponseTime: priority === 'critical' ? 4 : priority === 'high' ? 8 : 24, 
+    targetResolutionTime: priority === 'critical' ? 24 : priority === 'high' ? 48 : 120, 
+    slaBreached: false
+  }
+});
 
     await request.save();
 
@@ -453,6 +505,43 @@ const getITRequestDetails = async (req, res) => {
 };
 
 // Get supervisor IT requests (pending approval)
+// const getSupervisorITRequests = async (req, res) => {
+//   try {
+//     const user = await User.findById(req.user.userId);
+//     if (!user) {
+//       return res.status(404).json({ success: false, message: 'User not found' });
+//     }
+
+//     // Find requests where current user is in the approval chain and status is pending
+//     const requests = await ITSupportRequest.find({
+//       'approvalChain': {
+//         $elemMatch: {
+//           'approver.email': user.email,
+//           'status': 'pending'
+//         }
+//       },
+//       status: { $in: ['pending_supervisor'] }
+//     })
+//     .populate('employee', 'fullName email department')
+//     .sort({ createdAt: -1 });
+
+//     res.json({
+//       success: true,
+//       data: requests,
+//       count: requests.length
+//     });
+
+//   } catch (error) {
+//     console.error('Get supervisor IT requests error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch IT requests',
+//       error: error.message
+//     });
+//   }
+// };
+
+// Get supervisor IT requests (pending approval)
 const getSupervisorITRequests = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
@@ -460,7 +549,16 @@ const getSupervisorITRequests = async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // Find requests where current user is in the approval chain and status is pending
+    console.log('=== GET SUPERVISOR IT REQUESTS ===');
+    console.log('User:', {
+      id: user._id,
+      name: user.fullName,
+      email: user.email,
+      role: user.role
+    });
+
+    // FIXED: Find requests where current user is in the approval chain with pending status
+    // AND the request status matches their approval level
     const requests = await ITSupportRequest.find({
       'approvalChain': {
         $elemMatch: {
@@ -468,10 +566,33 @@ const getSupervisorITRequests = async (req, res) => {
           'status': 'pending'
         }
       },
-      status: { $in: ['pending_supervisor'] }
+      // FIXED: Include ALL relevant statuses for approval chain
+      status: { 
+        $in: [
+          'pending_supervisor',
+          'pending_departmental_head',
+          'pending_head_of_business',
+          'pending_it_approval'
+        ] 
+      }
     })
     .populate('employee', 'fullName email department')
     .sort({ createdAt: -1 });
+
+    console.log(`Found ${requests.length} requests for ${user.fullName}`);
+    
+    // ADDITIONAL DEBUG: Log the approval chain status for each request
+    requests.forEach(req => {
+      const userStep = req.approvalChain?.find(step => 
+        step.approver.email === user.email
+      );
+      console.log(`Request ${req.ticketNumber}:`, {
+        status: req.status,
+        userStepStatus: userStep?.status,
+        userStepLevel: userStep?.level,
+        userStepRole: userStep?.approver.role
+      });
+    });
 
     res.json({
       success: true,
@@ -488,6 +609,280 @@ const getSupervisorITRequests = async (req, res) => {
     });
   }
 };
+
+// // Process supervisor decision
+// const processSupervisorDecision = async (req, res) => {
+//   try {
+//     const { requestId } = req.params;
+//     const { decision, comments } = req.body;
+
+//     console.log('=== SUPERVISOR IT DECISION PROCESSING ===');
+//     console.log('Request ID:', requestId);
+//     console.log('Decision:', decision);
+
+//     const user = await User.findById(req.user.userId);
+//     if (!user) {
+//       return res.status(404).json({ success: false, message: 'User not found' });
+//     }
+
+//     const request = await ITSupportRequest.findById(requestId)
+//       .populate('employee', 'fullName email department');
+
+//     if (!request) {
+//       return res.status(404).json({ 
+//         success: false, 
+//         message: 'IT support request not found' 
+//       });
+//     }
+
+//     // Find current user's step in approval chain
+//     const currentStepIndex = request.approvalChain.findIndex(
+//       step => step.approver.email === user.email && step.status === 'pending'
+//     );
+
+//     if (currentStepIndex === -1) {
+//       return res.status(403).json({
+//         success: false,
+//         message: 'You are not authorized to approve this request or it has already been processed'
+//       });
+//     }
+
+//     // Update the approval step
+//     request.approvalChain[currentStepIndex].status = decision;
+//     request.approvalChain[currentStepIndex].comments = comments;
+//     request.approvalChain[currentStepIndex].actionDate = new Date();
+//     request.approvalChain[currentStepIndex].actionTime = new Date().toLocaleTimeString('en-GB');
+//     request.approvalChain[currentStepIndex].decidedBy = req.user.userId;
+
+//     // Update overall request status based on decision
+//     if (decision === 'rejected') {
+//       request.status = 'supervisor_rejected';
+      
+//       // Update the legacy supervisorDecision field for backward compatibility
+//       request.supervisorDecision = {
+//         decision: 'rejected',
+//         comments,
+//         decisionDate: new Date(),
+//         decidedBy: req.user.userId
+//       };
+//     // } else if (decision === 'approved') {
+//     //   // Determine next status based on approval chain
+//     //   const currentStepIndex = request.approvalChain.findIndex(
+//     //     step => step.approver.email === user.email && step.status === 'approved'
+//     //   );
+      
+//     //   const nextStep = request.approvalChain[currentStepIndex + 1];
+      
+//     //   if (nextStep) {
+//     //     // Map next approver role to status
+//     //     const roleStatusMap = {
+//     //       'Departmental Head': 'pending_departmental_head',
+//     //       'Head of Business': 'pending_head_of_business',
+//     //       'IT Department - Final Approval': 'pending_it_approval'
+//     //     };
+//     //     request.status = roleStatusMap[nextStep.approver.role] || 'pending_it_approval';
+//     //   } else {
+//     //     request.status = 'approved'; // Fallback if no next step
+//     //   }
+      
+//     //   // Update legacy supervisorDecision field
+//     //   request.supervisorDecision = {
+//     //     decision: 'approved',
+//     //     comments,
+//     //     decisionDate: new Date(),
+//     //     decidedBy: req.user.userId
+//     //   };
+//     // }
+
+//     } else if (decision === 'approved') {
+//       // FIXED: Properly handle approval chain progression
+      
+//       // Update legacy supervisorDecision field
+//       request.supervisorDecision = {
+//         decision: 'approved',
+//         comments,
+//         decisionDate: new Date(),
+//         decidedBy: req.user.userId
+//       };
+      
+//       // Find the NEXT pending step in the approval chain
+//       const nextPendingStep = request.approvalChain.find(step => step.status === 'pending');
+      
+//       if (nextPendingStep) {
+//         // Determine status based on next approver's role
+//         const roleStatusMap = {
+//           'Supervisor': 'pending_supervisor',
+//           'Departmental Head': 'pending_departmental_head',
+//           'Head of Business': 'pending_head_of_business',
+//           'IT Department - Final Approval': 'pending_it_approval'
+//         };
+        
+//         request.status = roleStatusMap[nextPendingStep.approver.role] || 'pending_it_approval';
+        
+//         console.log(`✅ Next approval step: ${nextPendingStep.approver.role} (${nextPendingStep.approver.email})`);
+//         console.log(`✅ Updated status to: ${request.status}`);
+//       } else {
+//         // All approvals complete
+//         request.status = 'it_approved';
+//         console.log('✅ All approval steps completed - IT approved');
+//       }
+//     }
+
+//     await request.save();
+
+//     // Send notifications based on decision
+//     const notifications = [];
+
+//     if (decision === 'approved') {
+//       // Find next approver
+//       const nextPendingStep = request.approvalChain.find(step => step.status === 'pending');
+      
+//       if (nextPendingStep) {
+//         // Determine who to notify based on next approver
+//         if (nextPendingStep.approver.role === 'IT Department - Final Approval') {
+//           // Notify IT department - this is the final approval step
+//           const itDepartment = await User.find({ role: 'it' }).select('email fullName');
+          
+//           if (itDepartment.length > 0) {
+//             notifications.push(
+//               sendITSupportEmail.supervisorApprovalToIT(
+//                 itDepartment.map(u => u.email),
+//                 request.employee.fullName,
+//                 request.requestType,
+//                 request.title,
+//                 request.ticketNumber,
+//                 user.fullName,
+//                 request.totalEstimatedCost || null,
+//                 comments
+//               ).catch(error => {
+//                 console.error('Failed to send IT notification:', error);
+//                 return { error, type: 'it' };
+//               })
+//             );
+//           }
+//         } else {
+//           // Notify next approver (Department Head or President)
+//           notifications.push(
+//             sendEmail({
+//               to: nextPendingStep.approver.email,
+//               subject: `IT Support Request Approval Required - ${request.ticketNumber}`,
+//               html: `
+//                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+//                   <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px; border-left: 4px solid #1890ff;">
+//                     <h2 style="color: #0050b3; margin-top: 0;">IT Support Request - Approval Required</h2>
+//                     <p>Dear ${nextPendingStep.approver.name},</p>
+//                     <p>An IT support request has been approved by ${user.fullName} and requires your approval.</p>
+
+//                     <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+//                       <h3 style="color: #333; margin-top: 0;">Request Details</h3>
+//                       <table style="width: 100%; border-collapse: collapse;">
+//                         <tr>
+//                           <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Employee:</strong></td>
+//                           <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${request.employee.fullName}</td>
+//                         </tr>
+//                         <tr>
+//                           <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Request Type:</strong></td>
+//                           <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${request.requestType === 'material_request' ? 'Material Request' : 'Technical Issue'}</td>
+//                         </tr>
+//                         <tr>
+//                           <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Title:</strong></td>
+//                           <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${request.title}</td>
+//                         </tr>
+//                         <tr>
+//                           <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Previous Approver:</strong></td>
+//                           <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${user.fullName}</td>
+//                         </tr>
+//                         <tr>
+//                           <td style="padding: 8px 0;"><strong>Ticket Number:</strong></td>
+//                           <td style="padding: 8px 0;">${request.ticketNumber}</td>
+//                         </tr>
+//                       </table>
+//                     </div>
+
+//                     ${comments ? `
+//                     <div style="background-color: #e6f7ff; border-left: 4px solid #1890ff; padding: 15px; margin: 20px 0;">
+//                       <h4 style="color: #1890ff; margin-top: 0;">Previous Approver Comments:</h4>
+//                       <p style="color: #333; margin-bottom: 0;">"${comments}"</p>
+//                     </div>
+//                     ` : ''}
+
+//                     <div style="text-align: center; margin: 30px 0;">
+//                       <a href="${process.env.CLIENT_URL || 'http://localhost:3000'}/supervisor/it-support/${request._id}" 
+//                         style="display: inline-block; background-color: #1890ff; color: white; 
+//                                 padding: 15px 30px; text-decoration: none; border-radius: 8px;
+//                                 font-weight: bold; font-size: 16px;">
+//                         📋 Review & Approve Request
+//                       </a>
+//                     </div>
+
+//                     <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+//                     <p style="color: #888; font-size: 12px; margin-bottom: 0; text-align: center;">
+//                       This is an automated message from the IT Support Management System.
+//                     </p>
+//                   </div>
+//                 </div>
+//               `
+//             }).catch(error => {
+//               console.error('Failed to send next approver notification:', error);
+//               return { error, type: 'next_approver' };
+//             })
+//           );
+//         }
+//       }
+
+//       // Notify employee of approval progress
+//       notifications.push(
+//         sendITSupportEmail.statusUpdateToEmployee(
+//           request.employee.email,
+//           request.ticketNumber,
+//           'approved',
+//           `Your IT support request has been approved by ${user.fullName}.${nextPendingStep ? ` It is now awaiting approval from ${nextPendingStep.approver.name} (${nextPendingStep.approver.role}).` : ' All approvals are complete.'}`,
+//           user.fullName,
+//           nextPendingStep ? `Next Approver: ${nextPendingStep.approver.name}` : 'Your request will be processed shortly.'
+//         ).catch(error => {
+//           console.error('Failed to send employee notification:', error);
+//           return { error, type: 'employee' };
+//         })
+//       );
+//     } else {
+//       // Request was rejected - notify employee
+//       notifications.push(
+//         sendITSupportEmail.statusUpdateToEmployee(
+//           request.employee.email,
+//           request.ticketNumber,
+//           'rejected',
+//           comments || 'Your IT support request was not approved by the supervisor.',
+//           user.fullName,
+//           'Please contact your supervisor for more information or submit a revised request if circumstances change.'
+//         ).catch(error => {
+//           console.error('Failed to send employee notification:', error);
+//           return { error, type: 'employee' };
+//         })
+//       );
+//     }
+
+//     // Wait for notifications
+//     const notificationResults = await Promise.allSettled(notifications);
+
+//     res.json({
+//       success: true,
+//       message: `IT support request ${decision} successfully`,
+//       data: request,
+//       notifications: {
+//         sent: notificationResults.filter(r => r.status === 'fulfilled').length,
+//         failed: notificationResults.filter(r => r.status === 'rejected').length
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('Process supervisor decision error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to process supervisor decision',
+//       error: error.message
+//     });
+//   }
+// };
 
 // Process supervisor decision
 const processSupervisorDecision = async (req, res) => {
@@ -514,6 +909,14 @@ const processSupervisorDecision = async (req, res) => {
       });
     }
 
+    console.log('Current request status:', request.status);
+    console.log('Approval chain:', request.approvalChain.map(step => ({
+      level: step.level,
+      email: step.approver.email,
+      role: step.approver.role,
+      status: step.status
+    })));
+
     // Find current user's step in approval chain
     const currentStepIndex = request.approvalChain.findIndex(
       step => step.approver.email === user.email && step.status === 'pending'
@@ -526,6 +929,9 @@ const processSupervisorDecision = async (req, res) => {
       });
     }
 
+    console.log('Current step index:', currentStepIndex);
+    console.log('Current step details:', request.approvalChain[currentStepIndex]);
+
     // Update the approval step
     request.approvalChain[currentStepIndex].status = decision;
     request.approvalChain[currentStepIndex].comments = comments;
@@ -536,7 +942,7 @@ const processSupervisorDecision = async (req, res) => {
     // Update overall request status based on decision
     if (decision === 'rejected') {
       request.status = 'supervisor_rejected';
-
+      
       // Update the legacy supervisorDecision field for backward compatibility
       request.supervisorDecision = {
         decision: 'rejected',
@@ -544,9 +950,10 @@ const processSupervisorDecision = async (req, res) => {
         decisionDate: new Date(),
         decidedBy: req.user.userId
       };
-    } else if (decision === 'approved') {
-      request.status = 'pending_it_review';
+
+      console.log('✅ Request REJECTED by', user.fullName);
       
+    } else if (decision === 'approved') {
       // Update legacy supervisorDecision field
       request.supervisorDecision = {
         decision: 'approved',
@@ -554,50 +961,163 @@ const processSupervisorDecision = async (req, res) => {
         decisionDate: new Date(),
         decidedBy: req.user.userId
       };
+      
+      // FIXED: Find the NEXT pending step AFTER current step
+      const nextPendingStepIndex = request.approvalChain.findIndex(
+        (step, idx) => idx > currentStepIndex && step.status === 'pending'
+      );
+      
+      console.log('Next pending step index:', nextPendingStepIndex);
+      
+      if (nextPendingStepIndex !== -1) {
+        const nextPendingStep = request.approvalChain[nextPendingStepIndex];
+        
+        console.log('Next pending step:', {
+          level: nextPendingStep.level,
+          role: nextPendingStep.approver.role,
+          email: nextPendingStep.approver.email
+        });
+        
+        // Determine status based on next approver's role
+        const roleStatusMap = {
+          'Supervisor': 'pending_supervisor',
+          'Departmental Head': 'pending_departmental_head',
+          'Head of Business': 'pending_head_of_business',
+          'IT Department - Final Approval': 'pending_it_approval'
+        };
+        
+        request.status = roleStatusMap[nextPendingStep.approver.role] || 'pending_it_approval';
+        
+        console.log(`✅ Approved by ${user.fullName} (${request.approvalChain[currentStepIndex].approver.role})`);
+        console.log(`✅ Next approval step: ${nextPendingStep.approver.role} (${nextPendingStep.approver.email})`);
+        console.log(`✅ Updated status to: ${request.status}`);
+        
+      } else {
+        // All approvals complete
+        request.status = 'it_approved';
+        console.log('✅ All approval steps completed - IT approved');
+      }
     }
 
     await request.save();
+
+    console.log('✅ Request saved with new status:', request.status);
 
     // Send notifications based on decision
     const notifications = [];
 
     if (decision === 'approved') {
-      // Notify IT department
-      const itDepartment = await User.find({ role: 'it' }).select('email fullName');
-    
-      if (itDepartment.length > 0) {
-        notifications.push(
-          sendITSupportEmail.supervisorApprovalToIT(
-            itDepartment.map(u => u.email),
-            request.employee.fullName,
-            request.requestType,
-            request.title,
-            request.ticketNumber,
-            user.fullName,
-            request.totalEstimatedCost || null,
-            comments
-          ).catch(error => {
-            console.error('Failed to send IT notification:', error);
-            return { error, type: 'it' };
-          })
-        );
+      // Find next pending step again after save
+      const nextPendingStep = request.approvalChain.find(step => step.status === 'pending');
+      
+      if (nextPendingStep) {
+        console.log('Sending notification to:', nextPendingStep.approver.email);
+        
+        if (nextPendingStep.approver.role === 'IT Department - Final Approval') {
+          // Notify IT department - this is the final approval step
+          const itDepartment = await User.find({ role: 'it' }).select('email fullName');
+          
+          if (itDepartment.length > 0) {
+            notifications.push(
+              sendITSupportEmail.supervisorApprovalToIT(
+                itDepartment.map(u => u.email),
+                request.employee.fullName,
+                request.requestType,
+                request.title,
+                request.ticketNumber,
+                user.fullName,
+                request.totalEstimatedCost || null,
+                comments
+              ).catch(error => {
+                console.error('Failed to send IT notification:', error);
+                return { error, type: 'it' };
+              })
+            );
+          }
+        } else {
+          // Notify next approver (Department Head or President)
+          notifications.push(
+            sendEmail({
+              to: nextPendingStep.approver.email,
+              subject: `IT Support Request Approval Required - ${request.ticketNumber}`,
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                  <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px; border-left: 4px solid #1890ff;">
+                    <h2 style="color: #0050b3; margin-top: 0;">IT Support Request - Approval Required</h2>
+                    <p>Dear ${nextPendingStep.approver.name},</p>
+                    <p>An IT support request has been approved by ${user.fullName} (${request.approvalChain[currentStepIndex].approver.role}) and requires your approval.</p>
+
+                    <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                      <h3 style="color: #333; margin-top: 0;">Request Details</h3>
+                      <table style="width: 100%; border-collapse: collapse;">
+                        <tr>
+                          <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Employee:</strong></td>
+                          <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${request.employee.fullName}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Request Type:</strong></td>
+                          <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${request.requestType === 'material_request' ? 'Material Request' : 'Technical Issue'}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Title:</strong></td>
+                          <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${request.title}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Previous Approver:</strong></td>
+                          <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${user.fullName}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 8px 0;"><strong>Ticket Number:</strong></td>
+                          <td style="padding: 8px 0;">${request.ticketNumber}</td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    ${comments ? `
+                    <div style="background-color: #e6f7ff; border-left: 4px solid #1890ff; padding: 15px; margin: 20px 0;">
+                      <h4 style="color: #1890ff; margin-top: 0;">Previous Approver Comments:</h4>
+                      <p style="color: #333; margin-bottom: 0;">"${comments}"</p>
+                    </div>
+                    ` : ''}
+
+                    <div style="text-align: center; margin: 30px 0;">
+                      <a href="${process.env.CLIENT_URL || 'http://localhost:3000'}/supervisor/it-support/${request._id}" 
+                        style="display: inline-block; background-color: #1890ff; color: white; 
+                                padding: 15px 30px; text-decoration: none; border-radius: 8px;
+                                font-weight: bold; font-size: 16px;">
+                        📋 Review & Approve Request
+                      </a>
+                    </div>
+
+                    <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+                    <p style="color: #888; font-size: 12px; margin-bottom: 0; text-align: center;">
+                      This is an automated message from the IT Support Management System.
+                    </p>
+                  </div>
+                </div>
+              `
+            }).catch(error => {
+              console.error('Failed to send next approver notification:', error);
+              return { error, type: 'next_approver' };
+            })
+          );
+        }
       }
-    
+
       // Notify employee of approval progress
       notifications.push(
         sendITSupportEmail.statusUpdateToEmployee(
           request.employee.email,
           request.ticketNumber,
           'approved',
-          `Your IT support request has been approved by ${user.fullName} and is now being reviewed by the IT department.`,
+          `Your IT support request has been approved by ${user.fullName} (${request.approvalChain[currentStepIndex].approver.role}).${nextPendingStep ? ` It is now awaiting approval from ${nextPendingStep.approver.name} (${nextPendingStep.approver.role}).` : ' All approvals are complete.'}`,
           user.fullName,
-          'The IT team will review your request and assign appropriate resources. You will receive updates as work progresses.'
+          nextPendingStep ? `Next Approver: ${nextPendingStep.approver.name}` : 'Your request will be processed shortly.'
         ).catch(error => {
           console.error('Failed to send employee notification:', error);
           return { error, type: 'employee' };
         })
       );
-    
     } else {
       // Request was rejected - notify employee
       notifications.push(
@@ -605,7 +1125,7 @@ const processSupervisorDecision = async (req, res) => {
           request.employee.email,
           request.ticketNumber,
           'rejected',
-          comments || 'Your IT support request was not approved by the supervisor.',
+          comments || 'Your IT support request was not approved.',
           user.fullName,
           'Please contact your supervisor for more information or submit a revised request if circumstances change.'
         ).catch(error => {
@@ -617,6 +1137,8 @@ const processSupervisorDecision = async (req, res) => {
 
     // Wait for notifications
     const notificationResults = await Promise.allSettled(notifications);
+
+    console.log('=== DECISION PROCESSING COMPLETE ===\n');
 
     res.json({
       success: true,
@@ -700,12 +1222,13 @@ const processITDepartmentDecision = async (req, res) => {
       estimatedCompletionTime
     };
 
-    // Update status based on decision
     if (decision === 'approved') {
-      if (request.requestType === 'material_request' && estimatedCost > 100000) {
-        request.status = 'pending_finance';
-      } else {
-        request.status = 'it_assigned';
+      // IT approval is FINAL approval - no finance check
+      request.status = 'it_approved'; // Mark as IT approved
+      
+      // Immediately assign for work
+      if (technicianId) {
+        request.status = 'it_assigned'; // Assign to technician if provided
       }
     } else {
       request.status = 'it_rejected';
@@ -717,59 +1240,15 @@ const processITDepartmentDecision = async (req, res) => {
     const notifications = [];
 
     if (decision === 'approved') {
-      if (request.needsFinanceApproval() && estimatedCost > 100000) {
-        // Notify finance department
-        const financeUsers = await User.find({ role: 'finance' }).select('email fullName');
-        
-        if (financeUsers.length > 0) {
-          notifications.push(
-            sendITSupportEmail.itApprovalToFinance(
-              financeUsers.map(u => u.email),
-              request.employee.fullName,
-              request.title,
-              request.ticketNumber,
-              estimatedCost,
-              comments || 'Approved by IT department'
-            ).catch(error => ({ error, type: 'finance' }))
-          );
-        }
-    
-        // Notify employee of finance review step
-        notifications.push(
-          sendITSupportEmail.statusUpdateToEmployee(
-            request.employee.email,
-            request.ticketNumber,
-            'pending_finance',
-            'Your IT request has been approved by the IT department and is now pending finance approval due to the high cost.',
-            user.fullName,
-            'Finance team will review the budget requirements. You will be notified once approved.'
-          ).catch(error => ({ error, type: 'employee' }))
-        );
-    
-      } else {
-        // Notify employee of IT approval and assignment
-        notifications.push(
-          sendITSupportEmail.statusUpdateToEmployee(
-            request.employee.email,
-            request.ticketNumber,
-            'it_assigned',
-            `Your IT request has been approved and assigned to ${request.itReview.assignedTechnician || 'our IT team'}.`,
-            user.fullName,
-            estimatedCompletionTime ? `Estimated completion: ${estimatedCompletionTime}` : 'Work will begin shortly and you will receive updates as it progresses.'
-          ).catch(error => ({ error, type: 'employee' }))
-        );
-      }
-    
-    } else {
-      // IT rejected - notify employee
+      // Notify employee of IT approval (FINAL APPROVAL)
       notifications.push(
         sendITSupportEmail.statusUpdateToEmployee(
           request.employee.email,
           request.ticketNumber,
-          'rejected',
-          comments || 'Your IT request was not approved by the IT department.',
+          'it_approved',
+          `Your IT request has been approved by the IT department${request.itReview.assignedTechnician ? ` and assigned to ${request.itReview.assignedTechnician}` : ''}. Work will begin shortly.`,
           user.fullName,
-          'Please contact the IT department for more information about alternative solutions.'
+          estimatedCompletionTime ? `Estimated completion: ${estimatedCompletionTime}` : 'Work will begin shortly and you will receive updates as it progresses.'
         ).catch(error => ({ error, type: 'employee' }))
       );
     }
@@ -1517,15 +1996,13 @@ const getITRequestsByRole = async (req, res) => {
         query = {
           ...baseFilter,
           $or: [
-            // Requests pending IT review
-            { status: 'pending_it_review' },
-            // Requests already assigned to IT
-            { status: { $in: ['it_assigned', 'in_progress', 'waiting_parts'] } },
+            // Requests pending IT final approval
+            { status: 'pending_it_approval' },
+            // Requests already approved by IT and assigned
+            { status: { $in: ['it_approved', 'it_assigned', 'in_progress', 'waiting_parts'] } },
             // Requests assigned to this specific technician
             { 'itReview.technicianId': user._id },
-            // FIXED: Also include supervisor-approved requests that need IT attention
-            { status: 'supervisor_approved' },
-            // FIXED: Include resolved requests for IT visibility
+            // Include resolved requests for IT visibility
             { status: 'resolved', 'itReview.technicianId': user._id }
           ]
         };
@@ -1987,7 +2464,7 @@ const getApprovalChainPreview = async (req, res) => {
     }
 
     // Generate approval chain preview
-    const approvalChain = getApprovalChain(employee.fullName, employee.department);
+    const approvalChain = getITSupportApprovalChain(employee.fullName, employee.department);
     
     res.json({
       success: true,
@@ -2087,9 +2564,9 @@ module.exports = {
     updateFulfillmentStatus,
     updateAssetAssignment,
   
-    // Finance functions
-    getFinanceITRequests,
-    processFinanceDecision,
+    // // Finance functions
+    // getFinanceITRequests,
+    // processFinanceDecision,
   
     // Admin functions
     getAllITRequests,

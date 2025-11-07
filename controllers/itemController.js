@@ -176,36 +176,7 @@ const getAllItems = async (req, res) => {
     });
   }
 };
-// const getAllItems = async (req, res) => {
-//   try {
-//     const { page = 1, limit = 50 } = req.query;
-//     const filter = buildItemFilter(req.query);
 
-//     const [items, total] = await Promise.all([
-//       Item.find(filter)
-//         .populate('createdBy', 'fullName email')
-//         .sort({ createdAt: -1 })
-//         .limit(limit * 1)
-//         .skip((page - 1) * limit),
-//       Item.countDocuments(filter)
-//     ]);
-
-//     const pagination = buildPagination(page, limit, total, items.length);
-
-//     res.json({
-//       success: true,
-//       data: { items, pagination }
-//     });
-
-//   } catch (error) {
-//     console.error('Get all items error:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to fetch items',
-//       error: error.message
-//     });
-//   }
-// };
 
 /**
  * Get active items only (for forms and dropdowns)

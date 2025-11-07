@@ -1166,57 +1166,6 @@ const processSupplyChainDecision = async (req, res) => {
   }
 };
 
-// // Finance functions
-// const getFinanceRequisitions = async (req, res) => {
-//   try {
-//     const user = await User.findById(req.user.userId);
-
-//     let query = {};
-
-//     if (user.role === 'finance') {
-//       // Finance users see requisitions assigned to them or pending finance approval
-//       query = {
-//         $or: [
-//           { status: 'pending_finance' },
-//           { status: 'approved' },
-//           { status: 'in_procurement' },
-//           { status: 'delivered' },
-//           { 
-//             'approvalChain': {
-//               $elemMatch: {
-//                 'approver.email': user.email
-//               }
-//             }
-//           }
-//         ]
-//       };
-//     } else if (user.role === 'admin') {
-//       // Admins see all finance-related requisitions
-//       query = {
-//         status: { $in: ['pending_finance', 'approved', 'in_procurement', 'procurement_complete', 'delivered'] }
-//       };
-//     }
-
-//     const requisitions = await PurchaseRequisition.find(query)
-//       .populate('employee', 'fullName email department')
-//       .sort({ createdAt: -1 });
-
-//     res.json({
-//       success: true,
-//       data: requisitions,
-//       count: requisitions.length
-//     });
-
-//   } catch (error) {
-//     console.error('Get finance requisitions error:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to fetch finance requisitions',
-//       error: error.message
-//     });
-//   }
-// };
-
 // Process finance decision
 const processFinanceDecision = async (req, res) => {
   try {
@@ -2815,15 +2764,258 @@ const processFinanceVerification = async (req, res) => {
 };
 
 
+// const assignBuyer = async (req, res) => {
+//   try {
+//     const { requisitionId } = req.params;
+//     const { sourcingType, assignedBuyer, comments, purchaseType } = req.body;
+
+//     console.log('=== BUYER ASSIGNMENT PROCESSING ===');
+//     console.log('Requisition ID:', requisitionId);
+//     console.log('Assigned Buyer:', assignedBuyer);
+//     console.log('Purchase Type:', purchaseType);
+
+//     const user = await User.findById(req.user.userId);
+//     const requisition = await PurchaseRequisition.findById(requisitionId)
+//       .populate('employee', 'fullName email department');
+
+//     if (!requisition) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Requisition not found'
+//       });
+//     }
+
+//     // Check if user can assign buyer (Supply Chain Coordinator or Admin)
+//     const canAssign =
+//       user.role === 'admin' ||
+//       user.email === 'lukong.lambert@gratoglobal.com' ||
+//       user.role === 'supply_chain' ||
+//       user.department === 'Business Development & Supply Chain';
+
+//     if (!canAssign) {
+//       return res.status(403).json({
+//         success: false,
+//         message: 'Access denied'
+//       });
+//     }
+
+//     // FIXED: Validate assigned buyer exists and is active
+//     const buyer = await User.findOne({ 
+//       _id: assignedBuyer,
+//       $or: [
+//         { role: 'buyer' },
+//         { departmentRole: 'buyer' },
+//         { email: 'lukong.lambert@gratoglobal.com' } // Coordinator can also be a buyer
+//       ],
+//       isActive: true 
+//     });
+
+//     if (!buyer) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid buyer selected or buyer not found'
+//       });
+//     }
+
+//     // FIXED: Validate requisition status before assignment
+//     if (!['pending_buyer_assignment', 'pending_supply_chain_review'].includes(requisition.status)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: `Cannot assign buyer to requisition with status: ${requisition.status}`
+//       });
+//     }
+
+//     // FIXED: Update supply chain review with proper buyer assignment
+//     if (!requisition.supplyChainReview) {
+//       requisition.supplyChainReview = {};
+//     }
+
+//     requisition.supplyChainReview = {
+//       ...requisition.supplyChainReview,
+//       decision: 'approve',
+//       sourcingType: sourcingType,
+//       assignedBuyer: assignedBuyer,
+//       buyerAssignmentDate: new Date(),
+//       buyerAssignedBy: req.user.userId,
+//       comments: comments,
+//       purchaseTypeAssigned: purchaseType || requisition.purchaseType
+//     };
+
+//     // Update main purchase type if provided
+//     if (purchaseType) {
+//       requisition.purchaseType = purchaseType;
+//     }
+
+//     // FIXED: Set correct status after buyer assignment
+//     requisition.status = 'pending_head_approval';
+
+//     await requisition.save();
+
+//     // FIXED: Update buyer workload properly
+//     if (buyer.buyerDetails) {
+//       await User.findByIdAndUpdate(assignedBuyer, {
+//         $inc: { 'buyerDetails.workload.currentAssignments': 1 }
+//       });
+//     } else {
+//       // Initialize buyer details if they don't exist
+//       await User.findByIdAndUpdate(assignedBuyer, {
+//         $set: {
+//           'buyerDetails.workload.currentAssignments': 1,
+//           'buyerDetails.workload.monthlyTarget': 20,
+//           'buyerDetails.availability.isAvailable': true,
+//           'buyerDetails.maxOrderValue': 5000000,
+//           'buyerDetails.specializations': ['General']
+//         }
+//       });
+//     }
+
+//     // Send notifications
+//     const notifications = [];
+
+//     // Notify assigned buyer
+//     notifications.push(
+//       sendEmail({
+//         to: buyer.email,
+//         subject: `New Purchase Requisition Assignment - ${requisition.employee.fullName}`,
+//         html: `
+//           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+//             <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px; border-left: 4px solid #1890ff;">
+//               <h2 style="color: #1890ff; margin-top: 0;">New Procurement Assignment</h2>
+//               <p>You have been assigned a new purchase requisition for processing.</p>
+
+//               <div style="background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
+//                 <h4>Assignment Details</h4>
+//                 <ul>
+//                   <li><strong>Employee:</strong> ${requisition.employee.fullName}</li>
+//                   <li><strong>Requisition:</strong> ${requisition.title}</li>
+//                   <li><strong>Category:</strong> ${requisition.itemCategory}</li>
+//                   <li><strong>Budget:</strong> XAF ${requisition.financeVerification?.assignedBudget?.toLocaleString() || requisition.budgetXAF?.toLocaleString() || 'TBD'}</li>
+//                   <li><strong>Sourcing Type:</strong> ${sourcingType.replace('_', ' ').toUpperCase()}</li>
+//                   ${purchaseType ? `<li><strong>Purchase Type:</strong> ${purchaseType.replace('_', ' ').toUpperCase()}</li>` : ''}
+//                   <li><strong>Items Count:</strong> ${requisition.items.length}</li>
+//                 </ul>
+//               </div>
+
+//               ${comments ? `
+//               <div style="background-color: #f8f9fa; padding: 15px; border-radius: 8px;">
+//                 <p><strong>Assignment Notes:</strong></p>
+//                 <p style="font-style: italic;">${comments}</p>
+//               </div>
+//               ` : ''}
+
+//               <div style="text-align: center; margin: 20px 0;">
+//                 <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/buyer/requisitions/${requisition._id}"
+//                    style="background-color: #1890ff; color: white; padding: 12px 24px;
+//                           text-decoration: none; border-radius: 6px; font-weight: bold;">
+//                   View Assignment Details
+//                 </a>
+//               </div>
+//             </div>
+//           </div>
+//         `
+//       }).catch(error => {
+//         console.error('Failed to send buyer notification:', error);
+//         return { error, type: 'buyer' };
+//       })
+//     );
+
+//     // Notify head of supply chain for final approval
+//     const headOfSupplyChain = await User.findOne({
+//       email: 'kelvin.eyong@gratoglobal.com'
+//     });
+
+//     if (headOfSupplyChain) {
+//       notifications.push(
+//         sendEmail({
+//           to: headOfSupplyChain.email,
+//           subject: `Purchase Requisition Ready for Final Approval - ${requisition.employee.fullName}`,
+//           html: `
+//             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+//               <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;">
+//                 <h2 style="color: #856404; margin-top: 0;">Final Approval Required</h2>
+//                 <p>A purchase requisition has been processed and assigned, requiring your final approval.</p>
+
+//                 <div style="background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
+//                   <h4>Requisition Summary</h4>
+//                   <ul>
+//                     <li><strong>Employee:</strong> ${requisition.employee.fullName}</li>
+//                     <li><strong>Title:</strong> ${requisition.title}</li>
+//                     <li><strong>Budget:</strong> XAF ${requisition.financeVerification?.assignedBudget?.toLocaleString() || requisition.budgetXAF?.toLocaleString()}</li>
+//                     <li><strong>Budget Code:</strong> ${requisition.financeVerification?.budgetCode || 'N/A'}</li>
+//                     <li><strong>Assigned Buyer:</strong> ${buyer.fullName}</li>
+//                     <li><strong>Sourcing Method:</strong> ${sourcingType.replace('_', ' ').toUpperCase()}</li>
+//                     ${purchaseType ? `<li><strong>Purchase Type:</strong> ${purchaseType.replace('_', ' ').toUpperCase()}</li>` : ''}
+//                   </ul>
+//                 </div>
+
+//                 <div style="text-align: center; margin: 20px 0;">
+//                   <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/supply-chain/head/requisitions/${requisition._id}"
+//                      style="background-color: #ffc107; color: #333; padding: 12px 24px;
+//                             text-decoration: none; border-radius: 6px; font-weight: bold;">
+//                     Review & Approve
+//                   </a>
+//                 </div>
+//               </div>
+//             </div>
+//           `
+//         }).catch(error => {
+//           console.error('Failed to send head notification:', error);
+//           return { error, type: 'head' };
+//         })
+//       );
+//     }
+
+//     // Wait for notifications
+//     const notificationResults = await Promise.allSettled(notifications);
+
+//     console.log('=== BUYER ASSIGNMENT COMPLETED ===');
+//     res.json({
+//       success: true,
+//       message: 'Buyer assigned successfully',
+//       data: {
+//         requisition,
+//         assignedBuyer: {
+//           id: buyer._id,
+//           name: buyer.fullName,
+//           email: buyer.email,
+//           role: buyer.role,
+//           departmentRole: buyer.departmentRole
+//         }
+//       },
+//       notifications: {
+//         sent: notificationResults.filter(r => r.status === 'fulfilled' && !r.value?.error).length,
+//         failed: notificationResults.filter(r => r.status === 'rejected' || r.value?.error).length
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('Assign buyer error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to assign buyer',
+//       error: error.message
+//     });
+//   }
+// };
+
+
 const assignBuyer = async (req, res) => {
   try {
     const { requisitionId } = req.params;
-    const { sourcingType, assignedBuyer, comments, purchaseType } = req.body;
+    const { 
+      sourcingType, 
+      assignedBuyer, 
+      comments, 
+      purchaseType,
+      paymentMethod = 'bank',  // NEW: Add payment method with default
+      estimatedCost  // NEW: Add estimated cost
+    } = req.body;
 
     console.log('=== BUYER ASSIGNMENT PROCESSING ===');
     console.log('Requisition ID:', requisitionId);
     console.log('Assigned Buyer:', assignedBuyer);
     console.log('Purchase Type:', purchaseType);
+    console.log('Payment Method:', paymentMethod); // NEW: Log payment method
 
     const user = await User.findById(req.user.userId);
     const requisition = await PurchaseRequisition.findById(requisitionId)
@@ -2888,6 +3080,7 @@ const assignBuyer = async (req, res) => {
       assignedBuyer: assignedBuyer,
       buyerAssignmentDate: new Date(),
       buyerAssignedBy: req.user.userId,
+      estimatedCost: estimatedCost,  // NEW: Add estimated cost
       comments: comments,
       purchaseTypeAssigned: purchaseType || requisition.purchaseType
     };
@@ -2896,6 +3089,9 @@ const assignBuyer = async (req, res) => {
     if (purchaseType) {
       requisition.purchaseType = purchaseType;
     }
+
+    // NEW: Set payment method
+    requisition.paymentMethod = paymentMethod;
 
     // FIXED: Set correct status after buyer assignment
     requisition.status = 'pending_head_approval';
@@ -2941,8 +3137,10 @@ const assignBuyer = async (req, res) => {
                   <li><strong>Requisition:</strong> ${requisition.title}</li>
                   <li><strong>Category:</strong> ${requisition.itemCategory}</li>
                   <li><strong>Budget:</strong> XAF ${requisition.financeVerification?.assignedBudget?.toLocaleString() || requisition.budgetXAF?.toLocaleString() || 'TBD'}</li>
+                  ${estimatedCost ? `<li><strong>Estimated Cost:</strong> XAF ${estimatedCost.toLocaleString()}</li>` : ''}
                   <li><strong>Sourcing Type:</strong> ${sourcingType.replace('_', ' ').toUpperCase()}</li>
                   ${purchaseType ? `<li><strong>Purchase Type:</strong> ${purchaseType.replace('_', ' ').toUpperCase()}</li>` : ''}
+                  <li><strong>Payment Method:</strong> ${paymentMethod.toUpperCase()}</li>
                   <li><strong>Items Count:</strong> ${requisition.items.length}</li>
                 </ul>
               </div>
@@ -2992,10 +3190,12 @@ const assignBuyer = async (req, res) => {
                     <li><strong>Employee:</strong> ${requisition.employee.fullName}</li>
                     <li><strong>Title:</strong> ${requisition.title}</li>
                     <li><strong>Budget:</strong> XAF ${requisition.financeVerification?.assignedBudget?.toLocaleString() || requisition.budgetXAF?.toLocaleString()}</li>
+                    ${estimatedCost ? `<li><strong>Estimated Cost:</strong> XAF ${estimatedCost.toLocaleString()}</li>` : ''}
                     <li><strong>Budget Code:</strong> ${requisition.financeVerification?.budgetCode || 'N/A'}</li>
                     <li><strong>Assigned Buyer:</strong> ${buyer.fullName}</li>
                     <li><strong>Sourcing Method:</strong> ${sourcingType.replace('_', ' ').toUpperCase()}</li>
                     ${purchaseType ? `<li><strong>Purchase Type:</strong> ${purchaseType.replace('_', ' ').toUpperCase()}</li>` : ''}
+                    <li><strong>Payment Method:</strong> ${paymentMethod.toUpperCase()}</li>
                   </ul>
                 </div>
 
@@ -3031,7 +3231,8 @@ const assignBuyer = async (req, res) => {
           email: buyer.email,
           role: buyer.role,
           departmentRole: buyer.departmentRole
-        }
+        },
+        paymentMethod  // NEW: Include payment method in response
       },
       notifications: {
         sent: notificationResults.filter(r => r.status === 'fulfilled' && !r.value?.error).length,
@@ -3049,7 +3250,8 @@ const assignBuyer = async (req, res) => {
   }
 };
 
-// NEW: Enhanced Head of Business Final Approval with Business Decisions
+
+// NEW: Enhanced Head of Business Final Approval with Business Decisions & Petty Cash Form Generation
 const processHeadApproval = async (req, res) => {
   try {
       const { requisitionId } = req.params;
@@ -3133,6 +3335,9 @@ const processHeadApproval = async (req, res) => {
           }
       };
 
+      let pettyCashForm = null;
+      let buyer = null;
+
       // Update main fields with business decisions
       if (decision === 'approved') {
           requisition.status = 'approved';
@@ -3154,10 +3359,81 @@ const processHeadApproval = async (req, res) => {
             comments: `Business decisions made by Head of Business: Sourcing=${sourcingType}, Purchase Type=${purchaseType}, Buyer Assigned=${assignedBuyer}`
           };
 
+          // Get buyer details for notifications
+          buyer = await User.findById(assignedBuyer);
+
           // Update buyer workload
           await User.findByIdAndUpdate(assignedBuyer, {
             $inc: { 'buyerDetails.workload.currentAssignments': 1 }
           });
+
+          // ✅ NEW: Generate petty cash form for ALL approved requisitions
+          console.log('✅ Generating petty cash form for approved requisition');
+          console.log('Payment Method:', requisition.paymentMethod);
+          
+          // Create petty cash form
+          pettyCashForm = new PettyCashForm({
+            requisitionId: requisition._id,
+            employee: requisition.employee._id,
+            
+            // Copy all requisition details
+            title: requisition.title,
+            department: requisition.department,
+            itemCategory: requisition.itemCategory,
+            amountRequested: requisition.budgetXAF,
+            purpose: requisition.justificationOfPurchase,
+            businessJustification: requisition.justificationOfPreferredSupplier,
+            urgency: requisition.urgency,
+            deliveryLocation: requisition.deliveryLocation,
+            expectedDate: requisition.expectedDate,
+            
+            // Copy all items
+            items: requisition.items.map(item => ({
+              itemId: item.itemId,
+              code: item.code,
+              description: item.description,
+              category: item.category,
+              quantity: item.quantity,
+              measuringUnit: item.measuringUnit,
+              estimatedPrice: item.estimatedPrice
+            })),
+            
+            // Copy approval chain
+            approvalChain: requisition.approvalChain.map(step => ({
+              level: step.level,
+              approver: step.approver,
+              status: step.status,
+              comments: step.comments,
+              actionDate: step.actionDate,
+              actionTime: step.actionTime
+            })),
+            
+            // Copy budget allocation
+            budgetAllocation: requisition.financeVerification ? {
+              budgetCode: requisition.financeVerification.budgetCode,
+              budgetCodeId: requisition.financeVerification.budgetCodeId,
+              allocatedAmount: requisition.financeVerification.assignedBudget,
+              allocationStatus: 'approved'
+            } : undefined,
+            
+            // Assigned buyer
+            assignedBuyer: assignedBuyer,
+            
+            // Generation metadata
+            generatedBy: req.user.userId
+          });
+          
+          await pettyCashForm.save();
+          
+          // Link to requisition
+          requisition.pettyCashForm = {
+            formId: pettyCashForm._id,
+            generated: true,
+            generatedDate: new Date(),
+            generatedBy: req.user.userId
+          };
+          
+          console.log('✅ Petty cash form created:', pettyCashForm.formNumber);
 
       } else {
           requisition.status = 'rejected';
@@ -3169,13 +3445,12 @@ const processHeadApproval = async (req, res) => {
       const notifications = [];
 
       if (decision === 'approved') {
-          // Notify assigned buyer to start procurement
-          const buyer = await User.findById(assignedBuyer);
+          // Notify assigned buyer to start procurement (with petty cash form info)
           if (buyer) {
               notifications.push(
                   sendEmail({
                       to: buyer.email,
-                      subject: 'Purchase Requisition Approved - Start Procurement',
+                      subject: 'Purchase Requisition Approved - Petty Cash Form Generated',
                       html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
               <div style="background-color: #d4edda; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
@@ -3192,6 +3467,7 @@ const processHeadApproval = async (req, res) => {
                     <li><strong>Sourcing Method:</strong> ${sourcingType.replace('_', ' ').toUpperCase()}</li>
                     <li><strong>Purchase Type:</strong> ${purchaseType.toUpperCase()}</li>
                     <li><strong>Expected Delivery:</strong> ${new Date(requisition.expectedDate).toLocaleDateString()}</li>
+                    <li><strong>Petty Cash Form:</strong> ${pettyCashForm.formNumber}</li>
                   </ul>
                 </div>
                 
@@ -3201,6 +3477,11 @@ const processHeadApproval = async (req, res) => {
                   <p style="font-style: italic;">${comments}</p>
                 </div>
                 ` : ''}
+                
+                <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #ffc107;">
+                  <p><strong>📋 Petty Cash Form Generated:</strong></p>
+                  <p>A petty cash form (${pettyCashForm.formNumber}) has been automatically generated and is ready for your review.</p>
+                </div>
                 
                 <div style="text-align: center; margin: 20px 0;">
                   <a href="${process.env.FRONTEND_URL}/buyer/requisitions/${requisition._id}"
@@ -3237,6 +3518,7 @@ const processHeadApproval = async (req, res) => {
                           <li><strong>Sourcing Method:</strong> ${sourcingType.replace('_', ' ').toUpperCase()}</li>
                           <li><strong>Purchase Type:</strong> ${purchaseType.toUpperCase()}</li>
                           <li><strong>Assigned Buyer:</strong> ${buyer?.fullName || 'TBD'}</li>
+                          <li><strong>Petty Cash Form:</strong> ${pettyCashForm.formNumber}</li>
                         </ul>
                       </div>
                       
@@ -3304,9 +3586,16 @@ const processHeadApproval = async (req, res) => {
       console.log('=== HEAD BUSINESS APPROVAL COMPLETED ===');
       res.json({
           success: true,
-          message: `Requisition ${decision} by Head of Business with business decisions`,
+          message: decision === 'approved' ? 
+            'Requisition approved, business decisions recorded, and petty cash form generated' : 
+            'Requisition rejected',
           data: {
             requisition,
+            pettyCashForm: decision === 'approved' ? {
+              formId: pettyCashForm._id,
+              formNumber: pettyCashForm.formNumber,
+              generated: true
+            } : null,
             businessDecisions: decision === 'approved' ? {
               sourcingType,
               purchaseType,
@@ -3326,6 +3615,94 @@ const processHeadApproval = async (req, res) => {
           message: 'Failed to process head approval',
           error: error.message
       });
+  }
+};
+
+// ✅ NEW: Notification function
+const sendPettyCashFormNotificationToBuyer = async (requisition, pettyCashForm) => {
+  try {
+    const buyer = requisition.supplyChainReview?.assignedBuyer;
+    
+    if (!buyer || !buyer.email) {
+      console.warn('No buyer assigned to send notification');
+      return;
+    }
+    
+    const paymentMethodLabel = requisition.paymentMethod === 'cash' ? 
+      '💵 Cash Payment' : '🏦 Bank Transfer';
+    
+    await sendEmail({
+      to: buyer.email,
+      subject: `🔔 New Purchase Requisition Approved - ${paymentMethodLabel}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px;">
+            <h2 style="color: #1890ff;">📋 Approved Purchase Requisition</h2>
+            <p>Dear ${buyer.fullName},</p>
+            <p>A purchase requisition has been approved and assigned to you:</p>
+            
+            <div style="background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
+              <h4>Requisition Details</h4>
+              <ul style="list-style: none; padding: 0;">
+                <li><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
+                <li><strong>Title:</strong> ${requisition.title}</li>
+                <li><strong>Requester:</strong> ${requisition.employee.fullName}</li>
+                <li><strong>Department:</strong> ${requisition.department}</li>
+                <li><strong>Budget:</strong> XAF ${requisition.budgetXAF?.toLocaleString()}</li>
+                <li><strong>Payment Method:</strong> ${paymentMethodLabel}</li>
+              </ul>
+            </div>
+            
+            <div style="background-color: #f6ffed; padding: 15px; border-radius: 8px; margin: 15px 0;">
+              <h4 style="color: #52c41a;">✅ Petty Cash Form Generated</h4>
+              <p><strong>Form Number:</strong> ${pettyCashForm.formNumber}</p>
+              <p>A petty cash form has been automatically generated with all requisition details.</p>
+              <p>You can download this form from your buyer dashboard.</p>
+            </div>
+            
+            ${requisition.paymentMethod === 'cash' ? `
+            <div style="background-color: #fff7e6; padding: 15px; border-radius: 8px; margin: 15px 0;">
+              <h4 style="color: #faad14;">💵 Cash Payment Process</h4>
+              <p><strong>Next Steps:</strong></p>
+              <ol>
+                <li>Download the petty cash form from your dashboard</li>
+                <li>Process the cash disbursement as per company policy</li>
+                <li>RFQ creation is optional for cash payments</li>
+              </ol>
+            </div>
+            ` : `
+            <div style="background-color: #f0f5ff; padding: 15px; border-radius: 8px; margin: 15px 0;">
+              <h4 style="color: #1890ff;">🏦 Bank Transfer Process</h4>
+              <p><strong>Next Steps:</strong></p>
+              <ol>
+                <li>Review the requisition details in your dashboard</li>
+                <li>Create RFQ and invite suppliers if needed</li>
+                <li>Evaluate quotes and create purchase order</li>
+              </ol>
+            </div>
+            `}
+            
+            <p style="text-align: center; margin-top: 20px;">
+              <a href="${process.env.FRONTEND_URL}/buyer/dashboard" 
+                 style="background-color: #1890ff; color: white; padding: 12px 24px; 
+                        text-decoration: none; border-radius: 4px; display: inline-block;">
+                View in Dashboard
+              </a>
+            </p>
+            
+            <p style="color: #666; font-size: 12px; margin-top: 20px;">
+              Please log in to your buyer portal to access all features.
+            </p>
+          </div>
+        </div>
+      `
+    });
+    
+    console.log('✅ Notification sent to buyer:', buyer.email);
+    
+  } catch (error) {
+    console.error('Failed to send buyer notification:', error);
+    // Don't throw - notification failure shouldn't block the process
   }
 };
 

@@ -161,12 +161,15 @@ const ITSupportRequestSchema = new mongoose.Schema({
     enum: [
       'draft',
       'pending_supervisor',
-      'supervisor_approved', 
+      'pending_departmental_head',      // NEW
+      'pending_head_of_business',       // NEW
+      'pending_it_approval',            // NEW - Renamed from pending_it_review
+      'supervisor_approved',            // Keep for backward compatibility
       'supervisor_rejected',
-      'pending_it_review',
+      'it_approved',                    // NEW - When IT approves (final approval)
       'it_assigned',
-      'pending_finance', // For high-value material requests
-      'approved',
+      'it_rejected',                    // NEW
+      'approved',                        // Legacy - when fully approved
       'rejected',
       'in_progress',
       'waiting_parts',
@@ -390,15 +393,40 @@ ITSupportRequestSchema.methods.getApprovalProgress = function() {
 };
 
 // Method to get current stage description
+// ITSupportRequestSchema.methods.getCurrentStage = function() {
+//   const stageMap = {
+//     'draft': 'Draft',
+//     'pending_supervisor': 'Pending Supervisor Approval',
+//     'supervisor_approved': 'Supervisor Approved',
+//     'supervisor_rejected': 'Supervisor Rejected',
+//     'pending_it_review': 'Pending IT Department Review',
+//     'it_assigned': 'Assigned to IT Technician',
+//     'pending_finance': 'Pending Finance Approval',
+//     'approved': 'Approved - Ready for Implementation',
+//     'rejected': 'Rejected',
+//     'in_progress': 'Work In Progress',
+//     'waiting_parts': 'Waiting for Parts/Resources',
+//     'resolved': 'Resolved',
+//     'closed': 'Closed',
+//     'cancelled': 'Cancelled'
+//   };
+  
+//   return stageMap[this.status] || 'Unknown Status';
+// };
+
+
 ITSupportRequestSchema.methods.getCurrentStage = function() {
   const stageMap = {
     'draft': 'Draft',
     'pending_supervisor': 'Pending Supervisor Approval',
+    'pending_departmental_head': 'Pending Department Head Approval',
+    'pending_head_of_business': 'Pending President Approval',
+    'pending_it_approval': 'Pending IT Department Final Approval',
     'supervisor_approved': 'Supervisor Approved',
     'supervisor_rejected': 'Supervisor Rejected',
-    'pending_it_review': 'Pending IT Department Review',
+    'it_approved': 'IT Department Approved - Ready for Work',
     'it_assigned': 'Assigned to IT Technician',
-    'pending_finance': 'Pending Finance Approval',
+    'it_rejected': 'IT Department Rejected',
     'approved': 'Approved - Ready for Implementation',
     'rejected': 'Rejected',
     'in_progress': 'Work In Progress',
@@ -480,12 +508,12 @@ ITSupportRequestSchema.methods.getWaitingTime = function(fromDate = null) {
 };
 
 // Method to determine if finance approval is needed
-ITSupportRequestSchema.methods.needsFinanceApproval = function() {
-  if (this.requestType !== 'material_request') return false;
+// ITSupportRequestSchema.methods.needsFinanceApproval = function() {
+//   if (this.requestType !== 'material_request') return false;
   
-  const threshold = 100000; // XAF 100,000
-  return this.totalEstimatedCost && this.totalEstimatedCost > threshold;
-};
+//   const threshold = 100000; // XAF 100,000
+//   return this.totalEstimatedCost && this.totalEstimatedCost > threshold;
+// };
 
 // Method to get total estimated cost
 ITSupportRequestSchema.methods.getTotalEstimatedCost = function() {
