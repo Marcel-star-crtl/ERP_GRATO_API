@@ -50,7 +50,7 @@ router.post(
 router.post(
   '/:id/approve',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   quarterlyKPIController.processKPIApproval
 );
 
