@@ -156,7 +156,7 @@ router.get(
 router.get(
   '/employee/my-reports',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'hr', 'hse'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   getEmployeeIncidentReports
 );
 
@@ -168,7 +168,7 @@ router.get(
 router.get(
   '/employee',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'hr', 'hse'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   getEmployeeIncidentReports
 );
 
@@ -224,7 +224,7 @@ router.get(
 router.get(
   '/supervisor/view',
   authMiddleware,
-  requireRoles('supervisor', 'admin'),
+  requireRoles('technical', 'admin'),
   getIncidentReportsByRole
 );
 

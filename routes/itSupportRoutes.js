@@ -265,7 +265,7 @@ router.post('/draft',
 // Supervisor routes 
 router.get('/supervisor', 
   authMiddleware, 
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'), 
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'), 
   getSupervisorITRequests
 );
 
@@ -314,7 +314,7 @@ router.post('/',
 // SPECIFIC parameterized routes
 router.get('/supervisor/:requestId', 
   authMiddleware, 
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   getITRequestDetails
 );
 
@@ -333,7 +333,7 @@ router.get('/admin/:requestId',
 // PUT routes for decision processing 
 router.put('/:requestId/supervisor', 
   authMiddleware, 
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'), 
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'), 
   processSupervisorDecision
 );
 

@@ -1572,10 +1572,371 @@ const getSupervisorJustification = async (req, res) => {
 };
 
 
+// const createRequest = async (req, res) => {
+//   try {
+//     console.log('=== CREATE CASH REQUEST ===');
+//     console.log('Request body:', JSON.stringify(req.body, null, 2));
+
+//     const {
+//       requestType,
+//       amountRequested,
+//       purpose,
+//       businessJustification,
+//       urgency,
+//       requiredDate,
+//       projectCode,
+//       projectId,
+//       itemizedBreakdown
+//     } = req.body;
+
+//     // Get user details
+//     const employee = await User.findById(req.user.userId);
+//     if (!employee) {
+//       return res.status(404).json({ 
+//         success: false, 
+//         message: 'Employee not found' 
+//       });
+//     }
+
+//     console.log(`Creating cash request for: ${employee.fullName} (${employee.email})`);
+
+//     // Parse and validate itemized breakdown (if provided)
+//     let parsedBreakdown = null;
+
+//     if (itemizedBreakdown) {
+//       try {
+//         parsedBreakdown = typeof itemizedBreakdown === 'string' 
+//           ? JSON.parse(itemizedBreakdown) 
+//           : itemizedBreakdown;
+
+//         if (Array.isArray(parsedBreakdown) && parsedBreakdown.length > 0) {
+//           const breakdownTotal = parsedBreakdown.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
+//           const discrepancy = Math.abs(breakdownTotal - parseFloat(amountRequested));
+
+//           if (discrepancy > 1) {
+//             return res.status(400).json({
+//               success: false,
+//               message: `Itemized breakdown total (XAF ${breakdownTotal.toFixed(2)}) must match requested amount (XAF ${parseFloat(amountRequested).toFixed(2)})`
+//             });
+//           }
+
+//           console.log(`✓ Itemized breakdown validated: ${parsedBreakdown.length} items, total XAF ${breakdownTotal.toLocaleString()}`);
+//         } else {
+//           parsedBreakdown = null;
+//         }
+//       } catch (parseError) {
+//         console.error('Error parsing itemized breakdown:', parseError);
+//         return res.status(400).json({
+//           success: false,
+//           message: 'Invalid itemized breakdown format'
+//         });
+//       }
+//     }
+
+//     // Validate project if provided
+//     let selectedProject = null;
+//     let projectBudgetCode = null;
+
+//     if (projectId) {
+//       console.log(`Project ID provided: ${projectId}`);
+
+//       selectedProject = await Project.findById(projectId)
+//         .populate('budgetCodeId', 'code name budget used remaining');
+
+//       if (!selectedProject) {
+//         return res.status(404).json({
+//           success: false,
+//           message: 'Selected project not found'
+//         });
+//       }
+
+//       console.log(`Project found: ${selectedProject.name}`);
+
+//       if (selectedProject.budgetCodeId) {
+//         projectBudgetCode = selectedProject.budgetCodeId;
+//         console.log(`Project has budget code: ${projectBudgetCode.code}`);
+
+//         if (projectBudgetCode.remaining < parseFloat(amountRequested)) {
+//           return res.status(400).json({
+//             success: false,
+//             message: `Insufficient budget. Project budget remaining: XAF ${projectBudgetCode.remaining.toLocaleString()}`
+//           });
+//         }
+//       }
+//     }
+
+//     // ===== FIXED: Generate approval chain with Finance Officer as final step =====
+//     console.log('Generating approval chain...');
+//     const approvalChain = getCashRequestApprovalChain(employee.email);
+
+//     if (!approvalChain || approvalChain.length === 0) {
+//       console.error('❌ Failed to generate approval chain');
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Unable to determine approval chain. Please contact HR for assistance.'
+//       });
+//     }
+
+//     console.log(`✓ Approval chain generated with ${approvalChain.length} levels`);
+
+//     // ===== CRITICAL: Verify Finance Officer is the final approver =====
+//     const lastApprover = approvalChain[approvalChain.length - 1];
+//     if (!lastApprover || lastApprover.approver.role !== 'Finance Officer') {
+//       console.error('❌ Finance Officer is not the final approver');
+//       console.error('Last approver:', JSON.stringify(lastApprover, null, 2));
+//       return res.status(500).json({
+//         success: false,
+//         message: 'System error: Invalid approval chain configuration. Finance Officer must be the final approver.'
+//       });
+//     }
+
+//     console.log(`✅ Verified: Finance Officer (${lastApprover.approver.name}) is the final approver at Level ${lastApprover.level}`);
+    
+//     // Log full chain for debugging
+//     console.log('Complete approval chain:');
+//     approvalChain.forEach(step => {
+//       console.log(`  Level ${step.level}: ${step.approver.name} (${step.approver.role}) - ${step.approver.email}`);
+//     });
+
+//     // Process attachments
+//     let attachments = [];
+
+//     if (req.files && req.files.length > 0) {
+//       console.log(`Processing ${req.files.length} attachments`);
+
+//       const uploadDir = path.join(__dirname, '../uploads/attachments');
+
+//       try {
+//         await fs.promises.mkdir(uploadDir, { recursive: true });
+//         console.log(`✓ Upload directory ready: ${uploadDir}`);
+//       } catch (dirError) {
+//         console.error('Failed to create upload directory:', dirError);
+//         throw new Error('Failed to prepare upload directory');
+//       }
+
+//       for (const file of req.files) {
+//         try {
+//           console.log(`Processing file: ${file.originalname}`);
+
+//           const timestamp = Date.now();
+//           const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+//           const fileName = `${timestamp}-${sanitizedName}`;
+//           const filePath = path.join(uploadDir, fileName);
+
+//           if (!file.path || !fs.existsSync(file.path)) {
+//             console.error(`Temp file not found: ${file.path}`);
+//             continue;
+//           }
+
+//           await fs.promises.rename(file.path, filePath);
+//           console.log(`✓ File saved: ${fileName}`);
+
+//           attachments.push({
+//             name: file.originalname,
+//             url: `/uploads/attachments/${fileName}`,
+//             publicId: fileName,
+//             size: file.size,
+//             mimetype: file.mimetype
+//           });
+//         } catch (fileError) {
+//           console.error(`Error processing file ${file.originalname}:`, fileError);
+
+//           if (file.path && fs.existsSync(file.path)) {
+//             try {
+//               await fs.promises.unlink(file.path);
+//             } catch (cleanupError) {
+//               console.error('Failed to clean up temp file:', cleanupError);
+//             }
+//           }
+
+//           continue;
+//         }
+//       }
+
+//       console.log(`Successfully processed ${attachments.length} attachments`);
+//     }
+
+//     // Create the cash request
+//     console.log('Creating CashRequest document...');
+//     const cashRequest = new CashRequest({
+//       employee: req.user.userId,
+//       requestMode: 'advance',
+//       requestType,
+//       amountRequested: parseFloat(amountRequested),
+//       purpose,
+//       businessJustification,
+//       urgency,
+//       requiredDate: new Date(requiredDate),
+//       projectCode,
+//       attachments,
+//       itemizedBreakdown: parsedBreakdown || [],
+//       status: 'pending_supervisor',
+//       approvalChain: approvalChain,  // ✅ Use directly - already formatted with Finance Officer
+//       projectId: selectedProject ? selectedProject._id : null,
+//       budgetAllocation: projectBudgetCode ? {
+//         budgetCodeId: projectBudgetCode._id,
+//         budgetCode: projectBudgetCode.code,
+//         allocatedAmount: parseFloat(amountRequested),
+//         allocationStatus: 'pending',
+//         assignedBy: null,
+//         assignedAt: null
+//       } : null
+//     });
+
+//     console.log('Saving cash request...');
+//     await cashRequest.save();
+//     console.log(`✓ Cash request created: ${cashRequest._id}`);
+
+//     // Populate employee details
+//     await cashRequest.populate('employee', 'fullName email department');
+//     if (selectedProject) {
+//       await cashRequest.populate('projectId', 'name code department');
+//     }
+
+//     // Send notifications
+//     const notifications = [];
+
+//     // Notify first approver
+//     const firstApprover = approvalChain[0];
+//     if (firstApprover && firstApprover.approver.email) {
+//       notifications.push(
+//         sendCashRequestEmail.newRequestToSupervisor(
+//           firstApprover.approver.email,
+//           employee.fullName,
+//           parseFloat(amountRequested),
+//           cashRequest._id,
+//           purpose
+//         ).catch(error => {
+//           console.error('Failed to send supervisor notification:', error);
+//           return { error, type: 'supervisor' };
+//         })
+//       );
+//     }
+
+//     // Notify admins
+//     const admins = await User.find({ role: 'admin' }).select('email fullName');
+//     if (admins.length > 0) {
+//       const projectInfo = selectedProject 
+//         ? `<li><strong>Project:</strong> ${selectedProject.name}</li>
+//            <li><strong>Budget Code:</strong> ${projectBudgetCode ? projectBudgetCode.code : 'To be assigned'}</li>`
+//         : '<li><strong>Project:</strong> Not specified</li>';
+
+//       const breakdownInfo = parsedBreakdown && parsedBreakdown.length > 0
+//         ? `<li><strong>Itemized Breakdown:</strong> ${parsedBreakdown.length} items provided</li>`
+//         : '';
+
+//       notifications.push(
+//         sendEmail({
+//           to: admins.map(a => a.email),
+//           subject: `New Cash Request from ${employee.fullName}`,
+//           html: `
+//             <h3>New Cash Request Submitted</h3>
+//             <p>A new cash request has been submitted by <strong>${employee.fullName}</strong></p>
+
+//             <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
+//               <ul>
+//                 <li><strong>Request ID:</strong> REQ-${cashRequest._id.toString().slice(-6).toUpperCase()}</li>
+//                 <li><strong>Amount:</strong> XAF ${parseFloat(amountRequested).toLocaleString()}</li>
+//                 <li><strong>Type:</strong> ${requestType}</li>
+//                 <li><strong>Urgency:</strong> ${urgency}</li>
+//                 ${projectInfo}
+//                 ${breakdownInfo}
+//                 <li><strong>Approval Levels:</strong> ${approvalChain.length} (Finance Officer is final)</li>
+//               </ul>
+//             </div>
+//           `
+//         }).catch(error => {
+//           console.error('Failed to send admin notification:', error);
+//           return { error, type: 'admin' };
+//         })
+//       );
+//     }
+
+//     // Notify employee
+//     notifications.push(
+//       sendEmail({
+//         to: employee.email,
+//         subject: 'Cash Request Submitted Successfully',
+//         html: `
+//           <h3>Your Cash Request Has Been Submitted</h3>
+//           <p>Dear ${employee.fullName},</p>
+
+//           <p>Your cash request has been successfully submitted.</p>
+
+//           <div style="background-color: #f0f8ff; padding: 15px; border-radius: 5px; margin: 15px 0;">
+//             <ul>
+//               <li><strong>Request ID:</strong> REQ-${cashRequest._id.toString().slice(-6).toUpperCase()}</li>
+//               <li><strong>Amount:</strong> XAF ${parseFloat(amountRequested).toLocaleString()}</li>
+//               ${parsedBreakdown && parsedBreakdown.length > 0 ? `<li><strong>Itemized Items:</strong> ${parsedBreakdown.length}</li>` : ''}
+//               <li><strong>Status:</strong> Pending Approval</li>
+//               <li><strong>Approval Chain:</strong> ${approvalChain.length} levels (Finance Officer is final)</li>
+//             </ul>
+//           </div>
+
+//           <div style="background-color: #d1ecf1; padding: 15px; border-radius: 5px; margin: 15px 0;">
+//             <p><strong>Approval Process:</strong></p>
+//             <ol>
+//               ${approvalChain.map(step => `<li>Level ${step.level}: ${step.approver.name} (${step.approver.role})</li>`).join('')}
+//             </ol>
+//           </div>
+
+//           <p>You will receive email notifications as your request progresses through the approval chain.</p>
+//         `
+//       }).catch(error => {
+//         console.error('Failed to send employee notification:', error);
+//         return { error, type: 'employee' };
+//       })
+//     );
+
+//     await Promise.allSettled(notifications);
+
+//     console.log('=== REQUEST CREATED SUCCESSFULLY ===');
+//     if (parsedBreakdown) {
+//       console.log(`✓ With itemized breakdown: ${parsedBreakdown.length} items`);
+//     } else {
+//       console.log('✓ Without itemized breakdown (simple request)');
+//     }
+
+//     res.status(201).json({
+//       success: true,
+//       message: 'Cash request created successfully',
+//       data: cashRequest,
+//       hasItemizedBreakdown: !!(parsedBreakdown && parsedBreakdown.length > 0),
+//       approvalLevels: approvalChain.length,
+//       finalApprover: lastApprover.approver.name
+//     });
+
+//   } catch (error) {
+//     console.error('Create cash request error:', error);
+//     console.error('Error stack:', error.stack);
+
+//     // Clean up uploaded files on error
+//     if (req.files && req.files.length > 0) {
+//       await Promise.allSettled(
+//         req.files.map(file => {
+//           if (file.path && fs.existsSync(file.path)) {
+//             return fs.promises.unlink(file.path).catch(e => 
+//               console.error('File cleanup failed:', e)
+//             );
+//           }
+//         })
+//       );
+//     }
+
+//     res.status(500).json({
+//       success: false,
+//       message: error.message || 'Failed to create cash request',
+//       error: error.message
+//     });
+//   }
+// };
+
+
 const createRequest = async (req, res) => {
   try {
     console.log('=== CREATE CASH REQUEST ===');
     console.log('Request body:', JSON.stringify(req.body, null, 2));
+    console.log('Files received:', req.files?.length || 0);
 
     const {
       requestType,
@@ -1665,7 +2026,7 @@ const createRequest = async (req, res) => {
       }
     }
 
-    // ===== FIXED: Generate approval chain with Finance Officer as final step =====
+    // ===== GENERATE APPROVAL CHAIN =====
     console.log('Generating approval chain...');
     const approvalChain = getCashRequestApprovalChain(employee.email);
 
@@ -1698,66 +2059,126 @@ const createRequest = async (req, res) => {
       console.log(`  Level ${step.level}: ${step.approver.name} (${step.approver.role}) - ${step.approver.email}`);
     });
 
-    // Process attachments
+    // ===== CRITICAL: ENHANCED FILE PROCESSING =====
     let attachments = [];
 
     if (req.files && req.files.length > 0) {
-      console.log(`Processing ${req.files.length} attachments`);
+      console.log(`\n📎 Processing ${req.files.length} attachment(s)...`);
 
       const uploadDir = path.join(__dirname, '../uploads/attachments');
 
+      // Ensure destination directory exists
       try {
-        await fs.promises.mkdir(uploadDir, { recursive: true });
-        console.log(`✓ Upload directory ready: ${uploadDir}`);
+        await fs.promises.mkdir(uploadDir, { recursive: true, mode: 0o755 });
+        console.log(`✓ Attachments directory ready: ${uploadDir}`);
       } catch (dirError) {
-        console.error('Failed to create upload directory:', dirError);
+        console.error('❌ Failed to create attachments directory:', dirError);
         throw new Error('Failed to prepare upload directory');
       }
 
-      for (const file of req.files) {
+      // Process each file with enhanced error handling
+      for (let i = 0; i < req.files.length; i++) {
+        const file = req.files[i];
+        
         try {
-          console.log(`Processing file: ${file.originalname}`);
+          console.log(`\n   Processing file ${i + 1}/${req.files.length}: ${file.originalname}`);
+          console.log(`   Temp path: ${file.path}`);
+          console.log(`   Size: ${(file.size / 1024).toFixed(2)} KB`);
+          console.log(`   MIME type: ${file.mimetype}`);
 
-          const timestamp = Date.now();
-          const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
-          const fileName = `${timestamp}-${sanitizedName}`;
-          const filePath = path.join(uploadDir, fileName);
-
+          // Verify temp file exists
           if (!file.path || !fs.existsSync(file.path)) {
-            console.error(`Temp file not found: ${file.path}`);
+            console.error(`   ❌ Temp file not found: ${file.path}`);
             continue;
           }
 
-          await fs.promises.rename(file.path, filePath);
-          console.log(`✓ File saved: ${fileName}`);
+          // Generate unique filename
+          const timestamp = Date.now();
+          const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+          const fileName = `${timestamp}-${i}-${sanitizedName}`;
+          const destinationPath = path.join(uploadDir, fileName);
 
+          console.log(`   Target path: ${destinationPath}`);
+
+          // Move file from temp to permanent storage
+          await fs.promises.rename(file.path, destinationPath);
+          console.log(`   ✓ File moved successfully`);
+
+          // Verify file was moved
+          if (!fs.existsSync(destinationPath)) {
+            throw new Error(`File was not moved to destination: ${fileName}`);
+          }
+
+          // Verify file size after move
+          const stats = fs.statSync(destinationPath);
+          if (stats.size !== file.size) {
+            console.warn(`   ⚠️  Size mismatch after move: expected ${file.size}, got ${stats.size}`);
+          }
+          console.log(`   ✓ File size verified: ${stats.size} bytes`);
+
+          // Verify file is readable
+          try {
+            fs.accessSync(destinationPath, fs.constants.R_OK);
+            console.log(`   ✓ File is readable`);
+          } catch (accessError) {
+            throw new Error(`File is not readable after move: ${fileName}`);
+          }
+
+          // Create attachment object with complete information
           attachments.push({
             name: file.originalname,
-            url: `/uploads/attachments/${fileName}`,
-            publicId: fileName,
+            publicId: fileName, // CRITICAL: This is what's used for downloads
+            url: `/uploads/attachments/${fileName}`, // Full URL path
             size: file.size,
-            mimetype: file.mimetype
+            mimetype: file.mimetype,
+            uploadedAt: new Date(),
+            // Additional metadata for debugging
+            originalPath: file.path,
+            fieldName: file.fieldname,
+            encoding: file.encoding
           });
-        } catch (fileError) {
-          console.error(`Error processing file ${file.originalname}:`, fileError);
 
+          console.log(`   ✅ Attachment ${i + 1} processed successfully`);
+          console.log(`   Download URL: /api/files/download/${fileName}`);
+
+        } catch (fileError) {
+          console.error(`   ❌ Error processing file ${file.originalname}:`, fileError);
+          console.error(`   Error details:`, fileError.stack);
+
+          // Attempt cleanup of temp file
           if (file.path && fs.existsSync(file.path)) {
             try {
               await fs.promises.unlink(file.path);
+              console.log(`   ✓ Cleaned up temp file`);
             } catch (cleanupError) {
-              console.error('Failed to clean up temp file:', cleanupError);
+              console.error(`   ⚠️  Failed to clean up temp file:`, cleanupError.message);
             }
           }
 
+          // Don't fail entire request if one file fails - continue processing others
           continue;
         }
       }
 
-      console.log(`Successfully processed ${attachments.length} attachments`);
+      if (attachments.length > 0) {
+        console.log(`\n✅ Successfully processed ${attachments.length} out of ${req.files.length} attachment(s)`);
+        console.log('Attachment details saved to database:');
+        attachments.forEach((att, idx) => {
+          console.log(`   ${idx + 1}. ${att.name}`);
+          console.log(`      publicId: ${att.publicId}`);
+          console.log(`      url: ${att.url}`);
+          console.log(`      size: ${(att.size / 1024).toFixed(2)} KB`);
+          console.log(`      mimetype: ${att.mimetype}`);
+        });
+      } else if (req.files.length > 0) {
+        console.warn('⚠️  No attachments were successfully processed');
+      }
+    } else {
+      console.log('📎 No attachments uploaded');
     }
 
     // Create the cash request
-    console.log('Creating CashRequest document...');
+    console.log('\n💾 Creating CashRequest document...');
     const cashRequest = new CashRequest({
       employee: req.user.userId,
       requestMode: 'advance',
@@ -1768,7 +2189,7 @@ const createRequest = async (req, res) => {
       urgency,
       requiredDate: new Date(requiredDate),
       projectCode,
-      attachments,
+      attachments,  // ✅ Properly saved attachments with publicId and complete metadata
       itemizedBreakdown: parsedBreakdown || [],
       status: 'pending_supervisor',
       approvalChain: approvalChain,  // ✅ Use directly - already formatted with Finance Officer
@@ -1785,7 +2206,23 @@ const createRequest = async (req, res) => {
 
     console.log('Saving cash request...');
     await cashRequest.save();
-    console.log(`✓ Cash request created: ${cashRequest._id}`);
+    console.log(`✅ Cash request created with ID: ${cashRequest._id}`);
+
+    // Verify attachments were saved correctly
+    if (attachments.length > 0) {
+      console.log(`\n🔍 Verifying saved attachments in database:`);
+      console.log(`   Database has ${cashRequest.attachments.length} attachments`);
+      cashRequest.attachments.forEach((att, idx) => {
+        console.log(`   ${idx + 1}. ${att.name}`);
+        console.log(`      publicId: ${att.publicId}`);
+        console.log(`      url: ${att.url}`);
+        console.log(`      Download endpoint: /api/files/download/${att.publicId}`);
+      });
+      
+      if (cashRequest.attachments.length !== attachments.length) {
+        console.warn(`⚠️  Attachment count mismatch: saved ${cashRequest.attachments.length}, expected ${attachments.length}`);
+      }
+    }
 
     // Populate employee details
     await cashRequest.populate('employee', 'fullName email department');
@@ -1793,12 +2230,15 @@ const createRequest = async (req, res) => {
       await cashRequest.populate('projectId', 'name code department');
     }
 
-    // Send notifications
+    // ===== SEND NOTIFICATIONS =====
+    console.log('\n📧 Sending notifications...');
     const notifications = [];
 
-    // Notify first approver
+    // Notify first approver (Supervisor)
     const firstApprover = approvalChain[0];
     if (firstApprover && firstApprover.approver.email) {
+      console.log(`Notifying first approver: ${firstApprover.approver.name} (${firstApprover.approver.email})`);
+      
       notifications.push(
         sendCashRequestEmail.newRequestToSupervisor(
           firstApprover.approver.email,
@@ -1816,6 +2256,8 @@ const createRequest = async (req, res) => {
     // Notify admins
     const admins = await User.find({ role: 'admin' }).select('email fullName');
     if (admins.length > 0) {
+      console.log(`Notifying ${admins.length} admin(s)`);
+      
       const projectInfo = selectedProject 
         ? `<li><strong>Project:</strong> ${selectedProject.name}</li>
            <li><strong>Budget Code:</strong> ${projectBudgetCode ? projectBudgetCode.code : 'To be assigned'}</li>`
@@ -1823,6 +2265,10 @@ const createRequest = async (req, res) => {
 
       const breakdownInfo = parsedBreakdown && parsedBreakdown.length > 0
         ? `<li><strong>Itemized Breakdown:</strong> ${parsedBreakdown.length} items provided</li>`
+        : '';
+
+      const attachmentInfo = attachments.length > 0
+        ? `<li><strong>Supporting Documents:</strong> ${attachments.length} file(s) attached</li>`
         : '';
 
       notifications.push(
@@ -1836,14 +2282,23 @@ const createRequest = async (req, res) => {
             <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
               <ul>
                 <li><strong>Request ID:</strong> REQ-${cashRequest._id.toString().slice(-6).toUpperCase()}</li>
+                <li><strong>Employee:</strong> ${employee.fullName} (${employee.department})</li>
                 <li><strong>Amount:</strong> XAF ${parseFloat(amountRequested).toLocaleString()}</li>
                 <li><strong>Type:</strong> ${requestType}</li>
                 <li><strong>Urgency:</strong> ${urgency}</li>
                 ${projectInfo}
                 ${breakdownInfo}
+                ${attachmentInfo}
                 <li><strong>Approval Levels:</strong> ${approvalChain.length} (Finance Officer is final)</li>
               </ul>
             </div>
+
+            <div style="background-color: #e3f2fd; padding: 15px; border-radius: 5px; margin: 15px 0;">
+              <p><strong>Purpose:</strong></p>
+              <p style="white-space: pre-wrap;">${purpose}</p>
+            </div>
+
+            <p><strong>First Approver:</strong> ${firstApprover.approver.name} (${firstApprover.approver.role})</p>
           `
         }).catch(error => {
           console.error('Failed to send admin notification:', error);
@@ -1852,7 +2307,8 @@ const createRequest = async (req, res) => {
       );
     }
 
-    // Notify employee
+    // Notify employee of successful submission
+    console.log(`Notifying employee: ${employee.email}`);
     notifications.push(
       sendEmail({
         to: employee.email,
@@ -1861,13 +2317,16 @@ const createRequest = async (req, res) => {
           <h3>Your Cash Request Has Been Submitted</h3>
           <p>Dear ${employee.fullName},</p>
 
-          <p>Your cash request has been successfully submitted.</p>
+          <p>Your cash request has been successfully submitted and is now being processed.</p>
 
           <div style="background-color: #f0f8ff; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <p><strong>Request Details:</strong></p>
             <ul>
               <li><strong>Request ID:</strong> REQ-${cashRequest._id.toString().slice(-6).toUpperCase()}</li>
               <li><strong>Amount:</strong> XAF ${parseFloat(amountRequested).toLocaleString()}</li>
+              <li><strong>Type:</strong> ${requestType.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</li>
               ${parsedBreakdown && parsedBreakdown.length > 0 ? `<li><strong>Itemized Items:</strong> ${parsedBreakdown.length}</li>` : ''}
+              ${attachments.length > 0 ? `<li><strong>Supporting Documents:</strong> ${attachments.length} file(s)</li>` : ''}
               <li><strong>Status:</strong> Pending Approval</li>
               <li><strong>Approval Chain:</strong> ${approvalChain.length} levels (Finance Officer is final)</li>
             </ul>
@@ -1880,7 +2339,14 @@ const createRequest = async (req, res) => {
             </ol>
           </div>
 
+          <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <p><strong>Next Step:</strong></p>
+            <p>Your request will be reviewed by <strong>${firstApprover.approver.name}</strong> (${firstApprover.approver.role}).</p>
+          </div>
+
           <p>You will receive email notifications as your request progresses through the approval chain.</p>
+          
+          <p>Thank you for following the proper request process!</p>
         `
       }).catch(error => {
         console.error('Failed to send employee notification:', error);
@@ -1888,45 +2354,63 @@ const createRequest = async (req, res) => {
       })
     );
 
-    await Promise.allSettled(notifications);
+    // Wait for all notifications to complete
+    const notificationResults = await Promise.allSettled(notifications);
+    const successfulNotifications = notificationResults.filter(r => r.status === 'fulfilled').length;
+    const failedNotifications = notificationResults.filter(r => r.status === 'rejected').length;
+    
+    console.log(`\n📧 Notification summary: ${successfulNotifications} sent, ${failedNotifications} failed`);
 
-    console.log('=== REQUEST CREATED SUCCESSFULLY ===');
+    console.log('\n=== REQUEST CREATED SUCCESSFULLY ===');
+    console.log(`Request ID: ${cashRequest._id}`);
+    console.log(`Display ID: REQ-${cashRequest._id.toString().slice(-6).toUpperCase()}`);
+    console.log(`Attachments: ${attachments.length}`);
     if (parsedBreakdown) {
-      console.log(`✓ With itemized breakdown: ${parsedBreakdown.length} items`);
+      console.log(`Itemized breakdown: ${parsedBreakdown.length} items`);
     } else {
-      console.log('✓ Without itemized breakdown (simple request)');
+      console.log('Itemized breakdown: None (simple request)');
     }
+    console.log(`Approval levels: ${approvalChain.length}`);
+    console.log(`Final approver: ${lastApprover.approver.name} (${lastApprover.approver.role})`);
+    console.log('=====================================\n');
 
     res.status(201).json({
       success: true,
       message: 'Cash request created successfully',
       data: cashRequest,
-      hasItemizedBreakdown: !!(parsedBreakdown && parsedBreakdown.length > 0),
-      approvalLevels: approvalChain.length,
-      finalApprover: lastApprover.approver.name
+      metadata: {
+        attachmentsUploaded: attachments.length,
+        hasItemizedBreakdown: !!(parsedBreakdown && parsedBreakdown.length > 0),
+        approvalLevels: approvalChain.length,
+        finalApprover: lastApprover.approver.name,
+        notificationsSent: successfulNotifications,
+        notificationsFailed: failedNotifications
+      }
     });
 
   } catch (error) {
-    console.error('Create cash request error:', error);
-    console.error('Error stack:', error.stack);
+    console.error('❌ Create cash request error:', error);
+    console.error('Stack trace:', error.stack);
 
     // Clean up uploaded files on error
     if (req.files && req.files.length > 0) {
+      console.log('\n🗑️  Cleaning up uploaded files due to error...');
       await Promise.allSettled(
         req.files.map(file => {
           if (file.path && fs.existsSync(file.path)) {
             return fs.promises.unlink(file.path).catch(e => 
-              console.error('File cleanup failed:', e)
+              console.error('File cleanup failed:', e.message)
             );
           }
         })
       );
+      console.log('✓ File cleanup completed');
     }
 
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to create cash request',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : 'An error occurred'
     });
   }
 };

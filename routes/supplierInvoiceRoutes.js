@@ -148,14 +148,50 @@ router.get('/contracts/:contractId/with-invoices',
 // INVOICE MANAGEMENT (Existing)
 // ===============================
 
+// Get invoices pending supply chain assignment
+router.get('/supply-chain/invoices/pending',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain'),
+  supplierInvoiceController.getSupplierInvoicesPendingSupplyChainAssignment
+);
+
+// Assign invoice to department (Supply Chain Coordinator)
+router.post('/supply-chain/invoices/:invoiceId/assign',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain'),
+  supplierInvoiceController.assignSupplierInvoiceBySupplyChain
+);
+
+// Reject invoice (Supply Chain Coordinator)
+router.post('/supply-chain/invoices/:invoiceId/reject',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain'),
+  supplierInvoiceController.rejectSupplierInvoiceBySupplyChain
+);
+
+// Bulk assign invoices (Supply Chain Coordinator)
+router.post('/supply-chain/invoices/bulk-assign',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain'),
+  supplierInvoiceController.bulkAssignSupplierInvoicesBySupplyChain
+);
+
+// Get Supply Chain dashboard statistics
+router.get('/supply-chain/dashboard/stats',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain'),
+  supplierInvoiceController.getSupplyChainDashboardStats
+);
+
 // Submit invoice (existing)
 router.post('/invoices',
   supplierAuthMiddleware,
-  requireActiveSupplier,
   upload.fields([
     { name: 'invoiceFile', maxCount: 1 },
     { name: 'poFile', maxCount: 1 }
   ]),
+  upload.validateFiles,
+  upload.cleanupTempFiles,
   supplierInvoiceController.submitSupplierInvoice
 );
 

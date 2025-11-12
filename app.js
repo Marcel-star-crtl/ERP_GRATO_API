@@ -13,6 +13,7 @@ initializeSharePointFolders();
 const express = require('express');
 const http = require('http');
 const path = require('path'); 
+const fs = require('fs');
 const cors = require('cors');
 const swaggerUi = require('swagger-ui-express');
 const authRoutes = require('./routes/authRoutes');
@@ -89,6 +90,54 @@ app.use(cors({
   preflightContinue: false,
   optionsSuccessStatus: 200
 }));
+
+// Ensure all upload directories exist on startup
+const ensureUploadDirectories = () => {
+  const directories = [
+    // Base upload directory
+    path.join(__dirname, 'uploads'),
+    
+    // Temp directory for multer
+    path.join(__dirname, 'uploads/temp'),
+    
+    // Cash request attachments
+    path.join(__dirname, 'uploads/attachments'),
+    path.join(__dirname, 'uploads/justifications'),
+    path.join(__dirname, 'uploads/reimbursements'),
+    
+    // HR documents
+    path.join(__dirname, 'uploads/hr-documents'),
+    path.join(__dirname, 'uploads/documents'),
+    path.join(__dirname, 'uploads/employee-documents'),
+    
+    // IT Support
+    path.join(__dirname, 'uploads/it-support'),
+    
+    // Other document types
+    path.join(__dirname, 'uploads/pdfs'),
+    path.join(__dirname, 'uploads/exports')
+  ];
+
+  console.log('\n🗂️  Ensuring upload directories exist...');
+  
+  directories.forEach(dir => {
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true, mode: 0o755 });
+        console.log(`   ✅ Created: ${dir}`);
+      } else {
+        // Verify it's writable
+        fs.accessSync(dir, fs.constants.W_OK);
+        console.log(`   ✓ Exists: ${dir}`);
+      }
+    } catch (error) {
+      console.error(`   ❌ Failed to setup ${dir}:`, error.message);
+      // Don't exit - let the app try to continue
+    }
+  });
+  
+  console.log('✅ Upload directories ready\n');
+};
 
 // Run daily at 8 AM to send task reminders
 cron.schedule('0 8 * * *', async () => {
@@ -191,6 +240,8 @@ app.use('/api/migration', migrationRoutes);
 app.use('/api/hr', require('./routes/hrRoutes')); 
 
 app.use(handleMulterError);
+
+ensureUploadDirectories();
 
 // Global error handler
 app.use((err, req, res, next) => {

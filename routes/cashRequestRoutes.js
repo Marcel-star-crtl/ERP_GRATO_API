@@ -13,7 +13,7 @@ const { handleMulterError, cleanupTempFiles, validateFiles } = require('../middl
 router.get(
   '/dashboard-stats',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   async (req, res) => {
     try {
       const CashRequest = require('../models/CashRequest');
@@ -129,7 +129,7 @@ router.get(
 router.post(
   '/approval-chain-preview',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   cashRequestController.getApprovalChainPreview
 );
 
@@ -148,7 +148,7 @@ router.get(
 router.get(
   '/employee/:requestId/justification',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   cashRequestController.getRequestForJustification
 );
 
@@ -156,7 +156,7 @@ router.get(
 router.get(
   '/employee/:requestId',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   cashRequestController.getEmployeeRequest
 );
 
@@ -170,7 +170,7 @@ router.get(
 router.get(
   '/supervisor/justifications',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   cashRequestController.getSupervisorJustifications
 );
 
@@ -178,7 +178,7 @@ router.get(
 router.get(
   '/supervisor/pending',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   cashRequestController.getSupervisorRequests
 );
 
@@ -186,7 +186,7 @@ router.get(
 router.get(
   '/supervisor/justification/:requestId',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   cashRequestController.getSupervisorJustification
 );
 
@@ -194,7 +194,7 @@ router.get(
 router.put(
   '/justification/:requestId/decision',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   cashRequestController.processJustificationDecision
 );
 
@@ -209,7 +209,7 @@ router.put(
 router.get(
   '/supervisor',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   cashRequestController.getSupervisorRequests
 );
 
@@ -217,7 +217,7 @@ router.get(
 router.put(
   '/supervisor/:requestId',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   cashRequestController.processSupervisorDecision
 );
 
@@ -225,7 +225,7 @@ router.put(
 router.get(
   '/supervisor/:requestId',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   cashRequestController.getSupervisorRequest
 );
 
@@ -353,7 +353,7 @@ router.post(
 router.post(
   '/:requestId/justification',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   (req, res, next) => {
     console.log('=== JUSTIFICATION UPLOAD MIDDLEWARE ===');
     console.log('Content-Type:', req.headers['content-type']);
@@ -501,7 +501,7 @@ router.use((error, req, res, next) => {
 router.post(
   '/reimbursement',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   (req, res, next) => {
     console.log('\n=== REIMBURSEMENT REQUEST UPLOAD INITIATED ===');
     console.log('User:', req.user?.userId);
@@ -562,7 +562,7 @@ router.post(
 router.get(
   '/reimbursement/limit-status',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   cashRequestController.getReimbursementLimitStatus
 );
 

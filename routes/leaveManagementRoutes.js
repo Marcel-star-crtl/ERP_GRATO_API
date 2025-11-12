@@ -32,13 +32,13 @@ router.post('/preview-approval-chain',
 
 router.get('/supervisor', 
   authMiddleware, 
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'), 
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'), 
   leaveController.getSupervisorLeaves
 );
 
 router.get('/supervisor/:leaveId', 
   authMiddleware, 
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   leaveController.getEmployeeLeave
 );
 
@@ -68,7 +68,7 @@ router.get('/admin/:leaveId',
 
 router.put('/:leaveId/supervisor', 
   authMiddleware, 
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'), 
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'), 
   leaveController.processSupervisorDecision
 );
 
@@ -100,7 +100,7 @@ router.get('/dashboard/stats',
 
 router.get('/analytics/general',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   leaveController.getLeaveAnalytics
 );
 
@@ -118,7 +118,7 @@ router.get('/hr/analytics',
 
 router.get('/statistics',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   leaveController.getLeaveStats
 );
 
@@ -307,7 +307,7 @@ router.get('/wellness/employee/:employeeId',
 // Department wellness overview
 router.get('/wellness/department/:department',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
   async (req, res) => {
     try {
       const { department } = req.params;
