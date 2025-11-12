@@ -1,9 +1,10 @@
-// routes/hrRoutes.js
 const express = require('express');
 const router = express.Router();
 const hrController = require('../controllers/hrController');
 const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware');
 const upload = require('../middlewares/uploadMiddleware');
+
+
 
 // Protect all routes - only HR and Admin
 router.use(authMiddleware);

@@ -54,6 +54,58 @@ class PDFService {
     });
   }
 
+  /**
+   * Generate Petty Cash Form PDF - Identical format to Cash Request
+   * Uses the same template as generateCashRequestPDF
+   */
+  async generatePettyCashFormPDF(formData, outputPath) {
+    return new Promise((resolve, reject) => {
+      try {
+        console.log('=== STARTING PETTY CASH FORM PDF GENERATION ===');
+        console.log('Form Number:', formData.displayId);
+        console.log('Requisition:', formData.requisitionNumber);
+
+        const doc = new PDFDocument({ 
+          size: 'A4', 
+          margins: { top: 50, bottom: 80, left: 40, right: 40 },
+          info: {
+            Title: `Petty Cash Form - ${formData.displayId}`,
+            Author: 'GRATO ENGINEERING GLOBAL LTD',
+            Subject: 'Petty Cash Form',
+            Creator: 'Purchase Requisition System'
+          }
+        });
+
+        if (outputPath) {
+          doc.pipe(fs.createWriteStream(outputPath));
+        }
+
+        const chunks = [];
+        doc.on('data', chunk => chunks.push(chunk));
+        doc.on('end', () => {
+          const pdfBuffer = Buffer.concat(chunks);
+          console.log('=== PETTY CASH FORM PDF GENERATION COMPLETED ===');
+          resolve({
+            success: true,
+            buffer: pdfBuffer,
+            filename: `Petty_Cash_Form_${formData.displayId}_${Date.now()}.pdf`
+          });
+        });
+
+        // Use the same content generation as cash request
+        // The format is identical
+        this.generateCashRequestContent(doc, formData);
+        doc.end();
+      } catch (error) {
+        console.error('Petty Cash Form PDF generation error:', error);
+        reject({
+          success: false,
+          error: error.message
+        });
+      }
+    });
+  }
+
   generateExactPOContent(doc, poData) {
     let yPos = 50;
 

@@ -922,12 +922,113 @@ exports.getEmployeeLeaveBalance = async (req, res) => {
   }
 };
 
+// // @desc    Get employee performance data
+// // @route   GET /api/hr/employees/:id/performance
+// // @access  Private (HR, Admin)
+// exports.getEmployeePerformance = async (req, res) => {
+//   try {
+//     const employee = await User.findById(req.params.id);
+
+//     if (!employee) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Employee not found'
+//       });
+//     }
+
+//     // Fetch performance data from evaluation system
+//     const QuarterlyEvaluation = require('../models/QuarterlyEvaluation');
+//     const KPI = require('../models/QuarterlyKPI');
+
+//     // Get latest evaluation
+//     const latestEvaluation = await QuarterlyEvaluation.findOne({
+//       employee: req.params.id,
+//       status: { $in: ['submitted', 'reviewed'] }
+//     }).sort('-evaluationDate');
+
+//     // Get current quarter KPIs
+//     const currentYear = new Date().getFullYear();
+//     const currentQuarter = Math.ceil((new Date().getMonth() + 1) / 3);
+
+//     const kpiData = await KPI.findOne({
+//       employee: req.params.id,
+//       year: currentYear,
+//       quarter: currentQuarter,
+//       approvalStatus: 'approved'
+//     });
+
+//     let kpiAchievement = null;
+//     if (kpiData && kpiData.kpis) {
+//       const totalWeight = kpiData.kpis.reduce((sum, kpi) => sum + kpi.weight, 0);
+//       const weightedAchievement = kpiData.kpis.reduce((sum, kpi) => {
+//         return sum + ((kpi.achievement || 0) * kpi.weight / 100);
+//       }, 0);
+
+//       kpiAchievement = {
+//         overallAchievement: Math.round(weightedAchievement),
+//         totalKPIs: kpiData.kpis.length
+//       };
+//     }
+
+//     res.status(200).json({
+//       success: true,
+//       data: {
+//         latestEvaluation: latestEvaluation ? {
+//           evaluationDate: latestEvaluation.evaluationDate,
+//           overallScore: latestEvaluation.overallScore,
+//           rating: latestEvaluation.rating
+//         } : null,
+//         kpiAchievement
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('Get performance error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch performance data',
+//       error: error.message
+//     });
+//   }
+// };
+
 // @desc    Get employee performance data
 // @route   GET /api/hr/employees/:id/performance
-// @access  Private (HR, Admin)
+// @access  Private (HR, Admin, Supervisor)
 exports.getEmployeePerformance = async (req, res) => {
   try {
-    const employee = await User.findById(req.params.id);
+    const userId = req.user.userId;
+    const employeeId = req.params.id;
+    const user = await User.findById(userId);
+
+    // Check authorization
+    const isAdmin = ['admin', 'supply_chain', 'hr'].includes(user.role);
+    const isSupervisor = user.role === 'supervisor';
+    
+    if (!isAdmin) {
+      if (isSupervisor) {
+        // Supervisors can only view their direct reports
+        const supervisor = await User.findById(userId).populate('directReports', '_id');
+        const isDirectReport = supervisor.directReports.some(
+          report => report._id.toString() === employeeId
+        );
+        
+        if (!isDirectReport && userId !== employeeId) {
+          return res.status(403).json({
+            success: false,
+            message: 'Access denied. You can only view performance data for your direct reports.'
+          });
+        }
+      } else if (userId !== employeeId) {
+        // Regular employees can only view their own
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You can only view your own performance data.'
+        });
+      }
+    }
+
+    const employee = await User.findById(employeeId);
 
     if (!employee) {
       return res.status(404).json({
@@ -936,49 +1037,120 @@ exports.getEmployeePerformance = async (req, res) => {
       });
     }
 
-    // Fetch performance data from evaluation system
+    // Fetch all quarterly evaluations
     const QuarterlyEvaluation = require('../models/QuarterlyEvaluation');
-    const KPI = require('../models/KPI');
+    
+    const evaluations = await QuarterlyEvaluation.find({
+      employee: employeeId
+    })
+      .populate('supervisor', 'fullName email')
+      .populate('quarterlyKPI')
+      .populate('behavioralEvaluation')
+      .sort({ createdAt: -1 });
 
     // Get latest evaluation
-    const latestEvaluation = await QuarterlyEvaluation.findOne({
-      employee: req.params.id,
-      status: { $in: ['submitted', 'reviewed'] }
-    }).sort('-evaluationDate');
+    const latestEvaluation = evaluations.length > 0 ? evaluations[0] : null;
+    
+    // Calculate average scores across all evaluations
+    const avgFinalScore = evaluations.length > 0
+      ? evaluations.reduce((sum, e) => sum + (e.finalScore || 0), 0) / evaluations.length
+      : 0;
+    
+    const avgTaskScore = evaluations.length > 0
+      ? evaluations.reduce((sum, e) => sum + (e.taskMetrics?.taskPerformanceScore || 0), 0) / evaluations.length
+      : 0;
+    
+    const avgBehavioralScore = evaluations.length > 0
+      ? evaluations.reduce((sum, e) => sum + (e.behavioralScore || 0), 0) / evaluations.length
+      : 0;
 
-    // Get current quarter KPIs
-    const currentYear = new Date().getFullYear();
-    const currentQuarter = Math.ceil((new Date().getMonth() + 1) / 3);
+    // Group evaluations by grade
+    const byGrade = evaluations.reduce((acc, e) => {
+      if (e.grade) {
+        acc[e.grade] = (acc[e.grade] || 0) + 1;
+      }
+      return acc;
+    }, {});
 
-    const kpiData = await KPI.findOne({
-      employee: req.params.id,
-      year: currentYear,
-      quarter: currentQuarter,
-      approvalStatus: 'approved'
-    });
+    // Get current quarter KPI data if latest evaluation exists
+    let currentQuarterKPI = null;
+    if (latestEvaluation && latestEvaluation.quarterlyKPI) {
+      const QuarterlyKPI = require('../models/QuarterlyKPI');
+      currentQuarterKPI = await QuarterlyKPI.findById(latestEvaluation.quarterlyKPI);
+    }
 
+    // Calculate KPI achievement from latest evaluation
     let kpiAchievement = null;
-    if (kpiData && kpiData.kpis) {
-      const totalWeight = kpiData.kpis.reduce((sum, kpi) => sum + kpi.weight, 0);
-      const weightedAchievement = kpiData.kpis.reduce((sum, kpi) => {
-        return sum + ((kpi.achievement || 0) * kpi.weight / 100);
-      }, 0);
+    if (latestEvaluation && latestEvaluation.taskMetrics?.kpiAchievement) {
+      const kpiData = latestEvaluation.taskMetrics.kpiAchievement;
+      const totalWeight = kpiData.reduce((sum, kpi) => sum + kpi.kpiWeight, 0);
+      const weightedAchievement = kpiData.reduce((sum, kpi) => sum + kpi.weightedScore, 0);
 
       kpiAchievement = {
         overallAchievement: Math.round(weightedAchievement),
-        totalKPIs: kpiData.kpis.length
+        totalKPIs: kpiData.length,
+        kpiBreakdown: kpiData.map(kpi => ({
+          title: kpi.kpiTitle,
+          weight: kpi.kpiWeight,
+          tasksCompleted: kpi.tasksCompleted,
+          averageGrade: kpi.averageGrade,
+          achievedScore: kpi.achievedScore,
+          weightedScore: kpi.weightedScore
+        }))
       };
     }
+
+    // Performance trends (last 4 quarters)
+    const performanceTrend = evaluations.slice(0, 4).map(evaluation => ({
+      quarter: evaluation.quarter,
+      finalScore: evaluation.finalScore,
+      grade: evaluation.grade,
+      taskPerformance: evaluation.taskMetrics?.taskPerformanceScore || 0,
+      behavioralScore: evaluation.behavioralScore,
+      performanceLevel: evaluation.performanceLevel
+    }));
 
     res.status(200).json({
       success: true,
       data: {
         latestEvaluation: latestEvaluation ? {
-          evaluationDate: latestEvaluation.evaluationDate,
-          overallScore: latestEvaluation.overallScore,
-          rating: latestEvaluation.rating
+          id: latestEvaluation._id,
+          evaluationDate: latestEvaluation.createdAt,
+          quarter: latestEvaluation.quarter,
+          overallScore: latestEvaluation.finalScore,
+          rating: latestEvaluation.grade,
+          performanceLevel: latestEvaluation.performanceLevel,
+          status: latestEvaluation.status,
+          taskPerformanceScore: latestEvaluation.taskMetrics?.taskPerformanceScore || 0,
+          behavioralScore: latestEvaluation.behavioralScore,
+          supervisor: latestEvaluation.supervisor ? {
+            id: latestEvaluation.supervisor._id,
+            name: latestEvaluation.supervisor.fullName
+          } : null
         } : null,
-        kpiAchievement
+        allEvaluations: evaluations.map(e => ({
+          id: e._id,
+          quarter: e.quarter,
+          finalScore: e.finalScore,
+          grade: e.grade,
+          performanceLevel: e.performanceLevel,
+          status: e.status,
+          createdAt: e.createdAt
+        })),
+        averageScores: {
+          finalScore: Math.round(avgFinalScore * 10) / 10,
+          taskPerformance: Math.round(avgTaskScore * 10) / 10,
+          behavioral: Math.round(avgBehavioralScore * 10) / 10
+        },
+        totalEvaluations: evaluations.length,
+        byGrade,
+        kpiAchievement,
+        performanceTrend,
+        currentQuarterKPI: currentQuarterKPI ? {
+          quarter: currentQuarterKPI.quarter,
+          status: currentQuarterKPI.approvalStatus,
+          kpiCount: currentQuarterKPI.kpis?.length || 0
+        } : null
       }
     });
 

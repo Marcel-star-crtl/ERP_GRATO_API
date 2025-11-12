@@ -392,29 +392,6 @@ ITSupportRequestSchema.methods.getApprovalProgress = function() {
   return Math.round((approvedSteps / this.approvalChain.length) * 100);
 };
 
-// Method to get current stage description
-// ITSupportRequestSchema.methods.getCurrentStage = function() {
-//   const stageMap = {
-//     'draft': 'Draft',
-//     'pending_supervisor': 'Pending Supervisor Approval',
-//     'supervisor_approved': 'Supervisor Approved',
-//     'supervisor_rejected': 'Supervisor Rejected',
-//     'pending_it_review': 'Pending IT Department Review',
-//     'it_assigned': 'Assigned to IT Technician',
-//     'pending_finance': 'Pending Finance Approval',
-//     'approved': 'Approved - Ready for Implementation',
-//     'rejected': 'Rejected',
-//     'in_progress': 'Work In Progress',
-//     'waiting_parts': 'Waiting for Parts/Resources',
-//     'resolved': 'Resolved',
-//     'closed': 'Closed',
-//     'cancelled': 'Cancelled'
-//   };
-  
-//   return stageMap[this.status] || 'Unknown Status';
-// };
-
-
 ITSupportRequestSchema.methods.getCurrentStage = function() {
   const stageMap = {
     'draft': 'Draft',

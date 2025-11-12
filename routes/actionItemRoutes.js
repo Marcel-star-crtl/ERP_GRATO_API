@@ -47,7 +47,7 @@ router.get(
 router.post(
   '/milestone/task',
   authMiddleware,
-  requireRoles('supervisor', 'admin', 'supply_chain', 'manager'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'technical', 'finance', 'hse'),
   actionItemController.createTaskUnderMilestone
 );
 
@@ -80,14 +80,14 @@ router.post(
 router.post(
   '/:id/assignee/:assigneeId/approve-completion',
   authMiddleware,
-  requireRoles('supervisor', 'admin', 'supply_chain', 'manager'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'technical', 'finance', 'hse'),
   actionItemController.approveCompletionForAssignee
 );
 
 router.post(
   '/:id/assignee/:assigneeId/reject-completion',
   authMiddleware,
-  requireRoles('supervisor', 'admin', 'supply_chain', 'manager'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'technical', 'finance', 'hse'),
   actionItemController.rejectCompletionForAssignee
 );
 
@@ -96,7 +96,7 @@ router.post(
 router.post(
   '/:id/reassign',
   authMiddleware,
-  requireRoles('supervisor', 'admin', 'supply_chain', 'manager'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'technical', 'finance', 'hse'),
   actionItemController.reassignTask
 );
 

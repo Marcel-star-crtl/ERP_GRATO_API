@@ -14,7 +14,7 @@ router.get(
 router.get(
   '/pending-approvals',
   authMiddleware,
-  requireRoles('supervisor', 'admin', 'supply_chain', 'hr', 'hse'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
   quarterlyKPIController.getPendingKPIApprovals
 );
 
@@ -50,7 +50,7 @@ router.post(
 router.post(
   '/:id/approve',
   authMiddleware,
-  requireRoles('supervisor', 'admin', 'supply_chain', 'hr', 'it', 'hse'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
   quarterlyKPIController.processKPIApproval
 );
 

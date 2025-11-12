@@ -1469,32 +1469,29 @@ const sendCashRequestEmail = {
 
 
 /**
- * Sick Leave Email Templates
+ * LEAVE EMAIL TEMPLATES
  */
- const sendSickLeaveEmail = {
+const sendLeaveEmail = {
   /**
-   * Notify supervisor of new sick leave request with approval link
-   * @param {string} supervisorEmail 
-   * @param {string} employeeName 
-   * @param {string} leaveType
-   * @param {string} leaveId 
-   * @param {number} totalDays
-   * @param {string} urgency
-   * @param {string} reason
-   * @returns {Promise<Object>} 
+   * Notify supervisor of new leave request
    */
-  newLeaveToSupervisor: async (supervisorEmail, employeeName, leaveType, leaveId, totalDays, urgency, reason) => {
+  newLeaveToSupervisor: async (
+    supervisorEmail,
+    employeeName,
+    leaveType,
+    leaveId,
+    totalDays,
+    urgency,
+    reason,
+    leaveCategory
+  ) => {
     try {
-      if (!supervisorEmail || !employeeName || !leaveType || !leaveId) {
-        throw new Error('Missing required parameters for supervisor email');
-      }
-
       const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-      const approvalLink = `${clientUrl}/supervisor/sick-leave/${leaveId}`;
+      const approvalLink = `${clientUrl}/supervisor/leave/${leaveId}`;
 
       const urgencyColors = {
         'low': '#28a745',
-        'medium': '#ffc107', 
+        'medium': '#ffc107',
         'high': '#fd7e14',
         'critical': '#dc3545'
       };
@@ -1506,47 +1503,52 @@ const sendCashRequestEmail = {
         'critical': '🚨'
       };
 
-      const subject = `${urgencyIcons[urgency] || '📋'} New Sick Leave Request Requires Your Approval - ${employeeName}`;
-      
-      const text = `Hello,\n\nYou have received a new sick leave request that requires your approval.\n\nEmployee: ${employeeName}\nLeave Type: ${leaveType}\nDuration: ${totalDays} day(s)\nUrgency: ${urgency.toUpperCase()}\nReason: ${reason.substring(0, 100)}...\n\nPlease click this link to review: ${approvalLink}\n\nBest regards,\nHR Management System`;
+      const categoryIcons = {
+        'medical': '🏥',
+        'vacation': '🌴',
+        'emergency': '🚨',
+        'family': '👨‍👩‍👧‍👦',
+        'bereavement': '💔',
+        'study': '📚'
+      };
+
+      const subject = `${urgencyIcons[urgency] || '📋'} New ${leaveCategory} Leave Request - ${employeeName}`;
 
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid ${urgencyColors[urgency] || '#ffc107'};">
-            <h2 style="color: #333; margin-top: 0;">${urgencyIcons[urgency] || '📋'} Sick Leave Request - Approval Needed</h2>
-            <p style="color: #555; line-height: 1.6;">
-              Dear Supervisor,
-            </p>
-            <p style="color: #555; line-height: 1.6;">
-              You have received a new sick leave request that requires your immediate attention and approval.
-            </p>
+            <h2 style="color: #333; margin-top: 0;">
+              ${urgencyIcons[urgency] || '📋'} ${categoryIcons[leaveCategory] || '📋'} Leave Request - Approval Needed
+            </h2>
+            <p style="color: #555;">Dear Supervisor,</p>
+            <p style="color: #555;">You have received a new leave request requiring your approval.</p>
 
             <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid ${urgencyColors[urgency] || '#ffc107'}; padding-bottom: 10px;">Leave Request Details</h3>
+              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid ${urgencyColors[urgency] || '#ffc107'}; padding-bottom: 10px;">Leave Details</h3>
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Employee:</strong></td>
                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${employeeName}</td>
                 </tr>
                 <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Leave Category:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${leaveCategory}</td>
+                </tr>
+                <tr>
                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Leave Type:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${leaveType}</td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${leaveType.replace(/_/g, ' ')}</td>
                 </tr>
                 <tr>
                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Duration:</strong></td>
                   <td style="padding: 8px 0; border-bottom: 1px solid #eee; font-weight: bold;">${totalDays} day${totalDays !== 1 ? 's' : ''}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Urgency Level:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Urgency:</strong></td>
                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">
-                    <span style="background-color: ${urgencyColors[urgency] || '#ffc107'}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; text-transform: uppercase;">
-                      ${urgencyIcons[urgency] || '📋'} ${urgency}
+                    <span style="background-color: ${urgencyColors[urgency]}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; text-transform: uppercase;">
+                      ${urgencyIcons[urgency]} ${urgency}
                     </span>
                   </td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Leave ID:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">SL-${leaveId.toString().slice(-6).toUpperCase()}</td>
                 </tr>
                 <tr>
                   <td style="padding: 8px 0; vertical-align: top;"><strong>Reason:</strong></td>
@@ -1559,9 +1561,9 @@ const sendCashRequestEmail = {
 
             ${urgency === 'critical' ? `
             <div style="background-color: #f8d7da; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #dc3545;">
-              <h4 style="color: #721c24; margin-top: 0;">🚨 CRITICAL URGENCY NOTICE</h4>
+              <h4 style="color: #721c24; margin-top: 0;">🚨 CRITICAL URGENCY</h4>
               <p style="color: #721c24; margin: 0; font-weight: bold;">
-                This is a critical sick leave request that requires immediate attention. Please review and process as soon as possible.
+                This request requires immediate attention.
               </p>
             </div>
             ` : ''}
@@ -1570,20 +1572,13 @@ const sendCashRequestEmail = {
               <a href="${approvalLink}" 
                  style="display: inline-block; background-color: #28a745; color: white; 
                         padding: 15px 30px; text-decoration: none; border-radius: 8px;
-                        font-weight: bold; font-size: 16px; transition: background-color 0.3s;">
-                📋 Review & Process Leave Request
+                        font-weight: bold; font-size: 16px;">
+                📋 Review & Process Request
               </a>
             </div>
 
-            <div style="background-color: #e9ecef; padding: 15px; border-radius: 6px; margin-top: 20px;">
-              <p style="color: #6c757d; margin: 0; font-size: 14px;">
-                <strong>Direct Link:</strong> <a href="${approvalLink}" style="color: #007bff; text-decoration: none;">${approvalLink}</a>
-              </p>
-            </div>
-
-            <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-            <p style="color: #888; font-size: 12px; margin-bottom: 0; text-align: center;">
-              This is an automated message from the HR Management System. Please do not reply to this email.
+            <p style="color: #888; font-size: 12px; text-align: center;">
+              This is an automated message. Please do not reply.
             </p>
           </div>
         </div>
@@ -1592,178 +1587,63 @@ const sendCashRequestEmail = {
       return await sendEmail({
         to: supervisorEmail,
         subject,
-        text,
+        text: `New ${leaveCategory} leave request from ${employeeName} requires your approval. Duration: ${totalDays} days. Urgency: ${urgency}. Review at: ${approvalLink}`,
         html
       });
 
     } catch (error) {
       console.error('❌ Error in newLeaveToSupervisor:', error);
-      return {
-        success: false,
-        error: error.message
-      };
+      return { success: false, error: error.message };
     }
   },
 
   /**
-   * Notify HR team when supervisor approves
-   * @param {Array|string} hrEmails 
-   * @param {string} employeeName 
-   * @param {string} leaveType
-   * @param {string} leaveId 
-   * @param {number} totalDays
-   * @param {string} approvedBy
-   * @returns {Promise<Object>} 
+   * Notify HR team of new leave request
    */
-  supervisorApprovalToHR: async (hrEmails, employeeName, leaveType, leaveId, totalDays, approvedBy) => {
+  newLeaveToHR: async (
+    hrEmail,
+    employeeName,
+    department,
+    leaveType,
+    leaveId,
+    totalDays,
+    urgency,
+    reason,
+    leaveCategory
+  ) => {
     try {
       const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-      const reviewLink = `${clientUrl}/hr/sick-leave/${leaveId}`;
+      const trackingLink = `${clientUrl}/hr/leave/${leaveId}`;
 
-      const subject = '✅ Sick Leave Approved by Supervisor - HR Review Required';
-      const text = `Hello HR Team,\n\nA sick leave request has been approved by the supervisor and requires your review.\n\nEmployee: ${employeeName}\nLeave Type: ${leaveType}\nDuration: ${totalDays} day(s)\nApproved by: ${approvedBy}\n\nPlease click this link to review: ${reviewLink}\n\nBest regards,\nHR Management System`;
-
-      const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #d1ecf1; padding: 20px; border-radius: 8px; border-left: 4px solid #17a2b8;">
-            <h2 style="color: #333; margin-top: 0;">✅ Sick Leave Ready for HR Review</h2>
-            <p style="color: #555; line-height: 1.6;">
-              Dear HR Team,
-            </p>
-            <p style="color: #555; line-height: 1.6;">
-              A sick leave request has been <strong style="color: #28a745;">approved by the supervisor</strong> and is now ready for your final review and processing.
-            </p>
-
-            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #17a2b8; padding-bottom: 10px;">Leave Request Details</h3>
-              <table style="width: 100%; border-collapse: collapse;">
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Employee:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${employeeName}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Leave Type:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${leaveType}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Duration:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; font-weight: bold;">${totalDays} day${totalDays !== 1 ? 's' : ''}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Approved by:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${approvedBy}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Leave ID:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">SL-${leaveId.toString().slice(-6).toUpperCase()}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0;"><strong>Status:</strong></td>
-                  <td style="padding: 8px 0;"><span style="background-color: #28a745; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">✅ SUPERVISOR APPROVED</span></td>
-                </tr>
-              </table>
-            </div>
-
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${reviewLink}" 
-                 style="display: inline-block; background-color: #17a2b8; color: white; 
-                        padding: 15px 30px; text-decoration: none; border-radius: 8px;
-                        font-weight: bold; font-size: 16px; transition: background-color 0.3s;">
-                📊 Review & Process Request
-              </a>
-            </div>
-
-            <div style="background-color: #e9ecef; padding: 15px; border-radius: 6px; margin-top: 20px;">
-              <p style="color: #6c757d; margin: 0; font-size: 14px;">
-                <strong>Direct Link:</strong> <a href="${reviewLink}" style="color: #007bff; text-decoration: none;">${reviewLink}</a>
-              </p>
-            </div>
-
-            <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-            <p style="color: #888; font-size: 12px; margin-bottom: 0; text-align: center;">
-              This is an automated message from the HR Management System. Please do not reply to this email.
-            </p>
-          </div>
-        </div>
-      `;
-
-      return await sendEmail({
-        to: hrEmails,
-        subject,
-        text,
-        html
-      });
-
-    } catch (error) {
-      console.error('❌ Error in supervisorApprovalToHR:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  },
-
-  /**
-   * Notify HR team of new sick leave request
-   * @param {Array|string} hrEmails 
-   * @param {string} employeeName 
-   * @param {string} leaveType
-   * @param {string} leaveId 
-   * @param {number} totalDays
-   * @param {string} urgency
-   * @param {boolean} medicalCertProvided
-   * @returns {Promise<Object>} 
-   */
-  newLeaveToHR: async (hrEmails, employeeName, leaveType, leaveId, totalDays, urgency, medicalCertProvided) => {
-    try {
-      const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-      const trackingLink = `${clientUrl}/hr/sick-leave/${leaveId}`;
-
-      const subject = `📋 New Sick Leave Request - ${employeeName}`;
-      const text = `Hello HR Team,\n\nA new sick leave request has been submitted and is entering the approval process.\n\nEmployee: ${employeeName}\nLeave Type: ${leaveType}\nDuration: ${totalDays} day(s)\nUrgency: ${urgency}\nMedical Certificate: ${medicalCertProvided ? 'Provided' : 'Not Provided'}\n\nTrack request: ${trackingLink}\n\nBest regards,\nHR Management System`;
+      const subject = `📋 New ${leaveCategory} Leave - ${employeeName} (${department})`;
 
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="background-color: #f6ffed; padding: 20px; border-radius: 8px; border-left: 4px solid #52c41a;">
-            <h2 style="color: #52c41a; margin-top: 0;">📋 New Sick Leave Request Submitted</h2>
-            <p style="color: #555; line-height: 1.6;">
-              Dear HR Team,
-            </p>
-            <p style="color: #555; line-height: 1.6;">
-              A new sick leave request has been submitted by ${employeeName} and is now in the approval process.
-            </p>
+            <h2 style="color: #52c41a;">📋 New Leave Request</h2>
+            <p>A new ${leaveCategory} leave request has been submitted.</p>
 
-            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #52c41a; padding-bottom: 10px;">Leave Request Summary</h3>
+            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Employee:</strong></td>
                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${employeeName}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Leave Type:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${leaveType}</td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Department:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${department}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Category:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${leaveCategory}</td>
                 </tr>
                 <tr>
                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Duration:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; font-weight: bold;">${totalDays} day${totalDays !== 1 ? 's' : ''}</td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${totalDays} days</td>
                 </tr>
                 <tr>
                   <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Urgency:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; text-transform: uppercase;">${urgency}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Medical Certificate:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">
-                    ${medicalCertProvided ? 
-                      '<span style="color: #28a745; font-weight: bold;">✅ Provided</span>' : 
-                      '<span style="color: #dc3545; font-weight: bold;">❌ Not Provided</span>'
-                    }
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0;"><strong>Status:</strong></td>
-                  <td style="padding: 8px 0;"><span style="background-color: #ffc107; color: #333; padding: 4px 8px; border-radius: 4px; font-size: 12px;">PENDING APPROVAL</span></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${urgency}</td>
                 </tr>
               </table>
             </div>
@@ -1772,494 +1652,69 @@ const sendCashRequestEmail = {
               <a href="${trackingLink}" 
                  style="display: inline-block; background-color: #52c41a; color: white; 
                         padding: 12px 25px; text-decoration: none; border-radius: 6px;
-                        font-weight: bold; font-size: 14px;">
-                📊 Track Leave Request
+                        font-weight: bold;">
+                📊 Track Request
               </a>
             </div>
-
-            <hr style="border: none; border-top: 1px solid #c3e6cb; margin: 20px 0;">
-            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; text-align: center;">
-              This is an automated notification from the HR Management System. Please do not reply to this email.
-            </p>
           </div>
         </div>
       `;
 
       return await sendEmail({
-        to: hrEmails,
+        to: hrEmail,
         subject,
-        text,
+        text: `New ${leaveCategory} leave from ${employeeName} (${department}). Duration: ${totalDays} days. Track at: ${trackingLink}`,
         html
       });
 
     } catch (error) {
       console.error('❌ Error in newLeaveToHR:', error);
-      return {
-        success: false,
-        error: error.message
-      };
+      return { success: false, error: error.message };
     }
   },
 
   /**
-   * Notify employee of successful submission
-   * @param {string} employeeEmail 
-   * @param {string} leaveType
-   * @param {string} leaveId 
-   * @param {number} totalDays
-   * @param {string} [nextApprover]
-   * @returns {Promise<Object>}
+   * Notify employee of decision
    */
-  confirmationToEmployee: async (employeeEmail, leaveType, leaveId, totalDays, nextApprover = '') => {
+  leaveDecisionToEmployee: async (
+    employeeEmail,
+    leaveType,
+    leaveId,
+    decision,
+    comments
+  ) => {
     try {
       const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-      const trackingLink = `${clientUrl}/employee/sick-leave/${leaveId}`;
+      const trackingLink = `${clientUrl}/employee/leave/${leaveId}`;
 
-      const subject = '✅ Sick Leave Request Submitted Successfully';
-      const text = `Hello,\n\nYour sick leave request has been successfully submitted and is now under review.\n\nLeave Type: ${leaveType}\nDuration: ${totalDays} day(s)\nLeave ID: SL-${leaveId.toString().slice(-6).toUpperCase()}\n${nextApprover ? `Next Approver: ${nextApprover}\n` : ''}\nTrack your request: ${trackingLink}\n\nYou will receive email notifications as your request progresses through the approval process.\n\nBest regards,\nHR Management System`;
+      const isApproved = decision === 'approved' || decision === 'approve';
+      const subject = isApproved 
+        ? '🎉 Your Leave Request Has Been Approved!'
+        : '📋 Leave Request Status Update';
 
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px; border-left: 4px solid #1890ff;">
-            <h2 style="color: #1890ff; margin-top: 0;">✅ Sick Leave Request Submitted</h2>
-            <p style="color: #555; line-height: 1.6;">
-              Dear Employee,
-            </p>
-            <p style="color: #555; line-height: 1.6;">
-              Your sick leave request has been successfully submitted and is now in the approval workflow.
-            </p>
+          <div style="background-color: ${isApproved ? '#d4edda' : '#f8d7da'}; padding: 20px; border-radius: 8px; border-left: 4px solid ${isApproved ? '#28a745' : '#dc3545'};">
+            <h2 style="color: ${isApproved ? '#155724' : '#721c24'};">
+              ${isApproved ? '🎉 Leave Approved!' : '📋 Leave Status Update'}
+            </h2>
+            <p>Your ${leaveType.replace(/_/g, ' ')} leave request has been ${decision}.</p>
 
-            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #1890ff; padding-bottom: 10px;">Your Request Details</h3>
-              <table style="width: 100%; border-collapse: collapse;">
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Leave Type:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${leaveType}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Duration:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; font-weight: bold;">${totalDays} day${totalDays !== 1 ? 's' : ''}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Leave ID:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">SL-${leaveId.toString().slice(-6).toUpperCase()}</td>
-                </tr>
-                ${nextApprover ? `
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Current Approver:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${nextApprover}</td>
-                </tr>
-                ` : ''}
-                <tr>
-                  <td style="padding: 8px 0;"><strong>Status:</strong></td>
-                  <td style="padding: 8px 0;"><span style="background-color: #ffc107; color: #333; padding: 4px 8px; border-radius: 4px; font-size: 12px;">PENDING APPROVAL</span></td>
-                </tr>
-              </table>
-            </div>
-
-            <div style="background-color: #f0f8ff; border-left: 4px solid #1890ff; padding: 15px; margin: 20px 0;">
-              <p style="margin: 0; color: #333;"><strong>Next Steps:</strong> Your request is now in the approval workflow. You will receive email notifications as it progresses through each approval stage.</p>
-            </div>
-
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${trackingLink}" 
-                 style="display: inline-block; background-color: #1890ff; color: white; 
-                        padding: 12px 24px; text-decoration: none; border-radius: 6px;
-                        font-weight: bold; font-size: 14px;">
-                📊 Track Your Request
-              </a>
-            </div>
-
-            <div style="border-top: 1px solid #e8e8e8; padding-top: 20px; color: #666; font-size: 14px;">
-              <p style="margin: 0;">Thank you for using our HR Management System!</p>
-            </div>
-          </div>
-        </div>
-      `;
-
-      return await sendEmail({
-        to: employeeEmail,
-        subject,
-        text,
-        html
-      });
-
-    } catch (error) {
-      console.error('❌ Error in confirmationToEmployee:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  },
-
-  /**
-   * Notify employee of approval
-   * @param {string} employeeEmail 
-   * @param {string} leaveType
-   * @param {string} leaveId 
-   * @param {string} [approverName]
-   * @param {string} [comments]
-   * @param {Date} startDate
-   * @param {Date} endDate
-   * @returns {Promise<Object>}
-   */
-  approvalToEmployee: async (employeeEmail, leaveType, leaveId, approverName = '', comments = '', startDate, endDate) => {
-    try {
-      const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-      const trackingLink = `${clientUrl}/employee/sick-leave/${leaveId}`;
-
-      const subject = '🎉 Your Sick Leave Request Has Been Approved!';
-      const text = `Congratulations!\n\nYour sick leave request has been approved.\n\nLeave Type: ${leaveType}\nLeave ID: SL-${leaveId.toString().slice(-6).toUpperCase()}\n${approverName ? `Approved by: ${approverName}\n` : ''}${comments ? `Comments: ${comments}\n` : ''}\nTrack your request: ${trackingLink}\n\nPlease ensure you follow company return-to-work procedures.\n\nBest regards,\nHR Management System`;
-
-      const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #d4edda; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
-            <h2 style="color: #155724; margin-top: 0;">🎉 Congratulations! Your Sick Leave is Approved</h2>
-            <p style="color: #155724; line-height: 1.6; font-size: 16px;">
-              Great news! Your sick leave request has been approved and you are authorized to take the requested time off.
-            </p>
-
-            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #28a745; padding-bottom: 10px;">Approval Details</h3>
-              <table style="width: 100%; border-collapse: collapse;">
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Leave Type:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${leaveType}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Leave ID:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">SL-${leaveId.toString().slice(-6).toUpperCase()}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Leave Period:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; font-weight: bold;">
-                    ${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()}
-                  </td>
-                </tr>
-                ${approverName ? `
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Approved by:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${approverName}</td>
-                </tr>
-                ` : ''}
-                ${comments ? `
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Comments:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; font-style: italic;">${comments}</td>
-                </tr>
-                ` : ''}
-                <tr>
-                  <td style="padding: 8px 0;"><strong>Status:</strong></td>
-                  <td style="padding: 8px 0;"><span style="background-color: #28a745; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">✅ APPROVED</span></td>
-                </tr>
-              </table>
-            </div>
-
-            <div style="background-color: #fff3cd; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #ffc107;">
-              <h4 style="color: #856404; margin-top: 0;">📋 Important Reminders:</h4>
-              <ul style="color: #856404; margin: 0; padding-left: 20px;">
-                <li>Follow company return-to-work procedures</li>
-                <li>Provide a return-to-work certificate if required</li>
-                <li>Contact HR if you need to extend your leave</li>
-                <li>Notify your supervisor of your actual return date</li>
-              </ul>
-            </div>
-
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${trackingLink}" 
-                 style="display: inline-block; background-color: #007bff; color: white; 
-                        padding: 12px 25px; text-decoration: none; border-radius: 6px;
-                        font-weight: bold; font-size: 14px;">
-                📊 View Leave Details
-              </a>
-            </div>
-
-            <hr style="border: none; border-top: 1px solid #c3e6cb; margin: 20px 0;">
-            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; text-align: center;">
-              This is an automated message from the HR Management System. Please do not reply to this email.
-            </p>
-          </div>
-        </div>
-      `;
-
-      return await sendEmail({
-        to: employeeEmail,
-        subject,
-        text,
-        html
-      });
-
-    } catch (error) {
-      console.error('❌ Error in approvalToEmployee:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  },
-
-  /**
-   * Notify employee of rejection
-   * @param {string} employeeEmail 
-   * @param {string} leaveType
-   * @param {string} leaveId 
-   * @param {string} reason 
-   * @param {string} [rejectedBy]
-   * @returns {Promise<Object>}
-   */
-  rejectionToEmployee: async (employeeEmail, leaveType, leaveId, reason, rejectedBy = '') => {
-    try {
-      const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-      const trackingLink = `${clientUrl}/employee/sick-leave/${leaveId}`;
-
-      const subject = '📋 Sick Leave Request Status Update';
-      const text = `Hello,\n\nWe regret to inform you that your sick leave request has not been approved.\n\nLeave Type: ${leaveType}\nLeave ID: SL-${leaveId.toString().slice(-6).toUpperCase()}\nReason: ${reason}\n${rejectedBy ? `Reviewed by: ${rejectedBy}\n` : ''}\nView details: ${trackingLink}\n\nIf you have any questions, please contact HR or your supervisor.\n\nBest regards,\nHR Management System`;
-
-      const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #f8d7da; padding: 20px; border-radius: 8px; border-left: 4px solid #dc3545;">
-            <h2 style="color: #721c24; margin-top: 0;">📋 Sick Leave Request Status Update</h2>
-            <p style="color: #721c24; line-height: 1.6;">
-              We regret to inform you that your sick leave request has not been approved at this time.
-            </p>
-
-            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #dc3545; padding-bottom: 10px;">Request Details</h3>
-              <table style="width: 100%; border-collapse: collapse;">
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Leave Type:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${leaveType}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Leave ID:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">SL-${leaveId.toString().slice(-6).toUpperCase()}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Status:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><span style="background-color: #dc3545; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">❌ NOT APPROVED</span></td>
-                </tr>
-                ${rejectedBy ? `
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Reviewed by:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${rejectedBy}</td>
-                </tr>
-                ` : ''}
-                <tr>
-                  <td style="padding: 8px 0;"><strong>Reason:</strong></td>
-                  <td style="padding: 8px 0; font-style: italic; color: #721c24;">${reason}</td>
-                </tr>
-              </table>
-            </div>
-
-            <div style="background-color: #d1ecf1; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #17a2b8;">
-              <h4 style="color: #0c5460; margin-top: 0;">💡 What You Can Do:</h4>
-              <ul style="color: #0c5460; margin: 0; padding-left: 20px;">
-                <li>Review the reason for rejection above</li>
-                <li>Contact your supervisor or HR for clarification</li>
-                <li>Provide additional documentation if needed</li>
-                <li>Submit a revised request if circumstances change</li>
-              </ul>
-            </div>
-
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${trackingLink}" 
-                 style="display: inline-block; background-color: #6c757d; color: white; 
-                        padding: 12px 25px; text-decoration: none; border-radius: 6px;
-                        font-weight: bold; font-size: 14px;">
-                📊 View Request Details
-              </a>
-            </div>
-
-            <hr style="border: none; border-top: 1px solid #f5c6cb; margin: 20px 0;">
-            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; text-align: center;">
-              This is an automated message from the HR Management System. Please do not reply to this email.
-            </p>
-          </div>
-        </div>
-      `;
-
-      return await sendEmail({
-        to: employeeEmail,
-        subject,
-        text,
-        html
-      });
-
-    } catch (error) {
-      console.error('❌ Error in rejectionToEmployee:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  },
-
-  /**
-   * Notify employee of approval progress
-   * @param {string} employeeEmail 
-   * @param {string} leaveType
-   * @param {string} leaveId 
-   * @param {string} statusMessage
-   * @param {string} [approverName]
-   * @returns {Promise<Object>}
-   */
-  approvalProgressToEmployee: async (employeeEmail, leaveType, leaveId, statusMessage, approverName = '') => {
-    try {
-      const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-      const trackingLink = `${clientUrl}/employee/sick-leave/${leaveId}`;
-
-      const subject = '📈 Sick Leave Request Progress Update';
-      const text = `Hello,\n\nYour sick leave request has been updated.\n\nLeave Type: ${leaveType}\nLeave ID: SL-${leaveId.toString().slice(-6).toUpperCase()}\nStatus: ${statusMessage}\n${approverName ? `Updated by: ${approverName}\n` : ''}\nTrack your request: ${trackingLink}\n\nBest regards,\nHR Management System`;
-
-      const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px; border-left: 4px solid #1890ff;">
-            <h2 style="color: #1890ff; margin-top: 0;">📈 Sick Leave Request Update</h2>
-            <p style="color: #555; line-height: 1.6;">
-              Your sick leave request has been updated and is progressing through the approval process.
-            </p>
-
-            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #1890ff; padding-bottom: 10px;">Progress Update</h3>
-              <table style="width: 100%; border-collapse: collapse;">
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Leave Type:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${leaveType}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Leave ID:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">SL-${leaveId.toString().slice(-6).toUpperCase()}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Current Status:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; font-style: italic; color: #1890ff;">${statusMessage}</td>
-                </tr>
-                ${approverName ? `
-                <tr>
-                  <td style="padding: 8px 0;"><strong>Updated by:</strong></td>
-                  <td style="padding: 8px 0;">${approverName}</td>
-                </tr>
-                ` : ''}
-              </table>
-            </div>
-
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${trackingLink}" 
-                 style="display: inline-block; background-color: #1890ff; color: white; 
-                        padding: 12px 24px; text-decoration: none; border-radius: 6px;
-                        font-weight: bold; font-size: 14px;">
-                📊 Track Your Request
-              </a>
-            </div>
-
-            <div style="border-top: 1px solid #e8e8e8; padding-top: 20px; color: #666; font-size: 14px;">
-              <p style="margin: 0;">You will continue to receive updates as your request progresses.</p>
-            </div>
-          </div>
-        </div>
-      `;
-
-      return await sendEmail({
-        to: employeeEmail,
-        subject,
-        text,
-        html
-      });
-
-    } catch (error) {
-      console.error('❌ Error in approvalProgressToEmployee:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  },
-
-  /**
-   * Notify employee about return to work requirements
-   * @param {string} employeeEmail 
-   * @param {string} leaveType
-   * @param {string} leaveId 
-   * @param {Date} expectedReturnDate
-   * @param {boolean} certificateRequired
-   * @returns {Promise<Object>}
-   */
-  returnToWorkReminder: async (employeeEmail, leaveType, leaveId, expectedReturnDate, certificateRequired) => {
-    try {
-      const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-      const trackingLink = `${clientUrl}/employee/sick-leave/${leaveId}`;
-
-      const subject = '🔄 Return to Work Reminder - Medical Clearance Required';
-      const text = `Hello,\n\nThis is a reminder about your upcoming return to work.\n\nLeave Type: ${leaveType}\nExpected Return: ${new Date(expectedReturnDate).toLocaleDateString()}\n${certificateRequired ? 'IMPORTANT: A return-to-work medical certificate is required before you can resume duties.\n' : ''}\nView details: ${trackingLink}\n\nPlease contact HR if you need assistance.\n\nBest regards,\nHR Management System`;
-
-      const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;">
-            <h2 style="color: #856404; margin-top: 0;">🔄 Return to Work Reminder</h2>
-            <p style="color: #856404; line-height: 1.6;">
-              This is a friendly reminder about your upcoming return to work following your approved sick leave.
-            </p>
-
-            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #ffc107; padding-bottom: 10px;">Return Details</h3>
-              <table style="width: 100%; border-collapse: collapse;">
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Leave Type:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${leaveType}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Expected Return Date:</strong></td>
-                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; font-weight: bold; color: #28a745;">
-                    ${new Date(expectedReturnDate).toLocaleDateString()}
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding: 8px 0;"><strong>Medical Certificate:</strong></td>
-                  <td style="padding: 8px 0;">
-                    ${certificateRequired ? 
-                      '<span style="color: #dc3545; font-weight: bold;">✅ REQUIRED</span>' : 
-                      '<span style="color: #6c757d;">Not Required</span>'
-                    }
-                  </td>
-                </tr>
-              </table>
-            </div>
-
-            ${certificateRequired ? `
-            <div style="background-color: #f8d7da; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #dc3545;">
-              <h4 style="color: #721c24; margin-top: 0;">📋 IMPORTANT: Medical Certificate Required</h4>
-              <p style="color: #721c24; margin: 0;">
-                You must provide a return-to-work medical certificate from your doctor before you can resume your duties. 
-                Please ensure you obtain this certificate and submit it to HR before your return date.
-              </p>
+            ${comments ? `
+            <div style="background-color: white; padding: 15px; border-radius: 6px; margin: 20px 0;">
+              <strong>Comments:</strong>
+              <p style="margin: 10px 0 0 0; font-style: italic;">${comments}</p>
             </div>
             ` : ''}
 
-            <div style="background-color: #d1ecf1; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #17a2b8;">
-              <h4 style="color: #0c5460; margin-top: 0;">📝 Return to Work Checklist:</h4>
-              <ul style="color: #0c5460; margin: 0; padding-left: 20px;">
-                ${certificateRequired ? '<li><strong>Obtain return-to-work medical certificate</strong></li>' : ''}
-                <li>Confirm your actual return date with your supervisor</li>
-                <li>Contact HR if you need any workplace accommodations</li>
-                <li>Review any work that accumulated during your absence</li>
-                <li>Update your calendar and notify your team</li>
-              </ul>
-            </div>
-
             <div style="text-align: center; margin: 30px 0;">
               <a href="${trackingLink}" 
-                 style="display: inline-block; background-color: #17a2b8; color: white; 
+                 style="display: inline-block; background-color: ${isApproved ? '#007bff' : '#6c757d'}; color: white; 
                         padding: 12px 25px; text-decoration: none; border-radius: 6px;
-                        font-weight: bold; font-size: 14px;">
-                📊 View Leave Details
+                        font-weight: bold;">
+                📊 View Details
               </a>
             </div>
-
-            <hr style="border: none; border-top: 1px solid #dee2e6; margin: 20px 0;">
-            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; text-align: center;">
-              If you have any questions or need assistance, please contact HR. We look forward to your return!
-            </p>
           </div>
         </div>
       `;
@@ -2267,459 +1722,293 @@ const sendCashRequestEmail = {
       return await sendEmail({
         to: employeeEmail,
         subject,
-        text,
+        text: `Your ${leaveType} leave request has been ${decision}. ${comments ? 'Comments: ' + comments : ''} View at: ${trackingLink}`,
         html
       });
 
     } catch (error) {
-      console.error('❌ Error in returnToWorkReminder:', error);
-      return {
-        success: false,
-        error: error.message
-      };
+      console.error('❌ Error in leaveDecisionToEmployee:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * EMERGENCY ACTIONS EMAILS
+   */
+
+  // Notify bypassed approver about emergency override
+  notifyBypassedApprover: async (
+    approverEmail,
+    approverName,
+    employeeName,
+    leaveType,
+    leaveId,
+    overrideReason,
+    hrName
+  ) => {
+    try {
+      const subject = `⚡ Emergency Override - ${employeeName}'s Leave Request`;
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #ff4d4f; color: white; padding: 20px; text-align: center;">
+            <h2>⚡ Emergency Override Notice</h2>
+          </div>
+          
+          <div style="padding: 20px; background-color: #fff;">
+            <p>Dear ${approverName},</p>
+            
+            <p>A leave request requiring your approval has been <strong>bypassed via HR emergency override</strong>.</p>
+            
+            <div style="background-color: #fff1f0; border-left: 4px solid #ff4d4f; padding: 15px; margin: 20px 0;">
+              <h3 style="margin-top: 0; color: #cf1322;">Leave Details</h3>
+              <p><strong>Employee:</strong> ${employeeName}</p>
+              <p><strong>Leave Type:</strong> ${leaveType.replace(/_/g, ' ')}</p>
+              <p><strong>Status:</strong> APPROVED (via Emergency Override)</p>
+            </div>
+            
+            <div style="background-color: #fffbf0; border-left: 4px solid #faad14; padding: 15px; margin: 20px 0;">
+              <h3 style="margin-top: 0; color: #d48806;">Override Reason</h3>
+              <p>${overrideReason}</p>
+              <p style="margin-top: 10px;"><em>- ${hrName}, HR Department</em></p>
+            </div>
+            
+            <p>This action has been logged for audit purposes.</p>
+            
+            <p>Best regards,<br>HR Department</p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({ to: approverEmail, subject, html });
+    } catch (error) {
+      console.error('❌ Error in notifyBypassedApprover:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Notify HR team about override
+  notifyHROverride: async (
+    hrEmail,
+    performedBy,
+    employeeName,
+    leaveType,
+    leaveId,
+    reason,
+    bypassedApprovers
+  ) => {
+    try {
+      const subject = `⚡ HR Emergency Override Applied - ${employeeName}`;
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #722ed1; color: white; padding: 20px; text-align: center;">
+            <h2>🔔 HR Emergency Override Log</h2>
+          </div>
+          
+          <div style="padding: 20px; background-color: #fff;">
+            <p>An emergency override has been applied:</p>
+            
+            <div style="background-color: #f9f0ff; border-left: 4px solid #722ed1; padding: 15px; margin: 20px 0;">
+              <p><strong>Performed By:</strong> ${performedBy}</p>
+              <p><strong>Employee:</strong> ${employeeName}</p>
+              <p><strong>Leave Type:</strong> ${leaveType.replace(/_/g, ' ')}</p>
+              <p><strong>Bypassed Approvers:</strong> ${bypassedApprovers}</p>
+              <p><strong>Reason:</strong> ${reason}</p>
+            </div>
+            
+            <p>This override has been logged in the audit trail.</p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({ to: hrEmail, subject, html });
+    } catch (error) {
+      console.error('❌ Error in notifyHROverride:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Notify approver about escalation
+  notifyEscalation: async (
+    approverEmail,
+    approverName,
+    employeeName,
+    leaveType,
+    leaveId,
+    fromApprover,
+    escalationReason,
+    urgency,
+    totalDays
+  ) => {
+    try {
+      const subject = `📈 Escalated Leave Request - ${employeeName} (${urgency?.toUpperCase()})`;
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #1890ff; color: white; padding: 20px; text-align: center;">
+            <h2>📈 Leave Request Escalated to You</h2>
+          </div>
+          
+          <div style="padding: 20px; background-color: #fff;">
+            <p>Dear ${approverName},</p>
+            
+            <p>A leave request has been <strong>escalated to your level</strong> by HR.</p>
+            
+            <div style="background-color: ${urgency === 'critical' ? '#fff1f0' : '#e6f7ff'}; border-left: 4px solid ${urgency === 'critical' ? '#ff4d4f' : '#1890ff'}; padding: 15px; margin: 20px 0;">
+              <p><strong>Employee:</strong> ${employeeName}</p>
+              <p><strong>Leave Type:</strong> ${leaveType.replace(/_/g, ' ')}</p>
+              <p><strong>Duration:</strong> ${totalDays} days</p>
+              <p><strong>Urgency:</strong> <span style="color: ${urgency === 'critical' ? '#cf1322' : '#1890ff'}; font-weight: bold;">${urgency?.toUpperCase()}</span></p>
+            </div>
+            
+            <div style="background-color: #fffbf0; border-left: 4px solid #faad14; padding: 15px; margin: 20px 0;">
+              <h3 style="margin-top: 0;">Escalation Information</h3>
+              <p><strong>Previously With:</strong> ${fromApprover}</p>
+              <p><strong>Reason:</strong> ${escalationReason}</p>
+            </div>
+            
+            <p style="color: #ff4d4f;"><strong>⚠️ This request requires prompt attention.</strong></p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({ to: approverEmail, subject, html });
+    } catch (error) {
+      console.error('❌ Error in notifyEscalation:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Notify original approver that request was escalated
+  notifyApproverEscalated: async (
+    approverEmail,
+    approverName,
+    employeeName,
+    leaveType,
+    leaveId,
+    reason,
+    escalatedBy
+  ) => {
+    try {
+      const subject = `📢 Leave Request Escalated - ${employeeName}`;
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #faad14; color: white; padding: 20px; text-align: center;">
+            <h2>📢 Leave Request Escalated</h2>
+          </div>
+          
+          <div style="padding: 20px; background-color: #fff;">
+            <p>Dear ${approverName},</p>
+            
+            <p>A leave request pending your approval has been escalated to a higher level.</p>
+            
+            <div style="background-color: #fffbf0; border-left: 4px solid #faad14; padding: 15px; margin: 20px 0;">
+              <p><strong>Employee:</strong> ${employeeName}</p>
+              <p><strong>Leave Type:</strong> ${leaveType.replace(/_/g, ' ')}</p>
+              <p><strong>Escalated By:</strong> ${escalatedBy}, HR</p>
+              <p><strong>Reason:</strong> ${reason}</p>
+            </div>
+            
+            <p>Your approval is no longer required. This has been logged for audit purposes.</p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({ to: approverEmail, subject, html });
+    } catch (error) {
+      console.error('❌ Error in notifyApproverEscalated:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Notify employee about escalation
+  notifyEmployeeEscalation: async (
+    employeeEmail,
+    leaveType,
+    leaveId,
+    fromApprover,
+    toApprover,
+    reason
+  ) => {
+    try {
+      const subject = `📈 Your Leave Request Has Been Escalated`;
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #1890ff; color: white; padding: 20px; text-align: center;">
+            <h2>📈 Leave Request Update</h2>
+          </div>
+          
+          <div style="padding: 20px; background-color: #fff;">
+            <p>Your leave request has been <strong>escalated for priority handling</strong>.</p>
+            
+            <div style="background-color: #e6f7ff; border-left: 4px solid #1890ff; padding: 15px; margin: 20px 0;">
+              <p><strong>Leave Type:</strong> ${leaveType.replace(/_/g, ' ')}</p>
+              <p><strong>Status:</strong> Escalated to ${toApprover}</p>
+            </div>
+            
+            <p>Your request is being prioritized. You will be notified of the decision.</p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({ to: employeeEmail, subject, html });
+    } catch (error) {
+      console.error('❌ Error in notifyEmployeeEscalation:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Notify about direct approval
+  notifyDirectApproval: async (
+    approverEmail,
+    approverName,
+    employeeName,
+    leaveType,
+    leaveId,
+    reason,
+    hrName
+  ) => {
+    try {
+      const subject = `✅ Direct Approval - ${employeeName}'s Leave Request`;
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #52c41a; color: white; padding: 20px; text-align: center;">
+            <h2>✅ Direct Approval Notice</h2>
+          </div>
+          
+          <div style="padding: 20px; background-color: #fff;">
+            <p>Dear ${approverName},</p>
+            
+            <p>A leave request has been <strong>directly approved by HR</strong> as it meets all policy requirements.</p>
+            
+            <div style="background-color: #f6ffed; border-left: 4px solid #52c41a; padding: 15px; margin: 20px 0;">
+              <p><strong>Employee:</strong> ${employeeName}</p>
+              <p><strong>Leave Type:</strong> ${leaveType.replace(/_/g, ' ')}</p>
+              <p><strong>Status:</strong> APPROVED</p>
+            </div>
+            
+            <div style="background-color: #e6f7ff; padding: 15px; margin: 20px 0; border-radius: 4px;">
+              <h3 style="margin-top: 0;">Approval Reason</h3>
+              <p>${reason}</p>
+              <p style="margin-top: 10px;"><em>- ${hrName}, HR Department</em></p>
+            </div>
+            
+            <p>This is informational only. No action is required.</p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({ to: approverEmail, subject, html });
+    } catch (error) {
+      console.error('❌ Error in notifyDirectApproval:', error);
+      return { success: false, error: error.message };
     }
   }
 };
-
-
-// /**
-//  * Incident Report Email Templates
-//  */
-//  const sendIncidentReportEmail = {
-//   /**
-//    * Notify supervisor of new incident report with review link
-//    * @param {string} supervisorEmail 
-//    * @param {string} employeeName 
-//    * @param {string} incidentType
-//    * @param {string} severity
-//    * @param {string} reportId 
-//    * @param {boolean} hasInjuries
-//    * @param {string} location
-//    * @returns {Promise<Object>} 
-//    */
-//   newIncidentToSupervisor: async (supervisorEmail, employeeName, incidentType, severity, reportId, hasInjuries = false, location = '') => {
-//     try {
-//       // Validate inputs
-//       if (!supervisorEmail || !employeeName || !incidentType || !reportId) {
-//         throw new Error('Missing required parameters for supervisor email');
-//       }
-
-//       const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-//       const reviewLink = `${clientUrl}/supervisor/incident-reports/${reportId}`;
-
-//       const urgencyLevel = severity === 'critical' || severity === 'high' || hasInjuries ? 'URGENT' : 'IMPORTANT';
-//       const severityColor = {
-//         'critical': '#dc3545',
-//         'high': '#fd7e14', 
-//         'medium': '#ffc107',
-//         'low': '#28a745'
-//       }[severity] || '#ffc107';
-
-//       const subject = `${urgencyLevel}: Incident Report Review Required - ${employeeName}`;
-//       const text = `${urgencyLevel} - Incident Report Review Needed\n\nEmployee: ${employeeName}\nType: ${incidentType}\nSeverity: ${severity}\nInjuries: ${hasInjuries ? 'YES' : 'No'}\nLocation: ${location}\nReport ID: INC-${reportId.toString().slice(-6).toUpperCase()}\n\nPlease review immediately: ${reviewLink}\n\nBest regards,\nSafety Management System`;
-
-//       const html = `
-//         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-//           <div style="background-color: ${hasInjuries || severity === 'critical' ? '#f8d7da' : '#fff3cd'}; padding: 20px; border-radius: 8px; border-left: 4px solid ${hasInjuries || severity === 'critical' ? '#dc3545' : '#ffc107'};">
-//             <h2 style="color: ${hasInjuries || severity === 'critical' ? '#721c24' : '#856404'}; margin-top: 0;">
-//               ${hasInjuries ? '🚨' : '⚠️'} ${urgencyLevel}: Incident Report Review Required
-//             </h2>
-//             <p style="color: #666; margin: 5px 0 0 0;">
-//               An incident has been reported and requires your immediate supervisory review.
-//             </p>
-//           </div>
-
-//           <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-//             <table style="width: 100%; border-collapse: collapse;">
-//               <tr>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Employee:</strong></td>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${employeeName}</td>
-//               </tr>
-//               <tr>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Incident Type:</strong></td>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${incidentType.charAt(0).toUpperCase() + incidentType.slice(1).replace('_', ' ')}</td>
-//               </tr>
-//               <tr>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Severity Level:</strong></td>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">
-//                   <span style="color: ${severityColor}; font-weight: bold; text-transform: uppercase;">${severity}</span>
-//                 </td>
-//               </tr>
-//               <tr>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Report ID:</strong></td>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">INC-${reportId.toString().slice(-6).toUpperCase()}</td>
-//               </tr>
-//               ${location ? `
-//               <tr>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Location:</strong></td>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${location}</td>
-//               </tr>
-//               ` : ''}
-//               <tr>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Injuries Reported:</strong></td>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">
-//                   <span style="color: ${hasInjuries ? '#dc3545' : '#28a745'}; font-weight: bold;">
-//                     ${hasInjuries ? 'YES - INJURIES REPORTED' : 'No injuries reported'}
-//                   </span>
-//                 </td>
-//               </tr>
-//               <tr>
-//                 <td style="padding: 8px 0;"><strong>Status:</strong></td>
-//                 <td style="padding: 8px 0;">
-//                   <span style="background-color: #ffc107; color: #333; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
-//                     AWAITING YOUR REVIEW
-//                   </span>
-//                 </td>
-//               </tr>
-//             </table>
-//           </div>
-
-//           <div style="background-color: ${hasInjuries ? '#f8d7da' : '#fff3cd'}; border-left: 4px solid ${hasInjuries ? '#dc3545' : '#ffc107'}; padding: 15px; margin: 20px 0;">
-//             <h4 style="margin: 0 0 10px 0; color: ${hasInjuries ? '#721c24' : '#856404'};">Supervisor Action Required</h4>
-//             <p style="margin: 0; color: ${hasInjuries ? '#721c24' : '#856404'};">
-//               This incident requires your immediate review and decision. Please log into the system to process this report promptly.
-//             </p>
-//           </div>
-
-//           <div style="text-align: center; margin: 30px 0;">
-//             <a href="${reviewLink}" 
-//                style="display: inline-block; background-color: ${hasInjuries || severity === 'critical' ? '#dc3545' : '#fd7e14'}; color: white; 
-//                       padding: 15px 30px; text-decoration: none; border-radius: 8px;
-//                       font-weight: bold; font-size: 16px; transition: background-color 0.3s;">
-//               ${hasInjuries ? '🚨 URGENT: Review Incident' : '⚠️ Review Incident Report'}
-//             </a>
-//           </div>
-
-//           <div style="background-color: #e9ecef; padding: 15px; border-radius: 6px; margin-top: 20px;">
-//             <p style="color: #6c757d; margin: 0; font-size: 14px;">
-//               <strong>Direct Link:</strong> <a href="${reviewLink}" style="color: #007bff; text-decoration: none;">${reviewLink}</a>
-//             </p>
-//           </div>
-
-//           <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-//           <p style="color: #888; font-size: 12px; margin-bottom: 0; text-align: center;">
-//             This is an automated message from the Safety Management System. Please do not reply to this email.
-//           </p>
-//         </div>
-//       `;
-
-//       return await sendEmail({
-//         to: supervisorEmail,
-//         subject,
-//         text,
-//         html
-//       });
-
-//     } catch (error) {
-//       console.error('❌ Error in newIncidentToSupervisor:', error);
-//       return {
-//         success: false,
-//         error: error.message
-//       };
-//     }
-//   },
-
-//   /**
-//    * Notify HR team when supervisor approves/escalates
-//    * @param {Array|string} hrEmails 
-//    * @param {string} employeeName 
-//    * @param {string} incidentType
-//    * @param {string} severity
-//    * @param {string} reportId 
-//    * @param {string} supervisorName
-//    * @param {string} decision - 'approved', 'escalated'
-//    * @param {string} [comments]
-//    * @returns {Promise<Object>} 
-//    */
-//   supervisorDecisionToHR: async (hrEmails, employeeName, incidentType, severity, reportId, supervisorName, decision, comments = '') => {
-//     try {
-//       const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-//       const reviewLink = `${clientUrl}/hr/incident-reports/${reportId}`;
-
-//       const isEscalated = decision === 'escalated';
-//       const subject = `Incident Report ${isEscalated ? 'Escalated' : 'Ready'} for HR Review - ${employeeName}`;
-//       const text = `Incident Report ${isEscalated ? 'Escalated' : 'Approved'} by Supervisor\n\nEmployee: ${employeeName}\nType: ${incidentType}\nSeverity: ${severity}\nSupervisor: ${supervisorName}\nDecision: ${decision}\nReport ID: INC-${reportId.toString().slice(-6).toUpperCase()}\n${comments ? `Comments: ${comments}\n` : ''}\nReview link: ${reviewLink}\n\nBest regards,\nSafety Management System`;
-
-//       const html = `
-//         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-//           <div style="background-color: ${isEscalated ? '#f8d7da' : '#d1ecf1'}; padding: 20px; border-radius: 8px; border-left: 4px solid ${isEscalated ? '#dc3545' : '#17a2b8'};">
-//             <h2 style="color: #333; margin-top: 0;">
-//               📋 Incident Report ${isEscalated ? 'Escalated' : 'Ready'} for HR Review
-//             </h2>
-//             <p style="color: #555; line-height: 1.6;">
-//               Dear HR Team,
-//             </p>
-//             <p style="color: #555; line-height: 1.6;">
-//               An incident report has been ${isEscalated ? 'escalated' : 'approved'} by the supervisor and ${isEscalated ? 'requires immediate HR attention' : 'is ready for your review'}.
-//             </p>
-//           </div>
-
-//           <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-//             <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid ${isEscalated ? '#dc3545' : '#17a2b8'}; padding-bottom: 10px;">
-//               Incident Details
-//             </h3>
-//             <table style="width: 100%; border-collapse: collapse;">
-//               <tr>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Employee:</strong></td>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${employeeName}</td>
-//               </tr>
-//               <tr>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Incident Type:</strong></td>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${incidentType.charAt(0).toUpperCase() + incidentType.slice(1).replace('_', ' ')}</td>
-//               </tr>
-//               <tr>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Severity:</strong></td>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">
-//                   <span style="color: ${severity === 'critical' ? '#dc3545' : severity === 'high' ? '#fd7e14' : severity === 'medium' ? '#ffc107' : '#28a745'}; font-weight: bold;">
-//                     ${severity.toUpperCase()}
-//                   </span>
-//                 </td>
-//               </tr>
-//               <tr>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Report ID:</strong></td>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">INC-${reportId.toString().slice(-6).toUpperCase()}</td>
-//               </tr>
-//               <tr>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Supervisor:</strong></td>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${supervisorName}</td>
-//               </tr>
-//               <tr>
-//                 <td style="padding: 8px 0;"><strong>Status:</strong></td>
-//                 <td style="padding: 8px 0;">
-//                   <span style="background-color: ${isEscalated ? '#dc3545' : '#28a745'}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
-//                     ${isEscalated ? '🚨 ESCALATED' : '✅ SUPERVISOR APPROVED'}
-//                   </span>
-//                 </td>
-//               </tr>
-//             </table>
-//           </div>
-
-//           ${comments ? `
-//           <div style="background-color: #f8f9fa; border-left: 4px solid #6c757d; padding: 15px; margin: 20px 0;">
-//             <h4 style="margin: 0 0 10px 0; color: #495057;">Supervisor Comments</h4>
-//             <p style="margin: 0; color: #495057; font-style: italic;">${comments}</p>
-//           </div>
-//           ` : ''}
-
-//           <div style="text-align: center; margin: 30px 0;">
-//             <a href="${reviewLink}" 
-//                style="display: inline-block; background-color: ${isEscalated ? '#dc3545' : '#17a2b8'}; color: white; 
-//                       padding: 15px 30px; text-decoration: none; border-radius: 8px;
-//                       font-weight: bold; font-size: 16px; transition: background-color 0.3s;">
-//               ${isEscalated ? '🚨 Review Escalated Incident' : '📊 Review & Process Report'}
-//             </a>
-//           </div>
-
-//           <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-//           <p style="color: #888; font-size: 12px; margin-bottom: 0; text-align: center;">
-//             This is an automated message from the Safety Management System. Please do not reply to this email.
-//           </p>
-//         </div>
-//       `;
-
-//       return await sendEmail({
-//         to: hrEmails,
-//         subject,
-//         text,
-//         html
-//       });
-
-//     } catch (error) {
-//       console.error('❌ Error in supervisorDecisionToHR:', error);
-//       return {
-//         success: false,
-//         error: error.message
-//       };
-//     }
-//   },
-
-//   /**
-//    * Notify employee of report status update
-//    * @param {string} employeeEmail 
-//    * @param {string} reportNumber
-//    * @param {string} status
-//    * @param {string} reviewedBy
-//    * @param {string} [comments]
-//    * @returns {Promise<Object>}
-//    */
-//   statusUpdateToEmployee: async (employeeEmail, reportNumber, status, reviewedBy, comments = '') => {
-//     try {
-//       const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-//       const trackingLink = `${clientUrl}/employee/incident-reports`;
-
-//       const statusMap = {
-//         'approved': { text: 'Approved', color: '#28a745', icon: '✅' },
-//         'rejected': { text: 'Rejected', color: '#dc3545', icon: '❌' },
-//         'escalated': { text: 'Escalated for Investigation', color: '#fd7e14', icon: '🔍' },
-//         'resolved': { text: 'Resolved', color: '#28a745', icon: '✅' },
-//         'under_investigation': { text: 'Under Investigation', color: '#17a2b8', icon: '🔍' }
-//       };
-
-//       const statusInfo = statusMap[status] || { text: status, color: '#6c757d', icon: '📋' };
-
-//       const subject = `Incident Report Status Update - ${reportNumber}`;
-//       const text = `Incident Report Status Update\n\nYour incident report ${reportNumber} has been ${statusInfo.text.toLowerCase()}.\n\nReviewed by: ${reviewedBy}\n${comments ? `Comments: ${comments}\n` : ''}\nTrack your reports: ${trackingLink}\n\nBest regards,\nSafety Management Team`;
-
-//       const html = `
-//         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-//           <div style="background-color: ${status === 'rejected' ? '#f8d7da' : '#e6f7ff'}; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-//             <h2 style="color: ${status === 'rejected' ? '#721c24' : '#1890ff'}; margin: 0;">
-//               ${statusInfo.icon} Incident Report Status Update
-//             </h2>
-//             <p style="color: #666; margin: 5px 0 0 0;">Your incident report status has been updated.</p>
-//           </div>
-
-//           <div style="background-color: white; border: 1px solid #e8e8e8; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-//             <h3 style="color: #333; margin-top: 0;">Report Status</h3>
-//             <table style="width: 100%; border-collapse: collapse;">
-//               <tr>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Report Number:</strong></td>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${reportNumber}</td>
-//               </tr>
-//               <tr>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>New Status:</strong></td>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
-//                   <span style="color: ${statusInfo.color}; font-weight: bold;">${statusInfo.text}</span>
-//                 </td>
-//               </tr>
-//               <tr>
-//                 <td style="padding: 8px 0;"><strong>Reviewed by:</strong></td>
-//                 <td style="padding: 8px 0;">${reviewedBy}</td>
-//               </tr>
-//             </table>
-//           </div>
-
-//           ${comments ? `
-//           <div style="background-color: #f0f8ff; border-left: 4px solid #1890ff; padding: 15px; margin: 20px 0;">
-//             <h4 style="margin: 0 0 10px 0; color: #1890ff;">Comments</h4>
-//             <p style="margin: 0; color: #333;">${comments}</p>
-//           </div>
-//           ` : ''}
-
-//           <div style="text-align: center; margin: 30px 0;">
-//             <a href="${trackingLink}" 
-//                style="background-color: #1890ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-//               Track Your Reports
-//             </a>
-//           </div>
-
-//           <div style="border-top: 1px solid #e8e8e8; padding-top: 20px; color: #666; font-size: 14px;">
-//             <p style="margin: 0;">Thank you for reporting this incident and helping us maintain workplace safety.</p>
-//           </div>
-//         </div>
-//       `;
-
-//       return await sendEmail({
-//         to: employeeEmail,
-//         subject,
-//         text,
-//         html
-//       });
-
-//     } catch (error) {
-//       console.error('❌ Error in statusUpdateToEmployee:', error);
-//       return {
-//         success: false,
-//         error: error.message
-//       };
-//     }
-//   },
-
-//   /**
-//    * Notify about investigation assignment
-//    * @param {string} investigatorEmail 
-//    * @param {string} reportNumber
-//    * @param {string} employeeName
-//    * @param {string} incidentType
-//    * @param {string} severity
-//    * @param {string} assignedBy
-//    * @param {string} reportId
-//    * @returns {Promise<Object>}
-//    */
-//   investigationAssignment: async (investigatorEmail, reportNumber, employeeName, incidentType, severity, assignedBy, reportId) => {
-//     try {
-//       const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-//       const investigationLink = `${clientUrl}/hr/incident-reports/${reportId}`;
-
-//       const subject = `Investigation Assignment - ${reportNumber}`;
-//       const text = `Investigation Assignment\n\nYou have been assigned to investigate incident report ${reportNumber}.\n\nEmployee: ${employeeName}\nType: ${incidentType}\nSeverity: ${severity}\nAssigned by: ${assignedBy}\n\nAccess investigation: ${investigationLink}\n\nBest regards,\nHR Safety Team`;
-
-//       const html = `
-//         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-//           <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
-//             <h2 style="color: #856404; margin: 0;">🔍 Investigation Assignment</h2>
-//             <p style="color: #666; margin: 5px 0 0 0;">You have been assigned to investigate an incident report.</p>
-//           </div>
-
-//           <div style="background-color: white; border: 1px solid #e8e8e8; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-//             <h3 style="color: #333; margin-top: 0;">Investigation Details</h3>
-//             <table style="width: 100%; border-collapse: collapse;">
-//               <tr>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Report Number:</strong></td>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${reportNumber}</td>
-//               </tr>
-//               <tr>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Employee:</strong></td>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${employeeName}</td>
-//               </tr>
-//               <tr>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Incident Type:</strong></td>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${incidentType.charAt(0).toUpperCase() + incidentType.slice(1).replace('_', ' ')}</td>
-//               </tr>
-//               <tr>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Severity:</strong></td>
-//                 <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
-//                   <span style="color: ${severity === 'critical' ? '#dc3545' : severity === 'high' ? '#fd7e14' : '#ffc107'}; font-weight: bold;">
-//                     ${severity.toUpperCase()}
-//                   </span>
-//                 </td>
-//               </tr>
-//               <tr>
-//                 <td style="padding: 8px 0;"><strong>Assigned by:</strong></td>
-//                 <td style="padding: 8px 0;">${assignedBy}</td>
-//               </tr>
-//             </table>
-//           </div>
-
-//           <div style="background-color: #d1ecf1; padding: 15px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #17a2b8;">
-//             <h4 style="color: #0c5460; margin-top: 0;">Investigation Requirements:</h4>
-//             <ul style="color: #0c5460; margin: 0; padding-left: 20px;">
-//               <li>Review all incident details and evidence</li>
-//               <li>Interview involved parties and witnesses</li>
-//               <li>Document findings and recommendations</li>
-//               <li>Submit investigation report to HR</li>
-//             </ul>
-//           </div>
-
-//           <div style="text-align: center; margin: 30px 0;">
-//             <a href="${investigationLink}" 
-//                style="background-color: #17a2b8; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: bold;">
-//               🔍 Begin Investigation
-//             </a>
-//           </div>
-
-//           <div style="border-top: 1px solid #e8e8e8; padding-top: 20px; color: #666; font-size: 14px;">
-//             <p style="margin: 0;">Please begin this investigation promptly to ensure workplace safety.</p>
-//           </div>
-//         </div>
-//       `;
-
-//       return await sendEmail({
-//         to: investigatorEmail,
-//         subject,
-//         text,
-//         html
-//       });
-
-//     } catch (error) {
-//       console.error('❌ Error in investigationAssignment:', error);
-//       return {
-//         success: false,
-//         error: error.message
-//       };
-//     }
-//   }
-// };
 
 
 /**
@@ -6121,7 +5410,8 @@ module.exports = {
   sendEmail,
   sendCashRequestEmail,
   sendPurchaseRequisitionEmail,
-  sendSickLeaveEmail,
+  // sendSickLeaveEmail,
+  sendLeaveEmail,
   sendITSupportEmail,
   sendIncidentReportEmail,
   sendVendorEmail,

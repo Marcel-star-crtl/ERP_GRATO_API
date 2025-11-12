@@ -2,6 +2,10 @@ const express = require('express');
 const router = express.Router();
 const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware');
 const upload = require('../middlewares/uploadMiddleware');
+const path = require('path');
+const fs = require('fs');
+const User = require('../models/User');
+const IncidentReport = require('../models/IncidentReport');
 
 const {
   // Core functions
@@ -42,6 +46,88 @@ router.post(
   upload.array('attachments', 10),
   createIncidentReport
 );
+
+
+/**
+ * @route   GET /api/incident-reports/download/:filename
+ * @desc    Download incident attachment file
+ * @access  Private (Authenticated users with access to the incident)
+ */
+router.get(
+  '/download/:filename',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const { filename } = req.params;
+      const filePath = path.join(__dirname, '../uploads/incidents', filename);
+
+      // Check if file exists
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({
+          success: false,
+          message: 'File not found'
+        });
+      }
+
+      // Find incident report with this attachment to verify access
+      const report = await IncidentReport.findOne({
+        'attachments.publicId': filename
+      }).populate('employee', 'fullName email department');
+
+      if (!report) {
+        return res.status(404).json({
+          success: false,
+          message: 'Attachment not found in any incident report'
+        });
+      }
+
+      // Check permissions
+      const user = await User.findById(req.user.userId);
+      const canDownload = 
+        report.employee._id.toString() === req.user.userId.toString() || // Owner
+        user.role === 'admin' || // Admin
+        user.role === 'hse' || // HSE
+        user.role === 'hr' || // HR
+        (user.role === 'supervisor' && report.department === user.department); // Supervisor
+
+      if (!canDownload) {
+        return res.status(403).json({
+          success: false,
+          message: 'You do not have permission to download this file'
+        });
+      }
+
+      // Get the original filename
+      const attachment = report.attachments.find(a => a.publicId === filename);
+      const originalName = attachment ? attachment.name : filename;
+
+      // Set headers for download
+      res.setHeader('Content-Disposition', `attachment; filename="${originalName}"`);
+      res.setHeader('Content-Type', attachment?.mimetype || 'application/octet-stream');
+
+      // Stream the file
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
+
+      fileStream.on('error', (error) => {
+        console.error('Error streaming file:', error);
+        res.status(500).json({
+          success: false,
+          message: 'Error downloading file'
+        });
+      });
+
+    } catch (error) {
+      console.error('Download file error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to download file',
+        error: error.message
+      });
+    }
+  }
+);
+
 
 // ==========================================
 // ROLE-BASED VIEW ROUTES (Must come BEFORE /:reportId)

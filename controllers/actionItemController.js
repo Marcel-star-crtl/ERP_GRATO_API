@@ -230,440 +230,6 @@ const createTaskUnderMilestone = async (req, res) => {
 };
 
 
-// // Create task under milestone
-// const createTaskUnderMilestone = async (req, res) => {
-//   try {
-//     const {
-//       projectId,
-//       milestoneId,
-//       title,
-//       description,
-//       priority,
-//       dueDate,
-//       taskWeight,
-//       assignedTo, // Array of user IDs
-//       linkedKPIs, // Array of { userId, kpiDocId, kpiIndex }
-//       notes
-//     } = req.body;
-
-//     console.log('=== CREATE TASK UNDER MILESTONE ===');
-//     console.log('Project:', projectId);
-//     console.log('Milestone:', milestoneId);
-//     console.log('Assignees:', assignedTo?.length || 0);
-
-//     // Validate required fields
-//     if (!projectId || !milestoneId || !title || !description || !priority || !dueDate || !taskWeight) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Missing required fields'
-//       });
-//     }
-
-//     // Get project and milestone
-//     const project = await Project.findById(projectId);
-//     if (!project) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'Project not found'
-//       });
-//     }
-
-//     const milestone = project.milestones.id(milestoneId);
-//     if (!milestone) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'Milestone not found'
-//       });
-//     }
-
-//     // Verify user is the assigned supervisor
-//     const user = await User.findById(req.user.userId);
-//     if (!milestone.assignedSupervisor.equals(req.user.userId)) {
-//       return res.status(403).json({
-//         success: false,
-//         message: 'Only the assigned supervisor can create tasks for this milestone'
-//       });
-//     }
-
-//     // Validate task weight
-//     const existingTasks = await ActionItem.find({ milestoneId: milestoneId });
-//     const totalExistingWeight = existingTasks.reduce((sum, t) => sum + t.taskWeight, 0);
-    
-//     if (totalExistingWeight + taskWeight > 100) {
-//       return res.status(400).json({
-//         success: false,
-//         message: `Task weight exceeds available capacity. Available: ${100 - totalExistingWeight}%, Requested: ${taskWeight}%`,
-//         availableWeight: 100 - totalExistingWeight
-//       });
-//     }
-
-//     // Handle assignment
-//     let assignees = [];
-//     let taskStatus = 'Not Started';
-//     let needsApproval = false;
-
-//     if (!assignedTo || assignedTo.length === 0) {
-//       // No assignees = task belongs to supervisor
-//       assignees = [{
-//         user: req.user.userId,
-//         completionStatus: 'pending'
-//       }];
-//       taskStatus = 'Not Started';
-//     } else {
-//       // Validate assignees and their KPIs
-//       for (const assigneeId of assignedTo) {
-//         const assignee = await User.findById(assigneeId);
-//         if (!assignee) {
-//           return res.status(400).json({
-//             success: false,
-//             message: `Assignee ${assigneeId} not found`
-//           });
-//         }
-
-//         assignees.push({
-//           user: assigneeId,
-//           completionStatus: 'pending'
-//         });
-//       }
-//       taskStatus = 'Not Started';
-//     }
-
-//     // Process linked KPIs
-//     const processedKPIs = [];
-//     if (linkedKPIs && linkedKPIs.length > 0) {
-//       for (const kpiLink of linkedKPIs) {
-//         const kpiDoc = await QuarterlyKPI.findOne({
-//           _id: kpiLink.kpiDocId,
-//           employee: kpiLink.userId,
-//           approvalStatus: 'approved'
-//         });
-
-//         if (!kpiDoc) {
-//           return res.status(400).json({
-//             success: false,
-//             message: `No approved KPI found for user ${kpiLink.userId}`
-//           });
-//         }
-
-//         const kpi = kpiDoc.kpis[kpiLink.kpiIndex];
-//         if (!kpi) {
-//           return res.status(400).json({
-//             success: false,
-//             message: `KPI index ${kpiLink.kpiIndex} not found`
-//           });
-//         }
-
-//         processedKPIs.push({
-//           kpiDocId: kpiLink.kpiDocId,
-//           kpiIndex: kpiLink.kpiIndex,
-//           kpiTitle: kpi.title,
-//           kpiWeight: kpi.weight,
-//           contributionToKPI: 0
-//         });
-//       }
-//     }
-
-//     // Get supervisor info
-//     const supervisor = {
-//       name: user.fullName,
-//       email: user.email,
-//       department: user.department
-//     };
-
-//     // Create task
-//     const task = new ActionItem({
-//       title,
-//       description,
-//       priority,
-//       dueDate: new Date(dueDate),
-//       taskWeight,
-//       assignedTo: assignees,
-//       linkedKPIs: processedKPIs,
-//       projectId,
-//       milestoneId,
-//       createdBy: req.user.userId,
-//       supervisor,
-//       status: taskStatus,
-//       notes: notes || '',
-//       creationApproval: {
-//         status: 'approved',
-//         approvedBy: req.user.userId,
-//         approvalDate: new Date()
-//       }
-//     });
-
-//     task.logActivity('created', req.user.userId, 
-//       `Task created under milestone by supervisor with weight ${taskWeight}%`);
-
-//     await task.save();
-
-//     // Update milestone's total task weight
-//     milestone.totalTaskWeightAssigned = totalExistingWeight + taskWeight;
-//     await project.save();
-
-//     // Populate task
-//     await task.populate([
-//       { path: 'assignedTo.user', select: 'fullName email department' },
-//       { path: 'createdBy', select: 'fullName email' },
-//       { path: 'projectId', select: 'name code' },
-//       { path: 'linkedKPIs.kpiDocId' }
-//     ]);
-
-//     console.log('✅ Task created under milestone');
-
-//     // Send notifications to assignees
-//     if (assignedTo && assignedTo.length > 0) {
-//       for (const assigneeId of assignedTo) {
-//         const assignee = await User.findById(assigneeId);
-//         if (assignee) {
-//           try {
-//             await sendActionItemEmail.taskAssigned(
-//               assignee.email,
-//               assignee.fullName,
-//               user.fullName,
-//               title,
-//               description,
-//               priority,
-//               dueDate,
-//               task._id,
-//               project.name
-//             );
-//           } catch (emailError) {
-//             console.error('Failed to send notification:', emailError);
-//           }
-//         }
-//       }
-//     }
-
-//     res.status(201).json({
-//       success: true,
-//       message: 'Task created under milestone successfully',
-//       data: task
-//     });
-
-//   } catch (error) {
-//     console.error('Error creating task under milestone:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to create task',
-//       error: error.message
-//     });
-//   }
-// };
-
-
-// // Create personal task (employee creates their own task)
-// const createPersonalTask = async (req, res) => {
-//   try {
-//     const {
-//       title,
-//       description,
-//       priority,
-//       dueDate,
-//       linkedKPIs, 
-//       notes,
-//       milestoneId,
-//       taskWeight 
-//     } = req.body;
-
-//     console.log('=== CREATE PERSONAL TASK ===');
-//     console.log('User:', req.user.userId);
-//     console.log('Linked KPIs:', linkedKPIs?.length || 0);
-//     console.log('Milestone:', milestoneId || 'None');
-//     console.log('Task Weight:', taskWeight || 0);
-
-//     // Validate required fields
-//     if (!title || !description || !priority || !dueDate) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Missing required fields'
-//       });
-//     }
-
-//     // KPIs are required for personal tasks
-//     if (!linkedKPIs || linkedKPIs.length === 0) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Personal tasks must be linked to at least one KPI'
-//       });
-//     }
-
-//     const user = await User.findById(req.user.userId);
-//     if (!user) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'User not found'
-//       });
-//     }
-
-//     // NEW: Validate milestone if provided
-//     let milestone = null;
-//     if (milestoneId) {
-//       const Project = require('../models/Project');
-//       const project = await Project.findOne({ 'milestones._id': milestoneId });
-      
-//       if (!project) {
-//         return res.status(404).json({
-//           success: false,
-//           message: 'Milestone not found'
-//         });
-//       }
-
-//       milestone = project.milestones.id(milestoneId);
-      
-//       if (!milestone) {
-//         return res.status(404).json({
-//           success: false,
-//           message: 'Milestone not found'
-//         });
-//       }
-
-//       // Validate task weight if milestone selected
-//       if (!taskWeight || taskWeight <= 0) {
-//         return res.status(400).json({
-//           success: false,
-//           message: 'Task weight is required when milestone is selected'
-//         });
-//       }
-
-//       // Check remaining weight capacity
-//       const existingTasks = await ActionItem.find({ milestoneId: milestoneId });
-//       const totalExistingWeight = existingTasks.reduce((sum, t) => sum + t.taskWeight, 0);
-      
-//       if (totalExistingWeight + taskWeight > 100) {
-//         return res.status(400).json({
-//           success: false,
-//           message: `Task weight exceeds available capacity. Available: ${100 - totalExistingWeight}%, Requested: ${taskWeight}%`,
-//           availableWeight: 100 - totalExistingWeight
-//         });
-//       }
-//     }
-
-//     // Process linked KPIs - must belong to the creating user
-//     const processedKPIs = [];
-//     for (const kpiLink of linkedKPIs) {
-//       const kpiDoc = await QuarterlyKPI.findOne({
-//         _id: kpiLink.kpiDocId,
-//         employee: req.user.userId,
-//         approvalStatus: 'approved'
-//       });
-
-//       if (!kpiDoc) {
-//         return res.status(400).json({
-//           success: false,
-//           message: 'You can only link to your own approved KPIs'
-//         });
-//       }
-
-//       const kpi = kpiDoc.kpis[kpiLink.kpiIndex];
-//       if (!kpi) {
-//         return res.status(400).json({
-//           success: false,
-//           message: `KPI index ${kpiLink.kpiIndex} not found`
-//         });
-//       }
-
-//       processedKPIs.push({
-//         kpiDocId: kpiLink.kpiDocId,
-//         kpiIndex: kpiLink.kpiIndex,
-//         kpiTitle: kpi.title,
-//         kpiWeight: kpi.weight,
-//         contributionToKPI: 0
-//       });
-//     }
-
-//     // Get supervisor
-//     const supervisor = getTaskSupervisor(user.fullName, user.department);
-//     if (!supervisor) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Unable to determine your supervisor. Please contact HR.'
-//       });
-//     }
-
-//     // Create personal task
-//     const task = new ActionItem({
-//       title,
-//       description,
-//       priority,
-//       dueDate: new Date(dueDate),
-//       taskWeight: milestoneId ? taskWeight : 0, // Only set weight if milestone
-//       assignedTo: [{
-//         user: req.user.userId,
-//         completionStatus: 'pending'
-//       }],
-//       linkedKPIs: processedKPIs,
-//       projectId: milestone ? milestone.parent() : null, // Get project from milestone
-//       milestoneId: milestoneId || null, // NEW: Store milestone
-//       createdBy: req.user.userId,
-//       supervisor: {
-//         name: supervisor.name,
-//         email: supervisor.email,
-//         department: supervisor.department
-//       },
-//       status: 'Pending Approval',
-//       notes: notes || '',
-//       creationApproval: {
-//         status: 'pending'
-//       }
-//     });
-
-//     task.logActivity('created', req.user.userId, 
-//       `Personal task created${milestoneId ? ' with milestone' : ''} - pending supervisor approval`);
-
-//     await task.save();
-
-//     // Update milestone's total task weight if applicable
-//     if (milestoneId) {
-//       const Project = require('../models/Project');
-//       const project = await Project.findOne({ 'milestones._id': milestoneId });
-//       const milestone = project.milestones.id(milestoneId);
-//       milestone.totalTaskWeightAssigned = (milestone.totalTaskWeightAssigned || 0) + taskWeight;
-//       await project.save();
-//     }
-
-//     await task.populate([
-//       { path: 'assignedTo.user', select: 'fullName email department' },
-//       { path: 'createdBy', select: 'fullName email' },
-//       { path: 'linkedKPIs.kpiDocId' }
-//     ]);
-
-//     console.log('✅ Personal task created');
-
-//     // Send notification to supervisor
-//     try {
-//       await sendActionItemEmail.taskCreationApproval(
-//         supervisor.email,
-//         supervisor.name,
-//         user.fullName,
-//         title,
-//         description,
-//         priority,
-//         dueDate,
-//         task._id,
-//         null
-//       );
-//     } catch (emailError) {
-//       console.error('Failed to send supervisor notification:', emailError);
-//     }
-
-//     res.status(201).json({
-//       success: true,
-//       message: 'Personal task created and sent to supervisor for approval',
-//       data: task
-//     });
-
-//   } catch (error) {
-//     console.error('Error creating personal task:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to create personal task',
-//       error: error.message
-//     });
-//   }
-// };
-
-
 // Create personal task (employee creates their own task)
 const createPersonalTask = async (req, res) => {
   try {
@@ -1055,6 +621,105 @@ const submitCompletionForAssignee = async (req, res) => {
 };
 
 // Approve completion for specific assignee with grading
+// const approveCompletionForAssignee = async (req, res) => {
+//   try {
+//     const { id, assigneeId } = req.params;
+//     const { grade, qualityNotes, comments } = req.body;
+//     const userId = req.user.userId;
+
+//     console.log('=== APPROVE COMPLETION FOR ASSIGNEE ===');
+//     console.log('Task ID:', id);
+//     console.log('Assignee ID:', assigneeId);
+//     console.log('Grade:', grade);
+
+//     // Validate grade
+//     if (!grade || grade < 1 || grade > 5) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Grade must be between 1 and 5'
+//       });
+//     }
+
+//     const task = await ActionItem.findById(id)
+//       .populate('assignedTo.user', 'fullName email department')
+//       .populate('linkedKPIs.kpiDocId');
+
+//     if (!task) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Task not found'
+//       });
+//     }
+
+//     // Verify supervisor
+//     const user = await User.findById(userId);
+//     if (task.supervisor.email !== user.email && user.role !== 'admin') {
+//       return res.status(403).json({
+//         success: false,
+//         message: 'Only the assigned supervisor can approve this completion'
+//       });
+//     }
+
+//     // Find assignee
+//     const assignee = task.assignedTo.find(a => a.user._id.equals(assigneeId));
+//     if (!assignee) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Assignee not found for this task'
+//       });
+//     }
+
+//     if (assignee.completionStatus !== 'submitted') {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Assignee has not submitted completion yet'
+//       });
+//     }
+
+//     // Approve completion with grading
+//     await task.approveCompletionForAssignee(userId, assigneeId, grade, qualityNotes, comments);
+//     await task.save();
+
+//     await task.populate([
+//       { path: 'assignedTo.user', select: 'fullName email department' },
+//       { path: 'linkedKPIs.kpiDocId' }
+//     ]);
+
+//     // Send notification to assignee
+//     try {
+//       const assigneeUser = await User.findById(assigneeId);
+//       await sendActionItemEmail.taskCompletionApproved(
+//         assigneeUser.email,
+//         assigneeUser.fullName,
+//         user.fullName,
+//         task.title,
+//         task._id,
+//         comments,
+//         grade
+//       );
+//     } catch (emailError) {
+//       console.error('Failed to send notification:', emailError);
+//     }
+
+//     console.log('✅ Completion approved with grade:', grade);
+
+//     res.json({
+//       success: true,
+//       message: `Completion approved with grade ${grade}/5`,
+//       data: task
+//     });
+
+//   } catch (error) {
+//     console.error('Error approving completion:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to approve completion',
+//       error: error.message
+//     });
+//   }
+// };
+
+
 const approveCompletionForAssignee = async (req, res) => {
   try {
     const { id, assigneeId } = req.params;
@@ -1085,9 +750,16 @@ const approveCompletionForAssignee = async (req, res) => {
       });
     }
 
-    // Verify supervisor
+    // ✅ FIX: Verify user is THE supervisor (not just has admin role)
     const user = await User.findById(userId);
-    if (task.supervisor.email !== user.email && user.role !== 'admin') {
+    
+    console.log('Task supervisor:', task.supervisor.email);
+    console.log('Current user:', user.email);
+    
+    const isTheSupervisor = task.supervisor.email === user.email;
+    const isAdmin = user.role === 'admin';
+
+    if (!isTheSupervisor && !isAdmin) {
       return res.status(403).json({
         success: false,
         message: 'Only the assigned supervisor can approve this completion'
@@ -1153,7 +825,97 @@ const approveCompletionForAssignee = async (req, res) => {
   }
 };
 
-// Reject completion for specific assignee
+// // Reject completion for specific assignee
+// const rejectCompletionForAssignee = async (req, res) => {
+//   try {
+//     const { id, assigneeId } = req.params;
+//     const { comments } = req.body;
+//     const userId = req.user.userId;
+
+//     console.log('=== REJECT COMPLETION FOR ASSIGNEE ===');
+//     console.log('Task ID:', id);
+//     console.log('Assignee ID:', assigneeId);
+
+//     if (!comments) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Rejection reason is required'
+//       });
+//     }
+
+//     const task = await ActionItem.findById(id)
+//       .populate('assignedTo.user', 'fullName email department');
+
+//     if (!task) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Task not found'
+//       });
+//     }
+
+//     // Verify supervisor
+//     const user = await User.findById(userId);
+//     if (task.supervisor.email !== user.email && user.role !== 'admin') {
+//       return res.status(403).json({
+//         success: false,
+//         message: 'Only the assigned supervisor can reject this completion'
+//       });
+//     }
+
+//     // Find assignee
+//     const assignee = task.assignedTo.find(a => a.user._id.equals(assigneeId));
+//     if (!assignee) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Assignee not found for this task'
+//       });
+//     }
+
+//     if (assignee.completionStatus !== 'submitted') {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Assignee has not submitted completion yet'
+//       });
+//     }
+
+//     // Reject completion
+//     task.rejectCompletionForAssignee(userId, assigneeId, comments);
+//     await task.save();
+
+//     // Send notification to assignee
+//     try {
+//       const assigneeUser = await User.findById(assigneeId);
+//       await sendActionItemEmail.taskCompletionRejected(
+//         assigneeUser.email,
+//         assigneeUser.fullName,
+//         user.fullName,
+//         task.title,
+//         task._id,
+//         comments
+//       );
+//     } catch (emailError) {
+//       console.error('Failed to send notification:', emailError);
+//     }
+
+//     console.log('❌ Completion rejected for assignee');
+
+//     res.json({
+//       success: true,
+//       message: 'Completion rejected - sent back for revision',
+//       data: task
+//     });
+
+//   } catch (error) {
+//     console.error('Error rejecting completion:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to reject completion',
+//       error: error.message
+//     });
+//   }
+// };
+
+
 const rejectCompletionForAssignee = async (req, res) => {
   try {
     const { id, assigneeId } = req.params;
@@ -1181,9 +943,16 @@ const rejectCompletionForAssignee = async (req, res) => {
       });
     }
 
-    // Verify supervisor
+    // ✅ FIX: Verify user is THE supervisor (not just has admin role)
     const user = await User.findById(userId);
-    if (task.supervisor.email !== user.email && user.role !== 'admin') {
+    
+    console.log('Task supervisor:', task.supervisor.email);
+    console.log('Current user:', user.email);
+    
+    const isTheSupervisor = task.supervisor.email === user.email;
+    const isAdmin = user.role === 'admin';
+
+    if (!isTheSupervisor && !isAdmin) {
       return res.status(403).json({
         success: false,
         message: 'Only the assigned supervisor can reject this completion'
@@ -1242,6 +1011,7 @@ const rejectCompletionForAssignee = async (req, res) => {
     });
   }
 };
+
 
 // Get tasks for milestone
 const getMilestoneTasks = async (req, res) => {
@@ -1382,7 +1152,99 @@ const reassignTask = async (req, res) => {
   }
 };
 
-// Get action items based on user role and filters
+// // Get action items based on user role and filters
+// const getActionItems = async (req, res) => {
+//   try {
+//     const { status, priority, projectId, assignedTo, view, page = 1, limit = 50 } = req.query;
+//     const user = await User.findById(req.user.userId);
+
+//     console.log('=== GET ACTION ITEMS ===');
+//     console.log(`User: ${user.fullName} (${user.role})`);
+//     console.log(`View: ${view || 'default'}`);
+
+//     let filter = {};
+
+//     // Apply view-based filters
+//     if (view === 'my-tasks') {
+//       filter['assignedTo.user'] = req.user.userId; // Changed: Query the user field in the array
+//     } else if (view === 'team-tasks') {
+//       if (['supply_chain', 'admin', 'hr', 'hse', 'buyer', 'it', 'employee', 'finance', 'technical'].includes(user.role)) {
+//         // No filter needed - see all tasks
+//       } else if (user.role === 'supervisor') {
+//         const departmentUsers = await User.find({ department: user.department }).select('_id');
+//         filter['assignedTo.user'] = { $in: departmentUsers.map(u => u._id) }; // Changed
+//       } else {
+//         filter['assignedTo.user'] = req.user.userId; // Changed
+//       }
+//     } else if (view === 'project-tasks') {
+//       if (projectId) {
+//         filter.projectId = projectId;
+//       } else {
+//         filter.projectId = { $ne: null };
+//       }
+//     } else if (view === 'standalone-tasks') {
+//       filter.projectId = null;
+//     } else if (view === 'my-approvals') {
+//       if (['supply_chain', 'admin', 'hr', 'hse', 'buyer', 'it', 'employee', 'finance'].includes(user.role)) {
+//         filter.$or = [
+//           {
+//             status: 'Pending Approval',
+//             'supervisor.email': user.email
+//           },
+//           {
+//             createdBy: req.user.userId
+//           }
+//         ];
+//         console.log(`Fetching tasks for supervisor: ${user.email}`);
+//       } else {
+//         filter['assignedTo.user'] = req.user.userId; // Changed
+//       }
+//     } else {
+//       filter['assignedTo.user'] = req.user.userId; // Changed
+//     }
+
+//     // Apply additional filters
+//     if (status) filter.status = status;
+//     if (priority) filter.priority = priority;
+//     if (projectId && view !== 'project-tasks') filter.projectId = projectId;
+//     if (assignedTo) filter['assignedTo.user'] = assignedTo; // Changed
+
+//     console.log('Filter:', JSON.stringify(filter, null, 2));
+
+//     const tasks = await ActionItem.find(filter)
+//       .populate('assignedTo.user', 'fullName email department position') // Changed: populate the nested user
+//       .populate('createdBy', 'fullName email')
+//       .populate('projectId', 'name code department')
+//       .sort({ dueDate: 1, priority: -1, createdAt: -1 })
+//       .limit(limit * 1)
+//       .skip((page - 1) * limit);
+
+//     const total = await ActionItem.countDocuments(filter);
+
+//     console.log(`Found ${tasks.length} action items`);
+
+//     res.json({
+//       success: true,
+//       data: tasks,
+//       pagination: {
+//         current: parseInt(page),
+//         total: Math.ceil(total / limit),
+//         count: tasks.length,
+//         totalRecords: total
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('Get action items error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch action items',
+//       error: error.message
+//     });
+//   }
+// };
+
+
 const getActionItems = async (req, res) => {
   try {
     const { status, priority, projectId, assignedTo, view, page = 1, limit = 50 } = req.query;
@@ -1390,59 +1252,98 @@ const getActionItems = async (req, res) => {
 
     console.log('=== GET ACTION ITEMS ===');
     console.log(`User: ${user.fullName} (${user.role})`);
+    console.log(`Email: ${user.email}`);
     console.log(`View: ${view || 'default'}`);
 
     let filter = {};
 
+    // ✅ FIX: Check if user IS a supervisor (not if role === 'supervisor')
+    // A user is a supervisor if tasks have their email in the supervisor field
+    const isSupervisorOf = await ActionItem.countDocuments({ 
+      'supervisor.email': user.email 
+    });
+
+    console.log(`User supervises ${isSupervisorOf} tasks`);
+
     // Apply view-based filters
     if (view === 'my-tasks') {
-      filter['assignedTo.user'] = req.user.userId; // Changed: Query the user field in the array
+      // Tasks assigned to me
+      filter['assignedTo.user'] = req.user.userId;
+      
     } else if (view === 'team-tasks') {
-      if (['supply_chain', 'admin', 'hr', 'hse', 'buyer', 'it', 'employee', 'finance'].includes(user.role)) {
-        // No filter needed - see all tasks
-      } else if (user.role === 'supervisor') {
+      // ✅ FIX: Show tasks based on actual supervision relationship
+      if (['admin', 'supply_chain'].includes(user.role)) {
+        // Admins and supply chain see ALL tasks
+        // No additional filter
+      } else if (isSupervisorOf > 0) {
+        // If user supervises ANY tasks, show:
+        // 1. Tasks they supervise
+        // 2. Tasks assigned to them
+        // 3. Tasks in their department
         const departmentUsers = await User.find({ department: user.department }).select('_id');
-        filter['assignedTo.user'] = { $in: departmentUsers.map(u => u._id) }; // Changed
+        
+        filter.$or = [
+          { 'supervisor.email': user.email },
+          { 'assignedTo.user': req.user.userId },
+          { 'assignedTo.user': { $in: departmentUsers.map(u => u._id) } }
+        ];
       } else {
-        filter['assignedTo.user'] = req.user.userId; // Changed
+        // Not a supervisor - just show own tasks
+        filter['assignedTo.user'] = req.user.userId;
       }
+      
     } else if (view === 'project-tasks') {
       if (projectId) {
         filter.projectId = projectId;
       } else {
         filter.projectId = { $ne: null };
       }
+      
     } else if (view === 'standalone-tasks') {
       filter.projectId = null;
+      
     } else if (view === 'my-approvals') {
-      if (['supply_chain', 'admin', 'hr', 'hse', 'buyer', 'it', 'employee', 'finance'].includes(user.role)) {
+      // ✅ CRITICAL FIX: Show tasks awaiting MY approval as supervisor
+      if (['admin', 'supply_chain'].includes(user.role)) {
+        // Admins see all pending approvals
+        filter.$or = [
+          { status: 'Pending Approval', 'supervisor.email': user.email },
+          { status: 'Pending Completion Approval', 'supervisor.email': user.email },
+          { createdBy: req.user.userId }
+        ];
+      } else if (isSupervisorOf > 0) {
+        // ✅ FIX: Show tasks where I'm the supervisor AND they need approval
         filter.$or = [
           {
-            status: 'Pending Approval',
-            'supervisor.email': user.email
+            'supervisor.email': user.email,
+            status: { $in: ['Pending Approval', 'Pending Completion Approval'] }
           },
           {
             createdBy: req.user.userId
           }
         ];
-        console.log(`Fetching tasks for supervisor: ${user.email}`);
       } else {
-        filter['assignedTo.user'] = req.user.userId; // Changed
+        // Not a supervisor - just show own tasks
+        filter['assignedTo.user'] = req.user.userId;
       }
+      
+      console.log('My Approvals Filter:', JSON.stringify(filter, null, 2));
+      
     } else {
-      filter['assignedTo.user'] = req.user.userId; // Changed
+      // Default view - show own tasks
+      filter['assignedTo.user'] = req.user.userId;
     }
 
     // Apply additional filters
     if (status) filter.status = status;
     if (priority) filter.priority = priority;
     if (projectId && view !== 'project-tasks') filter.projectId = projectId;
-    if (assignedTo) filter['assignedTo.user'] = assignedTo; // Changed
+    if (assignedTo) filter['assignedTo.user'] = assignedTo;
 
-    console.log('Filter:', JSON.stringify(filter, null, 2));
+    console.log('Final Filter:', JSON.stringify(filter, null, 2));
 
     const tasks = await ActionItem.find(filter)
-      .populate('assignedTo.user', 'fullName email department position') // Changed: populate the nested user
+      .populate('assignedTo.user', 'fullName email department position')
       .populate('createdBy', 'fullName email')
       .populate('projectId', 'name code department')
       .sort({ dueDate: 1, priority: -1, createdAt: -1 })
@@ -1452,6 +1353,25 @@ const getActionItems = async (req, res) => {
     const total = await ActionItem.countDocuments(filter);
 
     console.log(`Found ${tasks.length} action items`);
+
+    // ✅ Additional debug for 'my-approvals' view
+    if (view === 'my-approvals' && tasks.length === 0) {
+      console.log('=== DEBUG: No tasks found for approval ===');
+      
+      // Check if there are ANY tasks supervised by this user
+      const supervisedTasks = await ActionItem.find({ 
+        'supervisor.email': user.email 
+      }).select('title status supervisor');
+      
+      console.log(`Total tasks supervised: ${supervisedTasks.length}`);
+      if (supervisedTasks.length > 0) {
+        console.log('Supervised tasks:', supervisedTasks.map(t => ({
+          title: t.title,
+          status: t.status,
+          supervisor: t.supervisor.email
+        })));
+      }
+    }
 
     res.json({
       success: true,
@@ -1737,6 +1657,188 @@ const createActionItem = async (req, res) => {
 };
 
 // Approve/Reject task CREATION
+// const processCreationApproval = async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const { decision, comments } = req.body;
+
+//     console.log('=== TASK CREATION APPROVAL DECISION ===');
+//     console.log('Task ID:', id);
+//     console.log('Decision:', decision);
+
+//     if (!['approve', 'reject'].includes(decision)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid decision. Must be "approve" or "reject"'
+//       });
+//     }
+
+//     const user = await User.findById(req.user.userId);
+    
+//     // Fetch the action item WITHOUT populate first to see raw data
+//     let actionItem = await ActionItem.findById(id);
+
+//     if (!actionItem) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Action item not found'
+//       });
+//     }
+
+//     // Check if this user is the supervisor
+//     if (actionItem.supervisor.email !== user.email && 
+//         !['admin', 'supply_chain', 'supervisor', 'manager', 'hr', 'it', 'hse', 'technical'].includes(user.role)) {
+//       return res.status(403).json({
+//         success: false,
+//         message: 'Only the immediate supervisor or authorized roles can approve this task'
+//       });
+//     }
+
+//     // Check if task is pending approval
+//     if (actionItem.status !== 'Pending Approval') {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Task is not pending approval'
+//       });
+//     }
+
+//     // Fix the assignedTo array if it has buffer/invalid data
+//     const validAssignedTo = actionItem.assignedTo.filter(assignee => {
+//       // Check if assignee has a valid user reference
+//       if (assignee.user) {
+//         return true;
+//       }
+//       // Check if assignee has a buffer (raw ObjectId)
+//       if (assignee.buffer) {
+//         // Convert buffer to ObjectId and set it as user
+//         const userId = assignee.buffer;
+//         assignee.user = userId;
+//         return true;
+//       }
+//       return false;
+//     });
+
+//     // Update the assignedTo array with valid data
+//     actionItem.assignedTo = validAssignedTo;
+
+//     // Now populate to get user details for emails
+//     await actionItem.populate('assignedTo.user', 'fullName email department');
+//     await actionItem.populate('createdBy', 'fullName email');
+
+//     console.log('BEFORE APPROVAL - assignedTo:', JSON.stringify(actionItem.assignedTo, null, 2));
+
+//     // Store email recipients BEFORE calling approval methods
+//     const emailRecipients = actionItem.assignedTo
+//       .filter(assignee => assignee.user && assignee.user.email)
+//       .map(assignee => ({
+//         email: assignee.user.email,
+//         fullName: assignee.user.fullName
+//       }));
+
+//     console.log('Email recipients:', emailRecipients);
+
+//     if (decision === 'approve') {
+//       // Update status and add activity log
+//       actionItem.status = 'In Progress';
+//       actionItem.creationApproval = {
+//         status: 'approved',
+//         approvedBy: req.user.userId,
+//         approvedAt: new Date(),
+//         comments: comments || ''
+//       };
+
+//       // Add activity log
+//       actionItem.activityLog.push({
+//         action: 'creation_approved',
+//         performedBy: req.user.userId,
+//         timestamp: new Date(),
+//         details: `Task creation approved by ${user.fullName}${comments ? `: ${comments}` : ''}`,
+//         oldValue: 'Pending Approval',
+//         newValue: 'In Progress'
+//       });
+
+//       // Send notification to ALL assigned users
+//       const emailPromises = emailRecipients.map(async (recipient) => {
+//         try {
+//           await sendActionItemEmail.taskCreationApproved(
+//             recipient.email,
+//             recipient.fullName,
+//             user.fullName,
+//             actionItem.title,
+//             actionItem._id,
+//             comments
+//           );
+//         } catch (emailError) {
+//           console.error(`Failed to send approval notification to ${recipient.email}:`, emailError);
+//         }
+//       });
+
+//       await Promise.allSettled(emailPromises);
+
+//       console.log('✅ Task CREATION APPROVED - Employee(s) can now start work');
+//     } else {
+//       // Update status and add activity log
+//       actionItem.status = 'Rejected';
+//       actionItem.creationApproval = {
+//         status: 'rejected',
+//         rejectedBy: req.user.userId,
+//         rejectedAt: new Date(),
+//         comments: comments || 'No reason provided'
+//       };
+
+//       // Add activity log
+//       actionItem.activityLog.push({
+//         action: 'creation_rejected',
+//         performedBy: req.user.userId,
+//         timestamp: new Date(),
+//         details: `Task creation rejected by ${user.fullName}: ${comments || 'No reason provided'}`,
+//         oldValue: 'Pending Approval',
+//         newValue: 'Rejected'
+//       });
+
+//       // Send notification to ALL assigned users
+//       const emailPromises = emailRecipients.map(async (recipient) => {
+//         try {
+//           await sendActionItemEmail.taskCreationRejected(
+//             recipient.email,
+//             recipient.fullName,
+//             user.fullName,
+//             actionItem.title,
+//             actionItem._id,
+//             comments
+//           );
+//         } catch (emailError) {
+//           console.error(`Failed to send rejection notification to ${recipient.email}:`, emailError);
+//         }
+//       });
+
+//       await Promise.allSettled(emailPromises);
+
+//       console.log('❌ Task CREATION REJECTED');
+//     }
+
+//     // Save with validation disabled for assignedTo to avoid the validation error
+//     await actionItem.save({ validateModifiedOnly: true });
+
+//     console.log('=== CREATION APPROVAL DECISION PROCESSED ===');
+
+//     res.json({
+//       success: true,
+//       message: `Task creation ${decision}d successfully`,
+//       data: actionItem
+//     });
+
+//   } catch (error) {
+//     console.error('Creation approval error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to process creation approval',
+//       error: error.message
+//     });
+//   }
+// };
+
+
 const processCreationApproval = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1755,7 +1857,7 @@ const processCreationApproval = async (req, res) => {
 
     const user = await User.findById(req.user.userId);
     
-    // Fetch the action item WITHOUT populate first to see raw data
+    // Fetch the action item
     let actionItem = await ActionItem.findById(id);
 
     if (!actionItem) {
@@ -1765,12 +1867,17 @@ const processCreationApproval = async (req, res) => {
       });
     }
 
-    // Check if this user is the supervisor
-    if (actionItem.supervisor.email !== user.email && 
-        !['admin', 'supply_chain', 'hr', 'it', 'hse'].includes(user.role)) {
+    console.log('Task supervisor:', actionItem.supervisor.email);
+    console.log('Current user:', user.email);
+
+    // ✅ FIX: Check if user is THE supervisor (not just has role 'supervisor')
+    const isTheSupervisor = actionItem.supervisor.email === user.email;
+    const isAdmin = ['admin', 'supply_chain'].includes(user.role);
+
+    if (!isTheSupervisor && !isAdmin) {
       return res.status(403).json({
         success: false,
-        message: 'Only the immediate supervisor or authorized roles can approve this task'
+        message: 'Only the assigned supervisor can approve this task'
       });
     }
 
@@ -1784,13 +1891,10 @@ const processCreationApproval = async (req, res) => {
 
     // Fix the assignedTo array if it has buffer/invalid data
     const validAssignedTo = actionItem.assignedTo.filter(assignee => {
-      // Check if assignee has a valid user reference
       if (assignee.user) {
         return true;
       }
-      // Check if assignee has a buffer (raw ObjectId)
       if (assignee.buffer) {
-        // Convert buffer to ObjectId and set it as user
         const userId = assignee.buffer;
         assignee.user = userId;
         return true;
@@ -1798,7 +1902,6 @@ const processCreationApproval = async (req, res) => {
       return false;
     });
 
-    // Update the assignedTo array with valid data
     actionItem.assignedTo = validAssignedTo;
 
     // Now populate to get user details for emails
@@ -1818,7 +1921,6 @@ const processCreationApproval = async (req, res) => {
     console.log('Email recipients:', emailRecipients);
 
     if (decision === 'approve') {
-      // Update status and add activity log
       actionItem.status = 'In Progress';
       actionItem.creationApproval = {
         status: 'approved',
@@ -1827,7 +1929,6 @@ const processCreationApproval = async (req, res) => {
         comments: comments || ''
       };
 
-      // Add activity log
       actionItem.activityLog.push({
         action: 'creation_approved',
         performedBy: req.user.userId,
@@ -1857,7 +1958,6 @@ const processCreationApproval = async (req, res) => {
 
       console.log('✅ Task CREATION APPROVED - Employee(s) can now start work');
     } else {
-      // Update status and add activity log
       actionItem.status = 'Rejected';
       actionItem.creationApproval = {
         status: 'rejected',
@@ -1866,7 +1966,6 @@ const processCreationApproval = async (req, res) => {
         comments: comments || 'No reason provided'
       };
 
-      // Add activity log
       actionItem.activityLog.push({
         action: 'creation_rejected',
         performedBy: req.user.userId,
@@ -1897,7 +1996,6 @@ const processCreationApproval = async (req, res) => {
       console.log('❌ Task CREATION REJECTED');
     }
 
-    // Save with validation disabled for assignedTo to avoid the validation error
     await actionItem.save({ validateModifiedOnly: true });
 
     console.log('=== CREATION APPROVAL DECISION PROCESSED ===');
@@ -1917,6 +2015,7 @@ const processCreationApproval = async (req, res) => {
     });
   }
 };
+
 
 // Submit task for COMPLETION approval
 const submitForCompletion = async (req, res) => {
@@ -2583,7 +2682,7 @@ const getActionItem = async (req, res) => {
     const user = await User.findById(req.user.userId);
     
     // Define roles with full access
-    const authorizedRoles = ['admin', 'supply_chain', 'hr', 'it', 'hse'];
+    const authorizedRoles = ['admin', 'supply_chain', 'supervisor', 'manager', 'hr', 'it', 'hse', 'technical'];
     
     // Check if user has an authorized role (full access)
     if (authorizedRoles.includes(user.role)) {

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const IncidentReport = require('../models/IncidentReport');
 const User = require('../models/User');
 const { getApprovalChain } = require('../config/departmentStructure');
@@ -825,77 +826,6 @@ const createIncidentReport = async (req, res) => {
     });
   }
 };
-
-// // Get employee's own incident reports
-// const getEmployeeIncidentReports = async (req, res) => {
-//   try {
-//     const reports = await IncidentReport.find({ employee: req.user.userId })
-//       .populate('employee', 'fullName email department')
-//       .sort({ createdAt: -1 });
-
-//     res.json({
-//       success: true,
-//       data: reports,
-//       count: reports.length
-//     });
-
-//   } catch (error) {
-//     console.error('Get employee incident reports error:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to fetch incident reports',
-//       error: error.message
-//     });
-//   }
-// };
-
-// // Get single incident report details with approval chain
-// const getIncidentReportDetails = async (req, res) => {
-//   try {
-//     const { reportId } = req.params;
-
-//     const report = await IncidentReport.findById(reportId)
-//       .populate('employee', 'fullName email department')
-//       .populate('supervisorReview.decidedBy', 'fullName email')
-//       .populate('hrReview.decidedBy', 'fullName email')
-//       .populate('investigation.investigator', 'fullName email');
-
-//     if (!report) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'Incident report not found'
-//       });
-//     }
-
-//     // Check if user has permission to view this report
-//     const user = await User.findById(req.user.userId);
-//     const canView = 
-//       report.employee._id.equals(req.user.userId) || 
-//       user.role === 'admin' || 
-//       user.role === 'hr' || 
-//       report.approvalChain.some(step => step.approver.email === user.email); 
-
-//     if (!canView) {
-//       return res.status(403).json({
-//         success: false,
-//         message: 'Access denied'
-//       });
-//     }
-
-//     res.json({
-//       success: true,
-//       data: report
-//     });
-
-//   } catch (error) {
-//     console.error('Get incident report details error:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to fetch incident report details',
-//       error: error.message
-//     });
-//   }
-// };
 
 // Get supervisor incident reports
 const getSupervisorIncidentReports = async (req, res) => {
@@ -2913,76 +2843,6 @@ const getHSEDashboardStats = async (req, res) => {
     });
   }
 };
-
-// Get incident reports by role (updated to remove approval logic)
-// const getIncidentReportsByRole = async (req, res) => {
-//   try {
-//     const user = await User.findById(req.user.userId);
-//     const { status, page = 1, limit = 20 } = req.query;
-
-//     let query = {};
-
-//     switch (user.role) {
-//       case 'employee':
-//         query = { employee: req.user.userId };
-//         break;
-
-//       case 'supervisor':
-//         // Supervisors can view their department's reports
-//         query = { department: user.department };
-//         break;
-
-//       case 'hr':
-//         // HR can view all reports
-//         break;
-
-//       case 'hse':
-//         // HSE can view all reports
-//         break;
-
-//       case 'admin':
-//         // Admins can view all reports
-//         break;
-
-//       default:
-//         return res.status(403).json({
-//           success: false,
-//           message: 'Access denied'
-//         });
-//     }
-
-//     if (status && status !== 'all') {
-//       query.status = status;
-//     }
-
-//     const reports = await IncidentReport.find(query)
-//       .populate('employee', 'fullName email department')
-//       .sort({ createdAt: -1 })
-//       .limit(limit * 1)
-//       .skip((page - 1) * limit);
-
-//     const total = await IncidentReport.countDocuments(query);
-
-//     res.json({
-//       success: true,
-//       data: reports,
-//       pagination: {
-//         current: parseInt(page),
-//         total: Math.ceil(total / limit),
-//         count: reports.length,
-//         totalRecords: total
-//       }
-//     });
-
-//   } catch (error) {
-//     console.error('Get incident reports by role error:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to fetch incident reports',
-//       error: error.message
-//     });
-//   }
-// };
 
 
 const getIncidentReportsByRole = async (req, res) => {

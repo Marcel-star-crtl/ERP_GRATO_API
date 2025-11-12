@@ -1,313 +1,625 @@
-const { cloudinary, getSecureFileUrl, generateDownloadUrl } = require('../config/cloudinary');
-const axios = require('axios');
 const path = require('path');
 const fs = require('fs');
+const CashRequest = require('../models/CashRequest');
 
-// Secure file download endpoint
-exports.downloadFile = async (req, res) => {
+/**
+ * Download a file by its publicId
+ * Supports attachments, justifications, and reimbursement documents
+ */
+const downloadFile = async (req, res) => {
   try {
     const { publicId } = req.params;
-    const { type, filename } = req.query;
+    
+    console.log('\n=== FILE DOWNLOAD REQUEST ===');
+    console.log('Public ID:', publicId);
+    console.log('User:', req.user.userId);
     
     if (!publicId) {
       return res.status(400).json({
         success: false,
-        message: 'Public ID is required'
+        message: 'File identifier is required'
       });
     }
-    
-    console.log('Download request for publicId:', publicId);
-    
-    // Check if this is a local file (has file extension and looks like a local filename)
-    const isLocalFile = publicId.includes('-') && /\.(pdf|doc|docx|txt|jpg|jpeg|png|gif)$/i.test(publicId);
-    
-    if (isLocalFile) {
-      console.log('Handling local file download for:', publicId);
-      
-      // Handle local file download
-      const localFilePath = path.join(__dirname, '../uploads/attachments', publicId);
-      
-      // Check if file exists
-      if (!fs.existsSync(localFilePath)) {
-        console.error('Local file not found:', localFilePath);
-        return res.status(404).json({
-          success: false,
-          message: 'File not found'
-        });
+
+    // Decode the publicId (it might be URL encoded)
+    const decodedPublicId = decodeURIComponent(publicId);
+    console.log('Decoded Public ID:', decodedPublicId);
+
+    // Possible file locations
+    const possiblePaths = [
+      path.join(__dirname, '../uploads/attachments', decodedPublicId),
+      path.join(__dirname, '../uploads/justifications', decodedPublicId),
+      path.join(__dirname, '../uploads/reimbursements', decodedPublicId),
+      path.join(__dirname, '../uploads/temp', decodedPublicId)
+    ];
+
+    let filePath = null;
+    let fileType = 'unknown';
+
+    // Find the file
+    for (let i = 0; i < possiblePaths.length; i++) {
+      if (fs.existsSync(possiblePaths[i])) {
+        filePath = possiblePaths[i];
+        fileType = possiblePaths[i].includes('attachments') ? 'attachment' :
+                   possiblePaths[i].includes('justifications') ? 'justification' :
+                   possiblePaths[i].includes('reimbursements') ? 'reimbursement' : 'temp';
+        console.log(`✓ File found in ${fileType} directory`);
+        break;
       }
-      
-      // Get file stats
-      const stats = fs.statSync(localFilePath);
-      const originalName = publicId.substring(publicId.indexOf('-') + 1); // Remove timestamp prefix
-      
-      // Set headers for download
-      res.setHeader('Content-Type', 'application/octet-stream');
-      res.setHeader('Content-Disposition', `attachment; filename="${originalName}"`);
-      res.setHeader('Content-Length', stats.size);
-      res.setHeader('Cache-Control', 'no-cache');
-      
-      // Stream the file
-      const fileStream = fs.createReadStream(localFilePath);
-      fileStream.pipe(res);
-      
-      fileStream.on('error', (error) => {
-        console.error('Error streaming local file:', error);
-        if (!res.headersSent) {
-          res.status(500).json({
-            success: false,
-            message: 'Error streaming file'
-          });
-        }
-      });
-      
-      return;
     }
-    
-    // Handle Cloudinary file download (existing logic)
-    console.log('Handling Cloudinary file download for:', publicId);
-    
-    // Try to get a signed URL first
-    let fileUrl;
-    try {
-      // Generate a signed URL for secure access
-      fileUrl = getSecureFileUrl(publicId, 'auto');
-      
-      // If signed URL generation fails, try regular URL with authentication
-      if (!fileUrl) {
-        fileUrl = cloudinary.url(publicId, {
-          secure: true,
-          resource_type: 'auto',
-          flags: 'attachment',
-          sign_url: true,
-          expires_at: Math.round(Date.now() / 1000) + 3600 // 1 hour
-        });
-      }
-    } catch (error) {
-      console.log('Signed URL generation failed, trying regular URL:', error.message);
-      // Fallback to regular URL
-      fileUrl = cloudinary.url(publicId, {
-        secure: true,
-        resource_type: 'auto',
-        flags: 'attachment'
-      });
-    }
-    
-    console.log('Generated file URL:', fileUrl);
-    
-    // Fetch the file from Cloudinary with authentication headers
-    const response = await axios({
-      method: 'GET',
-      url: fileUrl,
-      responseType: 'stream',
-      headers: {
-        'User-Agent': 'ERP-GRATO-Server'
-      },
-      timeout: 30000 // 30 second timeout
-    });
-    
-    // Set appropriate headers
-    const contentType = response.headers['content-type'] || 'application/octet-stream';
-    const downloadFilename = filename || `file_${Date.now()}.pdf`;
-    
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-    
-    // Pipe the file stream to response
-    response.data.pipe(res);
-    
-  } catch (error) {
-    console.error('File download error:', error);
-    
-    // If it's a 401 error, the file might be public but have access restrictions
-    if (error.response?.status === 401) {
-      return res.status(401).json({
+
+    if (!filePath) {
+      console.error('❌ File not found in any directory');
+      console.error('Searched paths:', possiblePaths);
+      return res.status(404).json({
         success: false,
-        message: 'File access denied. The file may be private or the access token has expired.',
+        message: 'File not found. It may have been moved or deleted.',
+        publicId: decodedPublicId
+      });
+    }
+
+    // Verify file accessibility
+    try {
+      fs.accessSync(filePath, fs.constants.R_OK);
+    } catch (accessError) {
+      console.error('❌ File exists but is not readable:', accessError.message);
+      return res.status(403).json({
+        success: false,
+        message: 'File exists but cannot be accessed'
+      });
+    }
+
+    // Get file stats
+    const stats = fs.statSync(filePath);
+    console.log(`File size: ${(stats.size / 1024).toFixed(2)} KB`);
+
+    // Determine MIME type
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes = {
+      '.pdf': 'application/pdf',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.bmp': 'image/bmp',
+      '.webp': 'image/webp',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.xls': 'application/vnd.ms-excel',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      '.txt': 'text/plain',
+      '.rtf': 'application/rtf'
+    };
+
+    const mimeType = mimeTypes[ext] || 'application/octet-stream';
+    const originalName = decodedPublicId.split('-').slice(2).join('-') || path.basename(filePath);
+
+    console.log('MIME type:', mimeType);
+    console.log('Original filename:', originalName);
+
+    // Set headers for download
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Disposition', `attachment; filename="${originalName}"`);
+    res.setHeader('Content-Length', stats.size);
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
+    // Stream the file
+    const fileStream = fs.createReadStream(filePath);
+    
+    fileStream.on('error', (error) => {
+      console.error('❌ File stream error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          success: false,
+          message: 'Error reading file'
+        });
+      }
+    });
+
+    fileStream.on('end', () => {
+      console.log('✅ File download completed successfully');
+    });
+
+    fileStream.pipe(res);
+
+  } catch (error) {
+    console.error('❌ Download file error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to download file',
         error: error.message
       });
     }
-    
-    res.status(500).json({
-      success: false,
-      message: 'Failed to download file',
-      error: error.message
-    });
   }
 };
 
-// Alternative: Get signed URL for direct access
-exports.getSignedUrl = async (req, res) => {
+/**
+ * View a file inline (for PDFs and images)
+ */
+const viewFile = async (req, res) => {
   try {
     const { publicId } = req.params;
-    const { resourceType = 'auto' } = req.query;
     
-    if (!publicId) {
+    console.log('\n=== FILE VIEW REQUEST ===');
+    console.log('Public ID:', publicId);
+    
+    const decodedPublicId = decodeURIComponent(publicId);
+
+    // Possible file locations
+    const possiblePaths = [
+      path.join(__dirname, '../uploads/attachments', decodedPublicId),
+      path.join(__dirname, '../uploads/justifications', decodedPublicId),
+      path.join(__dirname, '../uploads/reimbursements', decodedPublicId)
+    ];
+
+    let filePath = null;
+    for (const checkPath of possiblePaths) {
+      if (fs.existsSync(checkPath)) {
+        filePath = checkPath;
+        break;
+      }
+    }
+
+    if (!filePath) {
+      return res.status(404).json({
+        success: false,
+        message: 'File not found'
+      });
+    }
+
+    const ext = path.extname(filePath).toLowerCase();
+    
+    // Only allow inline viewing for safe file types
+    const inlineTypes = {
+      '.pdf': 'application/pdf',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp'
+    };
+
+    const mimeType = inlineTypes[ext];
+    if (!mimeType) {
       return res.status(400).json({
         success: false,
-        message: 'Public ID is required'
+        message: 'This file type cannot be viewed inline. Please download it instead.'
       });
     }
+
+    const stats = fs.statSync(filePath);
     
-    // Generate a signed URL that expires in 1 hour
-    let signedUrl;
-    try {
-      signedUrl = getSecureFileUrl(publicId, resourceType);
-      
-      if (!signedUrl) {
-        // Fallback to regular signed URL
-        signedUrl = cloudinary.url(publicId, {
-          resource_type: resourceType,
-          secure: true,
-          sign_url: true,
-          expires_at: Math.round(Date.now() / 1000) + 3600 
-        });
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Disposition', 'inline');
+    res.setHeader('Content-Length', stats.size);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+
+    console.log('✅ File view initiated');
+
+  } catch (error) {
+    console.error('❌ View file error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to view file',
+        error: error.message
+      });
+    }
+  }
+};
+
+/**
+ * Get file info without downloading
+ */
+const getFileInfo = async (req, res) => {
+  try {
+    const { publicId } = req.params;
+    const decodedPublicId = decodeURIComponent(publicId);
+
+    const possiblePaths = [
+      path.join(__dirname, '../uploads/attachments', decodedPublicId),
+      path.join(__dirname, '../uploads/justifications', decodedPublicId),
+      path.join(__dirname, '../uploads/reimbursements', decodedPublicId)
+    ];
+
+    let filePath = null;
+    let fileType = 'unknown';
+
+    for (const checkPath of possiblePaths) {
+      if (fs.existsSync(checkPath)) {
+        filePath = checkPath;
+        fileType = checkPath.includes('attachments') ? 'attachment' :
+                   checkPath.includes('justifications') ? 'justification' :
+                   checkPath.includes('reimbursements') ? 'reimbursement' : 'unknown';
+        break;
       }
-    } catch (error) {
-      console.log('Secure URL generation failed, using fallback:', error.message);
-      signedUrl = cloudinary.url(publicId, {
-        resource_type: resourceType,
-        secure: true,
-        sign_url: true,
-        expires_at: Math.round(Date.now() / 1000) + 3600 
+    }
+
+    if (!filePath) {
+      return res.status(404).json({
+        success: false,
+        message: 'File not found'
       });
     }
-    
+
+    const stats = fs.statSync(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+
     res.json({
       success: true,
       data: {
-        url: signedUrl,
-        expires: 3600
+        publicId: decodedPublicId,
+        name: path.basename(filePath),
+        size: stats.size,
+        type: fileType,
+        extension: ext,
+        mimeType: getMimeType(ext),
+        canViewInline: ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext),
+        createdAt: stats.birthtime,
+        modifiedAt: stats.mtime
       }
     });
-    
+
   } catch (error) {
-    console.error('Signed URL generation error:', error);
+    console.error('Get file info error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to generate signed URL',
+      message: 'Failed to get file info',
       error: error.message
     });
   }
 };
 
-// View file inline endpoint
-exports.viewFile = async (req, res) => {
-  try {
-    const { publicId } = req.params;
-    
-    if (!publicId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Public ID is required'
-      });
-    }
-    
-    console.log('View request for publicId:', publicId);
-    
-    // Check if this is a local file (has file extension and looks like a local filename)
-    const isLocalFile = publicId.includes('-') && /\.(pdf|doc|docx|txt|jpg|jpeg|png|gif)$/i.test(publicId);
-    
-    if (isLocalFile) {
-      console.log('Handling local file view for:', publicId);
-      
-      // Handle local file viewing
-      const localFilePath = path.join(__dirname, '../uploads/attachments', publicId);
-      
-      // Check if file exists
-      if (!fs.existsSync(localFilePath)) {
-        console.error('Local file not found:', localFilePath);
-        return res.status(404).json({
-          success: false,
-          message: 'File not found'
-        });
-      }
-      
-      // Get file stats
-      const stats = fs.statSync(localFilePath);
-      const originalName = publicId.substring(publicId.indexOf('-') + 1); // Remove timestamp prefix
-      
-      // Determine content type based on file extension
-      const ext = path.extname(publicId).toLowerCase();
-      let contentType = 'application/octet-stream';
-      
-      switch (ext) {
-        case '.pdf':
-          contentType = 'application/pdf';
-          break;
-        case '.jpg':
-        case '.jpeg':
-          contentType = 'image/jpeg';
-          break;
-        case '.png':
-          contentType = 'image/png';
-          break;
-        case '.gif':
-          contentType = 'image/gif';
-          break;
-        case '.txt':
-          contentType = 'text/plain';
-          break;
-        case '.doc':
-          contentType = 'application/msword';
-          break;
-        case '.docx':
-          contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-          break;
-      }
-      
-      // Set headers for inline viewing
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Disposition', `inline; filename="${originalName}"`);
-      res.setHeader('Content-Length', stats.size);
-      res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
-      
-      // Stream the file
-      const fileStream = fs.createReadStream(localFilePath);
-      fileStream.pipe(res);
-      
-    } else {
-      // Handle Cloudinary files
-      try {
-        const downloadUrl = await generateDownloadUrl(publicId);
-        
-        if (!downloadUrl) {
-          throw new Error('Failed to generate download URL');
-        }
-        
-        // Fetch the file from Cloudinary
-        const response = await axios({
-          method: 'GET',
-          url: downloadUrl,
-          responseType: 'stream'
-        });
-        
-        // Set headers for inline viewing
-        res.setHeader('Content-Type', response.headers['content-type'] || 'application/octet-stream');
-        res.setHeader('Content-Disposition', `inline; filename="${publicId}"`);
-        res.setHeader('Content-Length', response.headers['content-length']);
-        res.setHeader('Cache-Control', 'public, max-age=3600');
-        
-        // Pipe the response directly to client
-        response.data.pipe(res);
-        
-      } catch (cloudinaryError) {
-        console.error('Cloudinary view error:', cloudinaryError);
-        return res.status(404).json({
-          success: false,
-          message: 'File not found in Cloudinary'
-        });
-      }
-    }
-    
-  } catch (error) {
-    console.error('File view error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to view file',
-      error: error.message
-    });
-  }
+function getMimeType(ext) {
+  const mimeTypes = {
+    '.pdf': 'application/pdf',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.bmp': 'image/bmp',
+    '.webp': 'image/webp',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.txt': 'text/plain',
+    '.rtf': 'application/rtf'
+  };
+  return mimeTypes[ext] || 'application/octet-stream';
+}
+
+module.exports = {
+  downloadFile,
+  viewFile,
+  getFileInfo
 };
+
+
+
+
+
+
+
+
+
+
+// const { cloudinary, getSecureFileUrl, generateDownloadUrl } = require('../config/cloudinary');
+// const axios = require('axios');
+// const path = require('path');
+// const fs = require('fs');
+
+// // Secure file download endpoint
+// exports.downloadFile = async (req, res) => {
+//   try {
+//     const { publicId } = req.params;
+//     const { type, filename } = req.query;
+    
+//     if (!publicId) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Public ID is required'
+//       });
+//     }
+    
+//     console.log('Download request for publicId:', publicId);
+    
+//     // Check if this is a local file (has file extension and looks like a local filename)
+//     const isLocalFile = publicId.includes('-') && /\.(pdf|doc|docx|txt|jpg|jpeg|png|gif)$/i.test(publicId);
+    
+//     if (isLocalFile) {
+//       console.log('Handling local file download for:', publicId);
+      
+//       // Handle local file download
+//       const localFilePath = path.join(__dirname, '../uploads/attachments', publicId);
+      
+//       // Check if file exists
+//       if (!fs.existsSync(localFilePath)) {
+//         console.error('Local file not found:', localFilePath);
+//         return res.status(404).json({
+//           success: false,
+//           message: 'File not found'
+//         });
+//       }
+      
+//       // Get file stats
+//       const stats = fs.statSync(localFilePath);
+//       const originalName = publicId.substring(publicId.indexOf('-') + 1); // Remove timestamp prefix
+      
+//       // Set headers for download
+//       res.setHeader('Content-Type', 'application/octet-stream');
+//       res.setHeader('Content-Disposition', `attachment; filename="${originalName}"`);
+//       res.setHeader('Content-Length', stats.size);
+//       res.setHeader('Cache-Control', 'no-cache');
+      
+//       // Stream the file
+//       const fileStream = fs.createReadStream(localFilePath);
+//       fileStream.pipe(res);
+      
+//       fileStream.on('error', (error) => {
+//         console.error('Error streaming local file:', error);
+//         if (!res.headersSent) {
+//           res.status(500).json({
+//             success: false,
+//             message: 'Error streaming file'
+//           });
+//         }
+//       });
+      
+//       return;
+//     }
+    
+//     // Handle Cloudinary file download (existing logic)
+//     console.log('Handling Cloudinary file download for:', publicId);
+    
+//     // Try to get a signed URL first
+//     let fileUrl;
+//     try {
+//       // Generate a signed URL for secure access
+//       fileUrl = getSecureFileUrl(publicId, 'auto');
+      
+//       // If signed URL generation fails, try regular URL with authentication
+//       if (!fileUrl) {
+//         fileUrl = cloudinary.url(publicId, {
+//           secure: true,
+//           resource_type: 'auto',
+//           flags: 'attachment',
+//           sign_url: true,
+//           expires_at: Math.round(Date.now() / 1000) + 3600 // 1 hour
+//         });
+//       }
+//     } catch (error) {
+//       console.log('Signed URL generation failed, trying regular URL:', error.message);
+//       // Fallback to regular URL
+//       fileUrl = cloudinary.url(publicId, {
+//         secure: true,
+//         resource_type: 'auto',
+//         flags: 'attachment'
+//       });
+//     }
+    
+//     console.log('Generated file URL:', fileUrl);
+    
+//     // Fetch the file from Cloudinary with authentication headers
+//     const response = await axios({
+//       method: 'GET',
+//       url: fileUrl,
+//       responseType: 'stream',
+//       headers: {
+//         'User-Agent': 'ERP-GRATO-Server'
+//       },
+//       timeout: 30000 // 30 second timeout
+//     });
+    
+//     // Set appropriate headers
+//     const contentType = response.headers['content-type'] || 'application/octet-stream';
+//     const downloadFilename = filename || `file_${Date.now()}.pdf`;
+    
+//     res.setHeader('Content-Type', contentType);
+//     res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
+//     res.setHeader('Cache-Control', 'no-cache');
+//     res.setHeader('Access-Control-Allow-Origin', '*');
+//     res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    
+//     // Pipe the file stream to response
+//     response.data.pipe(res);
+    
+//   } catch (error) {
+//     console.error('File download error:', error);
+    
+//     // If it's a 401 error, the file might be public but have access restrictions
+//     if (error.response?.status === 401) {
+//       return res.status(401).json({
+//         success: false,
+//         message: 'File access denied. The file may be private or the access token has expired.',
+//         error: error.message
+//       });
+//     }
+    
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to download file',
+//       error: error.message
+//     });
+//   }
+// };
+
+// // Alternative: Get signed URL for direct access
+// exports.getSignedUrl = async (req, res) => {
+//   try {
+//     const { publicId } = req.params;
+//     const { resourceType = 'auto' } = req.query;
+    
+//     if (!publicId) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Public ID is required'
+//       });
+//     }
+    
+//     // Generate a signed URL that expires in 1 hour
+//     let signedUrl;
+//     try {
+//       signedUrl = getSecureFileUrl(publicId, resourceType);
+      
+//       if (!signedUrl) {
+//         // Fallback to regular signed URL
+//         signedUrl = cloudinary.url(publicId, {
+//           resource_type: resourceType,
+//           secure: true,
+//           sign_url: true,
+//           expires_at: Math.round(Date.now() / 1000) + 3600 
+//         });
+//       }
+//     } catch (error) {
+//       console.log('Secure URL generation failed, using fallback:', error.message);
+//       signedUrl = cloudinary.url(publicId, {
+//         resource_type: resourceType,
+//         secure: true,
+//         sign_url: true,
+//         expires_at: Math.round(Date.now() / 1000) + 3600 
+//       });
+//     }
+    
+//     res.json({
+//       success: true,
+//       data: {
+//         url: signedUrl,
+//         expires: 3600
+//       }
+//     });
+    
+//   } catch (error) {
+//     console.error('Signed URL generation error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to generate signed URL',
+//       error: error.message
+//     });
+//   }
+// };
+
+// // View file inline endpoint
+// exports.viewFile = async (req, res) => {
+//   try {
+//     const { publicId } = req.params;
+    
+//     if (!publicId) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Public ID is required'
+//       });
+//     }
+    
+//     console.log('View request for publicId:', publicId);
+    
+//     // Check if this is a local file (has file extension and looks like a local filename)
+//     const isLocalFile = publicId.includes('-') && /\.(pdf|doc|docx|txt|jpg|jpeg|png|gif)$/i.test(publicId);
+    
+//     if (isLocalFile) {
+//       console.log('Handling local file view for:', publicId);
+      
+//       // Handle local file viewing
+//       const localFilePath = path.join(__dirname, '../uploads/attachments', publicId);
+      
+//       // Check if file exists
+//       if (!fs.existsSync(localFilePath)) {
+//         console.error('Local file not found:', localFilePath);
+//         return res.status(404).json({
+//           success: false,
+//           message: 'File not found'
+//         });
+//       }
+      
+//       // Get file stats
+//       const stats = fs.statSync(localFilePath);
+//       const originalName = publicId.substring(publicId.indexOf('-') + 1); // Remove timestamp prefix
+      
+//       // Determine content type based on file extension
+//       const ext = path.extname(publicId).toLowerCase();
+//       let contentType = 'application/octet-stream';
+      
+//       switch (ext) {
+//         case '.pdf':
+//           contentType = 'application/pdf';
+//           break;
+//         case '.jpg':
+//         case '.jpeg':
+//           contentType = 'image/jpeg';
+//           break;
+//         case '.png':
+//           contentType = 'image/png';
+//           break;
+//         case '.gif':
+//           contentType = 'image/gif';
+//           break;
+//         case '.txt':
+//           contentType = 'text/plain';
+//           break;
+//         case '.doc':
+//           contentType = 'application/msword';
+//           break;
+//         case '.docx':
+//           contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+//           break;
+//       }
+      
+//       // Set headers for inline viewing
+//       res.setHeader('Content-Type', contentType);
+//       res.setHeader('Content-Disposition', `inline; filename="${originalName}"`);
+//       res.setHeader('Content-Length', stats.size);
+//       res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+      
+//       // Stream the file
+//       const fileStream = fs.createReadStream(localFilePath);
+//       fileStream.pipe(res);
+      
+//     } else {
+//       // Handle Cloudinary files
+//       try {
+//         const downloadUrl = await generateDownloadUrl(publicId);
+        
+//         if (!downloadUrl) {
+//           throw new Error('Failed to generate download URL');
+//         }
+        
+//         // Fetch the file from Cloudinary
+//         const response = await axios({
+//           method: 'GET',
+//           url: downloadUrl,
+//           responseType: 'stream'
+//         });
+        
+//         // Set headers for inline viewing
+//         res.setHeader('Content-Type', response.headers['content-type'] || 'application/octet-stream');
+//         res.setHeader('Content-Disposition', `inline; filename="${publicId}"`);
+//         res.setHeader('Content-Length', response.headers['content-length']);
+//         res.setHeader('Cache-Control', 'public, max-age=3600');
+        
+//         // Pipe the response directly to client
+//         response.data.pipe(res);
+        
+//       } catch (cloudinaryError) {
+//         console.error('Cloudinary view error:', cloudinaryError);
+//         return res.status(404).json({
+//           success: false,
+//           message: 'File not found in Cloudinary'
+//         });
+//       }
+//     }
+    
+//   } catch (error) {
+//     console.error('File view error:', error);
+//     return res.status(500).json({
+//       success: false,
+//       message: 'Failed to view file',
+//       error: error.message
+//     });
+//   }
+// };

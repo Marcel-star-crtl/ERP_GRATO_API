@@ -160,13 +160,13 @@ app.use((req, res, next) => {
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec.specs));
 app.use('/api/auth', authRoutes);
-app.use('/api/pettycash', pettyCashRoutes); 
+app.use('/api/petty-cash', pettyCashRoutes); 
 app.use('/api/cash-requests', cashRequestRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/suppliers', supplierRoutes);
 app.use('/api/purchase-requisitions', purchaseRequisitionRoutes);
 app.use('/api/incident-reports', incidentReportRoutes);
-app.use('/api/files', require('./routes/files')); 
+app.use('/api/files', require('./routes/fileRoutes')); 
 app.use('/api/items', require('./routes/itemsRoutes'));
 app.use('/api/budget-codes', budgetCodeRoutes);
 app.use('/api/buyer', buyerRoutes);

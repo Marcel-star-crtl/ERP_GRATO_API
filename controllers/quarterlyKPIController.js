@@ -26,7 +26,7 @@ const getQuarterDateRange = (quarter) => {
   return { startDate, endDate };
 };
 
-// Create or update quarterly KPIs
+// Create or update quarterly KPIs - FIXED VERSION
 const createOrUpdateKPIs = async (req, res) => {
   try {
     const { quarter, kpis } = req.body;
@@ -87,14 +87,44 @@ const createOrUpdateKPIs = async (req, res) => {
       });
     }
 
-    // Get supervisor
-    const supervisor = getTaskSupervisor(user.fullName, user.department);
-    if (!supervisor) {
+    // ✅ FIX: Get supervisor using EMAIL (not name)
+    const supervisorData = getTaskSupervisor(user.email, user.department);
+    
+    if (!supervisorData) {
+      console.error('❌ Unable to determine supervisor for:', user.email);
       return res.status(400).json({
         success: false,
         message: 'Unable to determine your supervisor. Please contact HR.'
       });
     }
+
+    console.log('✓ Supervisor data received:', supervisorData);
+
+    // ✅ Validate supervisor data structure
+    if (!supervisorData.name || typeof supervisorData.name !== 'string') {
+      console.error('❌ Invalid supervisor name:', supervisorData.name);
+      return res.status(500).json({
+        success: false,
+        message: 'System error: Invalid supervisor name configuration. Please contact HR.'
+      });
+    }
+
+    if (!supervisorData.email || typeof supervisorData.email !== 'string') {
+      console.error('❌ Invalid supervisor email:', supervisorData.email);
+      return res.status(500).json({
+        success: false,
+        message: 'System error: Invalid supervisor email configuration. Please contact HR.'
+      });
+    }
+
+    // ✅ Use the supervisor data directly (it's already properly formatted)
+    const supervisorInfo = {
+      name: supervisorData.name,
+      email: supervisorData.email,
+      department: supervisorData.department || user.department
+    };
+
+    console.log('✓ Final supervisor info:', supervisorInfo);
 
     const [, year] = quarter.split('-');
 
@@ -130,6 +160,7 @@ const createOrUpdateKPIs = async (req, res) => {
       }));
       quarterlyKPI.approvalStatus = 'draft';
       quarterlyKPI.rejectionReason = undefined;
+      quarterlyKPI.supervisor = supervisorInfo;
 
       console.log('Updating existing KPIs');
     } else {
@@ -146,17 +177,14 @@ const createOrUpdateKPIs = async (req, res) => {
           measurableOutcome: kpi.measurableOutcome,
           status: 'pending'
         })),
-        supervisor: {
-          name: supervisor.name,
-          email: supervisor.email,
-          department: supervisor.department
-        }
+        supervisor: supervisorInfo
       });
 
       console.log('Creating new KPIs');
     }
 
     await quarterlyKPI.save();
+    console.log('✅ KPIs saved successfully');
 
     res.status(200).json({
       success: true,
@@ -166,6 +194,12 @@ const createOrUpdateKPIs = async (req, res) => {
 
   } catch (error) {
     console.error('Create/Update KPIs error:', error);
+    console.error('Error details:', {
+      name: error.name,
+      message: error.message,
+      errors: error.errors
+    });
+    
     res.status(500).json({
       success: false,
       message: 'Failed to save KPIs',
@@ -280,7 +314,7 @@ const processKPIApproval = async (req, res) => {
     }
 
     // Define authorized roles that can approve any KPI
-    const authorizedRoles = ['admin', 'supply_chain', 'hr', 'it', 'hse'];
+    const authorizedRoles = ['admin', 'supply_chain', 'supervisor', 'manager', 'hr', 'it', 'hse', 'technical'];
 
     // Check permission: either assigned supervisor OR authorized role
     const isAssignedSupervisor = quarterlyKPI.supervisor.email === user.email;
@@ -413,7 +447,7 @@ const getPendingKPIApprovals = async (req, res) => {
     let filter = { approvalStatus: 'pending' };
 
     // Define authorized roles that can view pending approvals
-    const authorizedRoles = ['admin', 'supply_chain', 'hr', 'hse', 'it'];
+    const authorizedRoles = ['admin', 'supply_chain', 'supervisor', 'manager', 'hr', 'it', 'hse', 'technical'];
 
     if (user.role === 'supervisor') {
       // Supervisors can only see KPIs assigned to them
@@ -542,97 +576,6 @@ const deleteKPIs = async (req, res) => {
 };
 
 
-// // Get approved KPIs for task linking (support fetching for other users)
-// const getApprovedKPIsForTaskLinking = async (req, res) => {
-//   try {
-//     const currentUserId = req.user.userId;
-//     const { quarter, userId } = req.query; // Accept userId as query param
-
-//     console.log('=== FETCH APPROVED KPIs FOR LINKING ===');
-//     console.log('Current User:', currentUserId);
-//     console.log('Target User:', userId);
-//     console.log('Quarter:', quarter);
-
-//     // Determine whose KPIs to fetch
-//     let targetUserId = userId || currentUserId;
-
-//     // If fetching for another user, verify the target user exists
-//     if (userId && userId !== currentUserId) {
-//       const currentUser = await User.findById(currentUserId);
-//       const targetUser = await User.findById(userId);
-
-//       if (!currentUser) {
-//         return res.status(404).json({
-//           success: false,
-//           message: 'Current user not found'
-//         });
-//       }
-
-//       if (!targetUser) {
-//         return res.status(404).json({
-//           success: false,
-//           message: 'Target user not found'
-//         });
-//       }
-
-//       // Allow supervisors, managers, and authorized roles to fetch KPIs for anyone
-//       const authorizedRoles = ['admin', 'supply_chain', 'supervisor', 'manager', 'hr', 'it', 'hse'];
-      
-//       if (!authorizedRoles.includes(currentUser.role)) {
-//         return res.status(403).json({
-//           success: false,
-//           message: 'Access denied: You do not have permission to view other users\' KPIs'
-//         });
-//       }
-
-//       console.log(`✅ ${currentUser.role} accessing KPIs for ${targetUser.fullName}`);
-//     }
-
-//     const filter = {
-//       employee: targetUserId,
-//       approvalStatus: 'approved'
-//     };
-
-//     if (quarter) {
-//       filter.quarter = quarter;
-//     } else {
-//       // Get current quarter by default
-//       filter.quarter = getCurrentQuarter();
-//     }
-
-//     console.log('Filter:', filter);
-
-//     const kpis = await QuarterlyKPI.findOne(filter)
-//       .select('quarter kpis totalWeight employee')
-//       .populate('employee', 'fullName email department');
-
-//     if (!kpis) {
-//       console.log('⚠️ No approved KPIs found');
-//       return res.json({
-//         success: true,
-//         data: null,
-//         message: 'No approved KPIs found for this quarter'
-//       });
-//     }
-
-//     console.log(`✅ Found ${kpis.kpis.length} approved KPIs for quarter ${kpis.quarter}`);
-
-//     res.json({
-//       success: true,
-//       data: kpis
-//     });
-
-//   } catch (error) {
-//     console.error('Get approved KPIs error:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to fetch approved KPIs',
-//       error: error.message
-//     });
-//   }
-// };
-
-
 
 const getApprovedKPIsForTaskLinking = async (req, res) => {
   try {
@@ -676,7 +619,7 @@ const getApprovedKPIsForTaskLinking = async (req, res) => {
       }
 
       // Allow supervisors, managers, and authorized roles to fetch KPIs for anyone
-      const authorizedRoles = ['admin', 'supply_chain', 'supervisor', 'manager', 'hr', 'it', 'hse'];
+      const authorizedRoles = ['admin', 'supply_chain', 'supervisor', 'manager', 'hr', 'it', 'hse', 'technical'];
       
       if (!authorizedRoles.includes(currentUser.role)) {
         return res.status(403).json({

@@ -486,13 +486,75 @@ router.use((error, req, res, next) => {
 });
 
 // Reimbursement routes
+// router.post(
+//   '/reimbursement',
+//   authMiddleware,
+//   requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+//   upload.array('receiptDocuments', 10),
+//   handleMulterError,
+//   validateFiles,
+//   cashRequestController.createReimbursementRequest,
+//   cleanupTempFiles
+// );
+
+// Create reimbursement request - CRITICAL: Accept multiple possible field names
 router.post(
   '/reimbursement',
   authMiddleware,
   requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
-  upload.array('receiptDocuments', 10),
+  (req, res, next) => {
+    console.log('\n=== REIMBURSEMENT REQUEST UPLOAD INITIATED ===');
+    console.log('User:', req.user?.userId);
+    console.log('Content-Type:', req.headers['content-type']);
+    console.log('Raw body keys:', Object.keys(req.body));
+    console.log('Has files object:', !!req.files);
+    next();
+  },
+  // FIXED: Accept files from multiple possible field names
+  upload.fields([
+    { name: 'receiptDocuments', maxCount: 10 },
+    { name: 'attachments', maxCount: 10 },
+    { name: 'documents', maxCount: 10 }
+  ]),
+  // Normalize file fields into a single array
+  (req, res, next) => {
+    if (req.files) {
+      const allFiles = [];
+      
+      // Collect files from all possible fields
+      if (req.files.receiptDocuments) {
+        console.log(`Found ${req.files.receiptDocuments.length} files in 'receiptDocuments'`);
+        allFiles.push(...req.files.receiptDocuments);
+      }
+      if (req.files.attachments) {
+        console.log(`Found ${req.files.attachments.length} files in 'attachments'`);
+        allFiles.push(...req.files.attachments);
+      }
+      if (req.files.documents) {
+        console.log(`Found ${req.files.documents.length} files in 'documents'`);
+        allFiles.push(...req.files.documents);
+      }
+      
+      // Convert to simple array for downstream processing
+      req.files = allFiles;
+      console.log(`Normalized ${allFiles.length} total files for reimbursement`);
+    } else {
+      console.log('⚠️ No files detected in request');
+    }
+    next();
+  },
   handleMulterError,
   validateFiles,
+  (req, res, next) => {
+    console.log('Files after validation:', req.files?.length || 0);
+    if (req.files && req.files.length > 0) {
+      console.log('Receipt documents:');
+      req.files.forEach(file => {
+        console.log(`  - ${file.originalname} (${file.size} bytes)`);
+      });
+    }
+    next();
+  },
   cashRequestController.createReimbursementRequest,
   cleanupTempFiles
 );
@@ -504,7 +566,6 @@ router.get(
   cashRequestController.getReimbursementLimitStatus
 );
 
-// Finance reports route
 router.get(
   '/reports/analytics',
   authMiddleware,
@@ -513,6 +574,10 @@ router.get(
 );
 
 module.exports = router;
+
+
+
+
 
 
 

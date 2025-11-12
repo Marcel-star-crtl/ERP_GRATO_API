@@ -5,7 +5,7 @@ const {
   getPotentialSupervisors,
   getApprovalChainFromStructure,
   ENHANCED_DEPARTMENT_STRUCTURE
-} = require('../config/enhancedDepartmentStructure');
+} = require('../config/departmentStructure');
 
 /**
  * Get all available positions for user creation

@@ -1,4 +1,4 @@
-const { getApprovalChainFromStructure } = require('./enhancedDepartmentStructure');
+const { getApprovalChainFromStructure } = require('./departmentStructure');
 
 /**
  * Get cash request approval chain using enhanced structure

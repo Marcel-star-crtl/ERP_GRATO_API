@@ -1,128 +1,69 @@
-const { DEPARTMENT_STRUCTURE } = require('./departmentStructure');
+
+const { findPersonByEmail, DEPARTMENT_STRUCTURE } = require('./departmentStructure');
 
 /**
- * Get immediate supervisor for action item approval
- * Returns only the direct supervisor who needs to approve the task
+ * Get immediate supervisor for an employee by EMAIL
+ * @param {string} employeeEmail - Employee's email address
+ * @param {string} department - Employee's department
+ * @returns {Object|null} Supervisor details or null
  */
-const getTaskSupervisor = (employeeName, department) => {
-  console.log(`\n=== FINDING IMMEDIATE SUPERVISOR ===`);
-  console.log(`Employee: ${employeeName}`);
-  console.log(`Department: ${department}`);
+const getTaskSupervisor = (employeeEmail, department) => {
+  console.log('=== FINDING IMMEDIATE SUPERVISOR ===');
+  console.log('Employee:', employeeEmail);
+  console.log('Department:', department);
 
-  // Find employee in department structure
-  let employeeData = null;
-  let employeeDepartmentName = department;
-
-  // Check if employee is department head
-  if (DEPARTMENT_STRUCTURE[department] && DEPARTMENT_STRUCTURE[department].head === employeeName) {
-    // Department heads are supervised by President
-    const executive = DEPARTMENT_STRUCTURE['Executive'];
-    if (executive) {
-      console.log(`✓ Employee is Department Head - Immediate Supervisor: ${executive.head}`);
+  // Find employee in department structure using EMAIL
+  const employee = findPersonByEmail(employeeEmail);
+  
+  if (!employee) {
+    console.log(`⚠ Employee "${employeeEmail}" not found in department structure`);
+    
+    // Fallback: Use department head as supervisor
+    const dept = DEPARTMENT_STRUCTURE[department];
+    if (dept && dept.head) {
+      console.log('Using department head as default supervisor:', dept.head.name);
+      
+      // ✅ FIX: Return properly structured object with individual string fields
       return {
-        name: executive.head,
-        email: executive.headEmail,
-        department: 'Executive'
+        name: String(dept.head.name).trim(),
+        email: String(dept.head.email).trim().toLowerCase(),
+        position: String(dept.head.position || 'Department Head').trim(),
+        department: String(department).trim(),
+        hierarchyLevel: dept.head.hierarchyLevel || 4
       };
     }
+    
+    console.error('❌ Department head not found for:', department);
     return null;
   }
 
-  // Search for employee in all departments
-  for (const [deptKey, deptData] of Object.entries(DEPARTMENT_STRUCTURE)) {
-    if (deptData.head === employeeName) {
-      // This person is a department head
-      const executive = DEPARTMENT_STRUCTURE['Executive'];
-      if (executive) {
-        console.log(`✓ Employee is Department Head of ${deptKey} - Immediate Supervisor: ${executive.head}`);
-        return {
-          name: executive.head,
-          email: executive.headEmail,
-          department: 'Executive'
-        };
-      }
-      return null;
-    }
+  console.log(`✓ Employee found: ${employee.name} (${employee.position || 'Staff'})`);
 
-    if (deptData.positions) {
-      for (const [pos, data] of Object.entries(deptData.positions)) {
-        if (data.name === employeeName) {
-          employeeData = { ...data, position: pos };
-          employeeDepartmentName = deptKey;
-          console.log(`✓ Found employee: ${pos} in ${deptKey}`);
-          break;
-        }
-      }
-    }
-    if (employeeData) break;
-  }
-
-  if (!employeeData) {
-    console.warn(`⚠ Employee "${employeeName}" not found in department structure`);
-    // Default to department head as immediate supervisor
-    if (DEPARTMENT_STRUCTURE[department]) {
-      console.log(`Using department head as default supervisor: ${DEPARTMENT_STRUCTURE[department].head}`);
-      return {
-        name: DEPARTMENT_STRUCTURE[department].head,
-        email: DEPARTMENT_STRUCTURE[department].headEmail,
-        department: department
-      };
-    }
+  // Find the employee's immediate supervisor
+  if (!employee.reportsTo) {
+    console.log('⚠ Employee has no reportsTo field - likely a department head');
     return null;
   }
 
-  // Find immediate supervisor
-  if (!employeeData.supervisor) {
-    console.warn(`⚠ No supervisor defined for ${employeeName}`);
-    // Default to department head
-    const dept = DEPARTMENT_STRUCTURE[employeeDepartmentName];
-    if (dept) {
-      console.log(`Using department head as default: ${dept.head}`);
-      return {
-        name: dept.head,
-        email: dept.headEmail,
-        department: employeeDepartmentName
-      };
-    }
+  const supervisor = findPersonByEmail(employee.reportsTo);
+  
+  if (!supervisor) {
+    console.error(`❌ Supervisor not found for email: ${employee.reportsTo}`);
     return null;
   }
 
-  const dept = DEPARTMENT_STRUCTURE[employeeDepartmentName];
-  if (!dept) return null;
+  console.log(`✓ Immediate supervisor: ${supervisor.name} (${supervisor.position || supervisor.department + ' Head'})`);
 
-  // Check in positions first
-  if (dept.positions) {
-    for (const [pos, data] of Object.entries(dept.positions)) {
-      if (pos === employeeData.supervisor || data.name === employeeData.supervisor) {
-        console.log(`✓ Immediate Supervisor: ${data.name} (${pos})`);
-        return {
-          name: data.name,
-          email: data.email,
-          department: employeeDepartmentName
-        };
-      }
-    }
-  }
-
-  // Check if supervisor is department head
-  if (dept.head === employeeData.supervisor || employeeData.supervisor.includes('Head')) {
-    console.log(`✓ Immediate Supervisor: ${dept.head} (Department Head)`);
-    return {
-      name: dept.head,
-      email: dept.headEmail,
-      department: employeeDepartmentName
-    };
-  }
-
-  console.warn(`⚠ Supervisor "${employeeData.supervisor}" not found`);
-  // Fallback to department head
-  console.log(`Falling back to department head: ${dept.head}`);
+  // ✅ FIX: Return properly structured object with individual string fields
   return {
-    name: dept.head,
-    email: dept.headEmail,
-    department: employeeDepartmentName
+    name: String(supervisor.name).trim(),
+    email: String(supervisor.email).trim().toLowerCase(),
+    position: String(supervisor.position || supervisor.department + ' Head').trim(),
+    department: String(supervisor.department).trim(),
+    hierarchyLevel: supervisor.hierarchyLevel || 3
   };
 };
+
 
 module.exports = {
   getTaskSupervisor

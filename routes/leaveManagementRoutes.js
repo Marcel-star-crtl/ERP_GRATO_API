@@ -32,13 +32,13 @@ router.post('/preview-approval-chain',
 
 router.get('/supervisor', 
   authMiddleware, 
-  requireRoles('supervisor', 'admin'), 
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'), 
   leaveController.getSupervisorLeaves
 );
 
 router.get('/supervisor/:leaveId', 
   authMiddleware, 
-  requireRoles('supervisor', 'admin'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
   leaveController.getEmployeeLeave
 );
 
@@ -68,7 +68,7 @@ router.get('/admin/:leaveId',
 
 router.put('/:leaveId/supervisor', 
   authMiddleware, 
-  requireRoles('supervisor', 'admin'), 
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'), 
   leaveController.processSupervisorDecision
 );
 
@@ -100,7 +100,7 @@ router.get('/dashboard/stats',
 
 router.get('/analytics/general',
   authMiddleware,
-  requireRoles('admin', 'hr', 'supervisor'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
   leaveController.getLeaveAnalytics
 );
 
@@ -118,7 +118,7 @@ router.get('/hr/analytics',
 
 router.get('/statistics',
   authMiddleware,
-  requireRoles('admin', 'hr', 'supervisor'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
   leaveController.getLeaveStats
 );
 
@@ -153,11 +153,8 @@ router.get('/info/types',
         types: [
           { value: 'sick_leave', label: 'Sick Leave', description: 'General illness requiring time off work', requiresCertificate: true },
           { value: 'medical_appointment', label: 'Medical Appointment', description: 'Scheduled medical consultation', requiresCertificate: false },
-          { value: 'emergency_medical', label: 'Emergency Medical Leave', description: 'Urgent medical situation', requiresCertificate: true },
-          { value: 'mental_health', label: 'Mental Health Leave', description: 'Mental health and wellness support', requiresCertificate: true },
           { value: 'medical_procedure', label: 'Medical Procedure', description: 'Scheduled medical procedure or surgery', requiresCertificate: true },
           { value: 'recovery_leave', label: 'Recovery Leave', description: 'Post-surgery or treatment recovery', requiresCertificate: true },
-          { value: 'chronic_condition', label: 'Chronic Condition Management', description: 'Managing chronic health conditions', requiresCertificate: true }
         ]
       },
       vacation: {
@@ -166,38 +163,13 @@ router.get('/info/types',
           { value: 'annual_leave', label: 'Annual Leave', description: 'Regular vacation time', requiresCertificate: false }
         ]
       },
-      personal: {
-        category: 'Personal Leave',
-        types: [
-          { value: 'personal_time_off', label: 'Personal Time Off', description: 'Personal matters and appointments', requiresCertificate: false },
-          { value: 'floating_holiday', label: 'Floating Holiday', description: 'Personal holiday selection', requiresCertificate: false },
-          { value: 'birthday_leave', label: 'Birthday Leave', description: 'Birthday celebration leave', requiresCertificate: false },
-          { value: 'wellness_day', label: 'Wellness Day', description: 'Personal wellness and self-care', requiresCertificate: false },
-          { value: 'jury_duty', label: 'Jury Duty', description: 'Court-mandated jury service', requiresCertificate: false },
-          { value: 'military_leave', label: 'Military Leave', description: 'Military service obligations', requiresCertificate: false },
-          { value: 'volunteer_leave', label: 'Volunteer Leave', description: 'Approved volunteer activities', requiresCertificate: false }
-        ]
-      },
       family: {
         category: 'Family Leave',
         types: [
           { value: 'family_care', label: 'Family Care Leave', description: 'Caring for sick family member', requiresCertificate: false },
           { value: 'child_sick_care', label: 'Child Sick Care', description: 'Caring for sick child', requiresCertificate: false },
           { value: 'elder_care', label: 'Elder Care Leave', description: 'Caring for elderly family members', requiresCertificate: false },
-          { value: 'parental_leave', label: 'Parental Leave', description: 'General parental responsibilities', requiresCertificate: false },
-          { value: 'adoption_leave', label: 'Adoption Leave', description: 'Leave for adoption process', requiresCertificate: false }
-        ]
-      },
-      maternity: {
-        category: 'Maternity Leave',
-        types: [
-          { value: 'maternity_leave', label: 'Maternity Leave', description: 'Pregnancy-related medical leave', requiresCertificate: true }
-        ]
-      },
-      paternity: {
-        category: 'Paternity Leave',
-        types: [
-          { value: 'paternity_leave', label: 'Paternity Leave', description: 'Leave for new fathers', requiresCertificate: false }
+          { value: 'parental_leave', label: 'Parental Leave', description: 'General parental responsibilities', requiresCertificate: false }
         ]
       },
       emergency: {
@@ -222,24 +194,6 @@ router.get('/info/types',
           { value: 'conference_leave', label: 'Conference Leave', description: 'Professional conferences and seminars', requiresCertificate: false },
           { value: 'examination_leave', label: 'Examination Leave', description: 'Taking professional or academic exams', requiresCertificate: false }
         ]
-      },
-      sabbatical: {
-        category: 'Sabbatical Leave',
-        types: [
-          { value: 'sabbatical_leave', label: 'Sabbatical Leave', description: 'Extended leave for personal/professional development', requiresCertificate: false }
-        ]
-      },
-      compensatory: {
-        category: 'Compensatory Time',
-        types: [
-          { value: 'compensatory_time', label: 'Compensatory Time', description: 'Time off in lieu of overtime payment', requiresCertificate: false }
-        ]
-      },
-      unpaid: {
-        category: 'Unpaid Leave',
-        types: [
-          { value: 'unpaid_personal_leave', label: 'Unpaid Personal Leave', description: 'Extended unpaid time off for personal reasons', requiresCertificate: false }
-        ]
       }
     };
 
@@ -258,7 +212,6 @@ router.get('/info/policies',
       balances: {
         vacation: { annual: 21, description: 'Annual vacation days' },
         medical: { annual: 10, description: 'Sick leave days per year' },
-        personal: { annual: 5, description: 'Personal time off days' },
         emergency: { annual: 3, description: 'Emergency leave days' },
         family: { annual: 12, description: 'Family care leave days' },
         bereavement: { annual: 5, description: 'Bereavement leave days' },
@@ -354,7 +307,7 @@ router.get('/wellness/employee/:employeeId',
 // Department wellness overview
 router.get('/wellness/department/:department',
   authMiddleware,
-  requireRoles('hr', 'admin', 'supervisor'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
   async (req, res) => {
     try {
       const { department } = req.params;
@@ -430,4 +383,49 @@ module.exports = router;
 
 
 
+
+
+
+
+
+
+
+// const express = require('express');
+// const router = express.Router();
+// const leaveController = require('../controllers/leaveManagementController');
+// const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware');
+// const upload = require('../middlewares/uploadMiddleware');
+
+// // Employee routes
+// router.get('/employee/leaves', authMiddleware, requireRoles('employee', 'supervisor', 'admin', 'hr'), leaveController.getEmployeeLeaves);
+// router.get('/employee/balance', authMiddleware, requireRoles('employee', 'supervisor', 'admin', 'hr'), leaveController.getEmployeeLeaveBalance);
+// router.get('/employee/leave/:leaveId', authMiddleware, requireRoles('employee', 'supervisor', 'admin', 'hr'), leaveController.getLeaveById);
+// router.post('/employee/leave', authMiddleware, requireRoles('employee', 'supervisor', 'admin', 'hr'), upload.array('supportingDocuments', 5), leaveController.createLeave);
+// router.put('/employee/leave/:leaveId', authMiddleware, requireRoles('employee', 'supervisor', 'admin', 'hr'), leaveController.updateLeave);
+// router.delete('/employee/leave/:leaveId', authMiddleware, requireRoles('employee', 'supervisor', 'admin', 'hr'), leaveController.deleteLeave);
+// router.post('/employee/leave/draft', authMiddleware, requireRoles('employee', 'supervisor', 'admin', 'hr'), leaveController.saveDraft);
+// router.put('/employee/leave/draft/:leaveId', authMiddleware, requireRoles('employee', 'supervisor', 'admin', 'hr'), leaveController.saveDraft);
+
+// // Supervisor routes (includes dept head, president)
+// router.get('/supervisor/leaves', authMiddleware, requireRoles('supervisor', 'admin', 'hr'), leaveController.getSupervisorLeaves);
+// router.post('/supervisor/leave/:leaveId/decision', authMiddleware, requireRoles('supervisor', 'admin'), leaveController.processSupervisorDecision);
+
+// // HR routes
+// router.get('/hr/leaves', authMiddleware, requireRoles('hr', 'admin'), leaveController.getHRLeaves);
+// router.post('/hr/leave/:leaveId/decision', authMiddleware, requireRoles('hr', 'admin'), leaveController.processHRDecision);
+
+// // Admin routes
+// router.get('/admin/leaves', authMiddleware, requireRoles('admin'), leaveController.getAllLeaves);
+
+// // Universal routes
+// router.get('/leaves/role', authMiddleware, leaveController.getLeavesByRole);
+// router.get('/leaves/stats', authMiddleware, requireRoles('hr', 'admin'), leaveController.getLeaveStats);
+// router.get('/leaves/analytics', authMiddleware, requireRoles('hr', 'admin'), leaveController.getLeaveAnalytics);
+// router.get('/leaves/dashboard', authMiddleware, leaveController.getDashboardStats);
+// router.get('/leaves/approval-chain-preview', authMiddleware, requireRoles('employee', 'supervisor', 'admin', 'hr'), leaveController.getApprovalChainPreview);
+
+// // Single leave by ID (universal access with permission check)
+// router.get('/leave/:leaveId', authMiddleware, leaveController.getLeaveById);
+
+// module.exports = router;
 

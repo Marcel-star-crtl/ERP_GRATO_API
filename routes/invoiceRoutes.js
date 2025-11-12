@@ -70,6 +70,41 @@ router.get('/files/:type/:publicId',
   }
 );
 
+
+/**
+ * @route   GET /api/invoices/:invoiceId/download/po
+ * @desc    Download PO file
+ * @access  Private (Employee, Approvers, Finance, Admin)
+ */
+router.get(
+  '/:invoiceId/download/po',
+  authMiddleware,
+  invoiceApprovalController.downloadPOFile
+);
+
+/**
+ * @route   GET /api/invoices/:invoiceId/download/invoice
+ * @desc    Download Invoice file
+ * @access  Private (Employee, Approvers, Finance, Admin)
+ */
+router.get(
+  '/:invoiceId/download/invoice',
+  authMiddleware,
+  invoiceApprovalController.downloadInvoiceFile
+);
+
+/**
+ * @route   GET /api/invoices/:invoiceId/preview/:fileType
+ * @desc    Preview file in browser (fileType: 'po' or 'invoice')
+ * @access  Private (Employee, Approvers, Finance, Admin)
+ */
+router.get(
+  '/:invoiceId/preview/:fileType',
+  authMiddleware,
+  invoiceApprovalController.previewFile
+);
+
+
 // ==================== FINANCE ROUTES ====================
 // IMPORTANT: Finance routes MUST come BEFORE parameterized routes
 
@@ -194,6 +229,7 @@ router.put('/:invoiceId/decision',
   requireRoles('finance', 'admin'),
   invoiceController.processInvoiceDecision
 );
+
 
 module.exports = router;
 

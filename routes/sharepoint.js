@@ -147,7 +147,7 @@ router.get(
 router.get(
   '/stats/department/:department',
   authMiddleware,
-  requireRoles('admin', 'supervisor'),
+  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
   sharepointController.getDepartmentStats
 );
 

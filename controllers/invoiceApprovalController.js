@@ -2,6 +2,10 @@ const Invoice = require('../models/Invoice');
 const User = require('../models/User');
 const { sendEmail } = require('../services/emailService');
 const { getInvoiceApprovalChain } = require('../config/invoiceApprovalChain');
+const WorkflowService = require('../services/workflowService');
+const path = require('path');  
+const fs = require('fs').promises; 
+
 
 // Helper function for status display
 function getStatusDisplay(status) {
@@ -16,154 +20,189 @@ function getStatusDisplay(status) {
 }
 
 
-// Upload invoice with approval chain
+// Upload invoice with approval chain (LOCAL STORAGE)
 exports.uploadInvoiceWithApprovalChain = async (req, res) => {
   try {
+    const { poNumber, invoiceNumber } = req.body;
+    const userId = req.user.userId;
+
     console.log('=== INVOICE UPLOAD WITH APPROVAL CHAIN STARTED ===');
     console.log('Request body:', JSON.stringify(req.body, null, 2));
-    console.log('Files received:', req.files ? Object.keys(req.files) : 'No files');
-    console.log('User ID:', req.user.userId);
-
-    const { poNumber, invoiceNumber } = req.body;
+    console.log('Files received:', Object.keys(req.files || {}));
+    console.log('User ID:', userId);
 
     // Validate required fields
     if (!poNumber || !invoiceNumber) {
-      throw new Error('PO number and invoice number are required');
+      return res.status(400).json({
+        success: false,
+        message: 'PO Number and Invoice Number are required'
+      });
     }
 
     // Validate PO number format
     const poRegex = /^PO-\w{2}\d{10}-\d+$/i;
     if (!poRegex.test(poNumber)) {
-      throw new Error('PO number format should be: PO-XX0000000000-X (e.g., PO-NG010000000-1)');
+      return res.status(400).json({
+        success: false,
+        message: 'PO number format should be: PO-XX0000000000-X (e.g., PO-NG0100000000-1)'
+      });
     }
 
-    // Check for duplicate
-    const existingInvoice = await Invoice.findOne({
-      poNumber: poNumber.toUpperCase(),
-      invoiceNumber: invoiceNumber.trim(),
-      employee: req.user.userId
-    });
-
-    if (existingInvoice) {
-      throw new Error('An invoice with this PO number and invoice number already exists');
+    if (!req.files || !req.files.poFile || !req.files.invoiceFile) {
+      return res.status(400).json({
+        success: false,
+        message: 'Both PO file and Invoice file are required'
+      });
     }
 
     // Get employee details
-    const employee = await User.findById(req.user.userId).select('fullName email department position');
+    const employee = await User.findById(userId).populate('supervisor departmentHead');
     if (!employee) {
-      throw new Error('Employee not found');
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found'
+      });
     }
 
-    console.log('Employee found:', employee.fullName, 'Department:', employee.department);
+    console.log(`Employee found: ${employee.fullName} Department: ${employee.department}`);
 
-    // Process file uploads (same as before)
-    const uploadedFiles = {};
-    const { cloudinary } = require('../config/cloudinary');
-    const fs = require('fs').promises;
+    // Check for duplicate invoice
+    const existingInvoice = await Invoice.findOne({
+      poNumber: poNumber.toUpperCase(),
+      invoiceNumber: invoiceNumber.trim(),
+      employee: userId
+    });
 
-    const uploadToCloudinary = async (file, folder) => {
+    if (existingInvoice) {
+      return res.status(400).json({
+        success: false,
+        message: 'An invoice with this PO number and invoice number already exists'
+      });
+    }
+
+    // Process file uploads - Move to permanent storage
+    const moveFileToPermanent = async (file, subfolder) => {
       try {
-        console.log(`🔄 Uploading ${file.fieldname} to Cloudinary...`);
+        console.log(`🔄 Processing ${file.fieldname}...`);
         
-        await fs.access(file.path);
+        // Create permanent directory if it doesn't exist
+        const permanentDir = path.join(__dirname, '../uploads', subfolder);
+        await fs.mkdir(permanentDir, { recursive: true });
 
-        const result = await cloudinary.uploader.upload(file.path, {
-          folder: `invoice-uploads/${folder}`,
-          resource_type: 'auto',
-          public_id: `${poNumber}-${file.fieldname}-${Date.now()}`,
-          format: file.mimetype.includes('pdf') ? 'pdf' : undefined,
-          use_filename: true,
-          unique_filename: true
-        });
+        // Generate new filename
+        const timestamp = Date.now();
+        const sanitizedPO = poNumber.replace(/[^a-zA-Z0-9-]/g, '_');
+        const ext = path.extname(file.originalname);
+        const newFilename = `${sanitizedPO}_${file.fieldname}_${timestamp}${ext}`;
+        const newPath = path.join(permanentDir, newFilename);
 
-        console.log(`✅ ${file.fieldname} uploaded successfully`);
+        // Copy file from temp to permanent location
+        await fs.copyFile(file.path, newPath);
+        
+        console.log(`✅ ${file.fieldname} saved to: ${newPath}`);
 
+        // Delete temp file
         await fs.unlink(file.path).catch(err => 
           console.warn('Failed to delete temp file:', err.message)
         );
 
         return {
-          publicId: result.public_id,
-          url: result.secure_url,
-          format: result.format,
-          resourceType: result.resource_type,
-          bytes: result.bytes,
-          originalName: file.originalname
+          originalName: file.originalname,
+          filename: newFilename,
+          path: newPath,
+          relativePath: `uploads/${subfolder}/${newFilename}`,
+          size: file.size,
+          mimetype: file.mimetype,
+          uploadedAt: new Date()
         };
       } catch (error) {
-        console.error(`❌ Failed to upload ${file.fieldname}:`, error);
-        await fs.unlink(file.path).catch(() => {});
-        throw new Error(`Failed to upload ${file.fieldname}: ${error.message}`);
+        console.error(`❌ Failed to process ${file.fieldname}:`, error);
+        throw new Error(`Failed to process ${file.fieldname}: ${error.message}`);
       }
     };
 
-    const uploadPromises = [];
+    const poFile = req.files.poFile[0];
+    const invoiceFile = req.files.invoiceFile[0];
 
-    if (req.files && req.files.poFile && req.files.poFile.length > 0) {
-      const poFile = req.files.poFile[0];
-      uploadPromises.push(
-        uploadToCloudinary(poFile, 'po-files').then(result => {
-          uploadedFiles.poFile = result;
-        })
-      );
+    console.log('Processing file uploads...');
+    const [poFileData, invoiceFileData] = await Promise.all([
+      moveFileToPermanent(poFile, 'po-files'),
+      moveFileToPermanent(invoiceFile, 'invoice-files')
+    ]);
+
+    console.log('✅ All files saved successfully\n');
+
+    // Generate approval workflow using WorkflowService
+    console.log('=== BUILDING INVOICE APPROVAL CHAIN ===');
+    console.log('Employee:', employee.fullName);
+    console.log('Department:', employee.department);
+
+    const rawApprovalChain = await WorkflowService.generateApprovalWorkflow(
+      userId,
+      'purchase',
+      { requireFinance: true }
+    );
+
+    if (!rawApprovalChain || rawApprovalChain.length === 0) {
+      throw new Error('Failed to generate approval chain - no approvers found');
     }
 
-    if (req.files && req.files.invoiceFile && req.files.invoiceFile.length > 0) {
-      const invoiceFile = req.files.invoiceFile[0];
-      uploadPromises.push(
-        uploadToCloudinary(invoiceFile, 'invoice-files').then(result => {
-          uploadedFiles.invoiceFile = result;
-        })
-      );
-    }
+    console.log(`✅ Generated approval chain with ${rawApprovalChain.length} levels`);
 
-    if (uploadPromises.length > 0) {
-      await Promise.all(uploadPromises);
-      console.log('✅ All files uploaded to Cloudinary successfully');
-    }
+    // Map the approval chain to match Invoice schema structure
+    const approvalChain = rawApprovalChain.map(step => ({
+      level: step.level,
+      approver: {
+        name: step.approver.name,
+        email: step.approver.email,
+        role: step.approver.position,
+        department: step.approver.department
+      },
+      status: step.status,
+      assignedDate: step.assignedDate,
+      approvalCapacity: step.approvalCapacity,
+      metadata: step.metadata || {},
+      notificationSent: false,
+      activatedDate: step.level === 1 ? new Date() : null
+    }));
 
-    // Generate approval chain
-    const approvalChain = getInvoiceApprovalChain(employee.fullName, employee.department);
-
-    if (!approvalChain || approvalChain.length === 0) {
-      throw new Error('Failed to generate approval chain');
-    }
-
-    console.log(`✅ Generated approval chain with ${approvalChain.length} levels`);
-
-    // Create invoice with approval chain
-    const invoiceData = {
-      poNumber: poNumber.toUpperCase(),
-      invoiceNumber: invoiceNumber.trim(),
-      employee: req.user.userId,
+    // Create invoice with properly structured approval chain
+    console.log('Creating invoice with approval chain...');
+    const newInvoice = new Invoice({
+      employee: userId,
+      employeeName: employee.fullName,
+      employeeDepartment: employee.department,
       employeeDetails: {
         name: employee.fullName,
         email: employee.email,
         department: employee.department,
         position: employee.position || 'Employee'
       },
+      poNumber: poNumber.toUpperCase(),
+      invoiceNumber: invoiceNumber.trim(),
+      poFile: poFileData,
+      invoiceFile: invoiceFileData,
+      approvalChain: approvalChain,
+      currentApprovalLevel: 1,
+      approvalStatus: 'pending_department_approval',
+      overallStatus: 'pending_approval',
       uploadedDate: new Date(),
       uploadedTime: new Date().toTimeString().split(' ')[0],
-      approvalStatus: 'pending_department_approval',
-      approvalChain: approvalChain.map(step => ({
-        ...step,
-        activatedDate: step.level === 1 ? new Date() : null,
-        notificationSent: false
-      })),
-      currentApprovalLevel: 1,
-      ...uploadedFiles
-    };
+      submittedAt: new Date()
+    });
 
-    console.log('Creating invoice with approval chain...');
-    const invoice = await Invoice.create(invoiceData);
-    console.log('✅ Invoice created with ID:', invoice._id);
+    await newInvoice.save();
+
+    console.log('✅ Invoice created successfully with ID:', newInvoice._id);
 
     // Send notification to first approver
     const firstApprover = approvalChain[0];
     if (firstApprover) {
-      const notificationResult = await sendEmail({
+      console.log(`Sending notification to first approver: ${firstApprover.approver.name} (${firstApprover.approver.email})`);
+      
+      await sendEmail({
         to: firstApprover.approver.email,
-        subject: `🔔 New Invoice Approval Required - ${invoice.poNumber}`,
+        subject: `🔔 New Invoice Approval Required - ${newInvoice.poNumber}`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;">
@@ -185,11 +224,11 @@ exports.uploadInvoiceWithApprovalChain = async (req, res) => {
                   </tr>
                   <tr>
                     <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>PO Number:</strong></td>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${invoice.poNumber}</td>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${newInvoice.poNumber}</td>
                   </tr>
                   <tr>
                     <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Invoice Number:</strong></td>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${invoice.invoiceNumber}</td>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${newInvoice.invoiceNumber}</td>
                   </tr>
                   <tr>
                     <td style="padding: 8px 0;"><strong>Your Role:</strong></td>
@@ -213,17 +252,14 @@ exports.uploadInvoiceWithApprovalChain = async (req, res) => {
             </div>
           </div>
         `
+      }).then(() => {
+        // Mark notification as sent
+        newInvoice.approvalChain[0].notificationSent = true;
+        newInvoice.approvalChain[0].notificationSentAt = new Date();
+        return newInvoice.save();
       }).catch(error => {
         console.error('Failed to send first approver notification:', error);
-        return { error };
       });
-
-      if (!notificationResult.error) {
-        // Mark notification as sent
-        invoice.approvalChain[0].notificationSent = true;
-        invoice.approvalChain[0].notificationSentAt = new Date();
-        await invoice.save();
-      }
     }
 
     // Send confirmation to employee
@@ -233,31 +269,37 @@ exports.uploadInvoiceWithApprovalChain = async (req, res) => {
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="background-color: #f6ffed; padding: 20px; border-radius: 8px; border-left: 4px solid #52c41a;">
-            <h3>Invoice Upload Confirmation</h3>
+            <h3>✅ Invoice Upload Confirmation</h3>
             <p>Dear ${employee.fullName},</p>
             
             <p>Your invoice has been uploaded successfully and is now in the approval process.</p>
             
             <div style="background-color: white; padding: 15px; border-radius: 5px; margin: 15px 0;">
               <p><strong>Upload Details:</strong></p>
-              <ul>
-                <li><strong>PO Number:</strong> ${invoice.poNumber}</li>
-                <li><strong>Invoice Number:</strong> ${invoice.invoiceNumber}</li>
-                <li><strong>Upload Date:</strong> ${new Date().toLocaleDateString('en-GB')}</li>
-                <li><strong>Status:</strong> <span style="color: #faad14;">Pending Approval</span></li>
+              <ul style="list-style: none; padding-left: 0;">
+                <li>📋 <strong>PO Number:</strong> ${newInvoice.poNumber}</li>
+                <li>🔢 <strong>Invoice Number:</strong> ${newInvoice.invoiceNumber}</li>
+                <li>📅 <strong>Upload Date:</strong> ${new Date().toLocaleDateString('en-GB')}</li>
+                <li>⏰ <strong>Upload Time:</strong> ${newInvoice.uploadedTime}</li>
+                <li>📊 <strong>Status:</strong> <span style="color: #faad14; font-weight: bold;">Pending Approval</span></li>
               </ul>
             </div>
             
             <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0;">
-              <p><strong>Approval Chain:</strong></p>
-              <ol>
-                ${approvalChain.map(step => `<li>${step.approver.name} (${step.approver.role})</li>`).join('')}
+              <p><strong>📋 Approval Chain (${approvalChain.length} steps):</strong></p>
+              <ol style="margin: 10px 0; padding-left: 20px;">
+                ${approvalChain.map((step, idx) => `
+                  <li style="margin: 8px 0;">
+                    <strong>${step.approver.name}</strong> - ${step.approver.role}
+                    ${idx === 0 ? '<span style="color: #faad14; font-weight: bold;"> (Current)</span>' : ''}
+                  </li>
+                `).join('')}
               </ol>
             </div>
             
             <p>You can track the status of your invoice in the employee portal.</p>
             
-            <p>Thank you!</p>
+            <p style="margin-top: 20px;">Thank you!</p>
           </div>
         </div>
       `
@@ -265,42 +307,57 @@ exports.uploadInvoiceWithApprovalChain = async (req, res) => {
       console.error('Failed to send employee confirmation:', error);
     });
 
-    console.log('=== INVOICE UPLOAD WITH APPROVAL CHAIN SUCCESSFUL ===');
+    console.log('=== INVOICE UPLOAD COMPLETED SUCCESSFULLY ===\n');
+
+    // Send response
     res.status(201).json({
       success: true,
-      message: 'Invoice uploaded successfully. Approval chain has been initiated.',
-      data: invoice
+      message: 'Invoice uploaded successfully and sent for approval',
+      data: {
+        invoiceId: newInvoice._id,
+        poNumber: newInvoice.poNumber,
+        invoiceNumber: newInvoice.invoiceNumber,
+        status: newInvoice.approvalStatus,
+        uploadedDate: newInvoice.uploadedDate,
+        uploadedTime: newInvoice.uploadedTime,
+        files: {
+          poFile: poFileData.originalName,
+          invoiceFile: invoiceFileData.originalName
+        },
+        approvalChain: approvalChain.map(step => ({
+          level: step.level,
+          approver: step.approver.name,
+          position: step.approver.role,
+          department: step.approver.department,
+          status: step.status
+        })),
+        nextApprover: approvalChain[0] ? {
+          name: approvalChain[0].approver.name,
+          email: approvalChain[0].approver.email,
+          role: approvalChain[0].approver.role
+        } : null
+      }
     });
 
   } catch (error) {
     console.error('=== INVOICE UPLOAD FAILED ===', error);
 
-    // Clean up Cloudinary files on error
-    if (req.uploadedFiles) {
-      const { cloudinary } = require('../config/cloudinary');
-      const cleanupPromises = Object.values(req.uploadedFiles).map(file => {
-        if (file.publicId && cloudinary && cloudinary.uploader) {
-          return cloudinary.uploader.destroy(file.publicId).catch(err => 
-            console.error('Failed to cleanup Cloudinary file:', err)
-          );
-        }
-      });
-      await Promise.allSettled(cleanupPromises);
-    }
-
-    // Clean up temp files
+    // Clean up temp files on error
     if (req.files) {
-      const fs = require('fs').promises;
       const tempFiles = [];
       if (req.files.poFile) tempFiles.push(...req.files.poFile);
       if (req.files.invoiceFile) tempFiles.push(...req.files.invoiceFile);
       
-      const cleanupPromises = tempFiles.map(file => 
-        fs.unlink(file.path).catch(err => 
-          console.warn('Failed to delete temp file:', err.message)
-        )
-      );
-      await Promise.allSettled(cleanupPromises);
+      for (const file of tempFiles) {
+        try {
+          if (file.path && await fs.access(file.path).then(() => true).catch(() => false)) {
+            await fs.unlink(file.path);
+            console.log('Cleaned up temp file:', file.path);
+          }
+        } catch (cleanupError) {
+          console.warn('Failed to delete temp file:', cleanupError.message);
+        }
+      }
     }
 
     res.status(400).json({
@@ -1029,6 +1086,339 @@ exports.getInvoicesForFinance = async (req, res) => {
     });
   }
 };
+
+
+/**
+ * Download PO file
+ * GET /api/invoices/:invoiceId/download/po
+ */
+exports.downloadPOFile = async (req, res) => {
+  try {
+    const { invoiceId } = req.params;
+    
+    console.log('=== DOWNLOADING PO FILE ===');
+    console.log('Invoice ID:', invoiceId);
+    console.log('User:', req.user.email);
+
+    // Get invoice
+    const invoice = await Invoice.findById(invoiceId).populate('employee', 'email');
+    
+    if (!invoice) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invoice not found'
+      });
+    }
+
+    // Authorization check
+    const isEmployee = invoice.employee._id.toString() === req.user.userId;
+    const isApprover = invoice.approvalChain.some(
+      step => step.approver.email === req.user.email
+    );
+    const isFinance = req.user.role === 'finance' || req.user.role === 'admin';
+
+    if (!isEmployee && !isApprover && !isFinance) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to download this file'
+      });
+    }
+
+    // Get file path
+    let filePath;
+    
+    if (invoice.poFile.path) {
+      // Absolute path stored
+      filePath = invoice.poFile.path;
+    } else if (invoice.poFile.relativePath) {
+      // Relative path stored
+      filePath = path.join(__dirname, '..', invoice.poFile.relativePath);
+    } else if (invoice.poFile.filename) {
+      // Only filename stored - construct path
+      filePath = path.join(__dirname, '../uploads/po-files', invoice.poFile.filename);
+    } else {
+      return res.status(404).json({
+        success: false,
+        message: 'File path information not found in database'
+      });
+    }
+
+    console.log('File path:', filePath);
+
+    // Check if file exists
+    try {
+      await fs.access(filePath);
+    } catch (error) {
+      console.error('File not found:', filePath);
+      return res.status(404).json({
+        success: false,
+        message: 'File not found on server',
+        details: process.env.NODE_ENV === 'development' ? {
+          searchedPath: filePath,
+          storedData: invoice.poFile
+        } : undefined
+      });
+    }
+
+    // Get file stats
+    const stats = await fs.stat(filePath);
+    
+    // Set headers for download
+    const originalName = invoice.poFile.originalName || 'po-file.pdf';
+    const ext = path.extname(originalName);
+    const mimeType = invoice.poFile.mimetype || getMimeType(ext);
+
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Length', stats.size);
+    res.setHeader('Content-Disposition', `attachment; filename="${originalName}"`);
+    
+    console.log(`Sending file: ${originalName} (${stats.size} bytes)`);
+
+    // Stream the file
+    const fileStream = require('fs').createReadStream(filePath);
+    
+    fileStream.on('error', (error) => {
+      console.error('Stream error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          success: false,
+          message: 'Error streaming file'
+        });
+      }
+    });
+
+    fileStream.pipe(res);
+
+  } catch (error) {
+    console.error('=== DOWNLOAD PO FILE FAILED ===', error);
+    
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to download file',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+};
+
+/**
+ * Download Invoice file
+ * GET /api/invoices/:invoiceId/download/invoice
+ */
+exports.downloadInvoiceFile = async (req, res) => {
+  try {
+    const { invoiceId } = req.params;
+    
+    console.log('=== DOWNLOADING INVOICE FILE ===');
+    console.log('Invoice ID:', invoiceId);
+    console.log('User:', req.user.email);
+
+    // Get invoice
+    const invoice = await Invoice.findById(invoiceId).populate('employee', 'email');
+    
+    if (!invoice) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invoice not found'
+      });
+    }
+
+    // Authorization check
+    const isEmployee = invoice.employee._id.toString() === req.user.userId;
+    const isApprover = invoice.approvalChain.some(
+      step => step.approver.email === req.user.email
+    );
+    const isFinance = req.user.role === 'finance' || req.user.role === 'admin';
+
+    if (!isEmployee && !isApprover && !isFinance) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to download this file'
+      });
+    }
+
+    // Get file path
+    let filePath;
+    
+    if (invoice.invoiceFile.path) {
+      filePath = invoice.invoiceFile.path;
+    } else if (invoice.invoiceFile.relativePath) {
+      filePath = path.join(__dirname, '..', invoice.invoiceFile.relativePath);
+    } else if (invoice.invoiceFile.filename) {
+      filePath = path.join(__dirname, '../uploads/invoice-files', invoice.invoiceFile.filename);
+    } else {
+      return res.status(404).json({
+        success: false,
+        message: 'File path information not found in database'
+      });
+    }
+
+    console.log('File path:', filePath);
+
+    // Check if file exists
+    try {
+      await fs.access(filePath);
+    } catch (error) {
+      console.error('File not found:', filePath);
+      return res.status(404).json({
+        success: false,
+        message: 'File not found on server',
+        details: process.env.NODE_ENV === 'development' ? {
+          searchedPath: filePath,
+          storedData: invoice.invoiceFile
+        } : undefined
+      });
+    }
+
+    // Get file stats
+    const stats = await fs.stat(filePath);
+    
+    // Set headers for download
+    const originalName = invoice.invoiceFile.originalName || 'invoice-file.pdf';
+    const ext = path.extname(originalName);
+    const mimeType = invoice.invoiceFile.mimetype || getMimeType(ext);
+
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Length', stats.size);
+    res.setHeader('Content-Disposition', `attachment; filename="${originalName}"`);
+    
+    console.log(`Sending file: ${originalName} (${stats.size} bytes)`);
+
+    // Stream the file
+    const fileStream = require('fs').createReadStream(filePath);
+    
+    fileStream.on('error', (error) => {
+      console.error('Stream error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          success: false,
+          message: 'Error streaming file'
+        });
+      }
+    });
+
+    fileStream.pipe(res);
+
+  } catch (error) {
+    console.error('=== DOWNLOAD INVOICE FILE FAILED ===', error);
+    
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to download file',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+};
+
+/**
+ * Get file preview URL (for displaying in browser)
+ * GET /api/invoices/:invoiceId/preview/:fileType
+ */
+exports.previewFile = async (req, res) => {
+  try {
+    const { invoiceId, fileType } = req.params; // fileType: 'po' or 'invoice'
+    
+    console.log(`=== PREVIEWING ${fileType.toUpperCase()} FILE ===`);
+    
+    const invoice = await Invoice.findById(invoiceId).populate('employee', 'email');
+    
+    if (!invoice) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invoice not found'
+      });
+    }
+
+    // Authorization check
+    const isEmployee = invoice.employee._id.toString() === req.user.userId;
+    const isApprover = invoice.approvalChain.some(
+      step => step.approver.email === req.user.email
+    );
+    const isFinance = req.user.role === 'finance' || req.user.role === 'admin';
+
+    if (!isEmployee && !isApprover && !isFinance) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to view this file'
+      });
+    }
+
+    // Get file data
+    const fileData = fileType === 'po' ? invoice.poFile : invoice.invoiceFile;
+    
+    // Get file path
+    let filePath;
+    if (fileData.path) {
+      filePath = fileData.path;
+    } else if (fileData.relativePath) {
+      filePath = path.join(__dirname, '..', fileData.relativePath);
+    } else if (fileData.filename) {
+      const folder = fileType === 'po' ? 'po-files' : 'invoice-files';
+      filePath = path.join(__dirname, `../uploads/${folder}`, fileData.filename);
+    } else {
+      return res.status(404).json({
+        success: false,
+        message: 'File path not found'
+      });
+    }
+
+    // Check if file exists
+    try {
+      await fs.access(filePath);
+    } catch (error) {
+      return res.status(404).json({
+        success: false,
+        message: 'File not found on server'
+      });
+    }
+
+    // Get file stats
+    const stats = await fs.stat(filePath);
+    const ext = path.extname(fileData.originalName || '');
+    const mimeType = fileData.mimetype || getMimeType(ext);
+
+    // For preview (inline display)
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Length', stats.size);
+    res.setHeader('Content-Disposition', `inline; filename="${fileData.originalName}"`);
+    
+    // Stream the file
+    const fileStream = require('fs').createReadStream(filePath);
+    fileStream.pipe(res);
+
+  } catch (error) {
+    console.error('Preview file failed:', error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to preview file'
+      });
+    }
+  }
+};
+
+/**
+ * Helper function to determine MIME type from extension
+ */
+function getMimeType(ext) {
+  const mimeTypes = {
+    '.pdf': 'application/pdf',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.txt': 'text/plain'
+  };
+  
+  return mimeTypes[ext.toLowerCase()] || 'application/octet-stream';
+}
 
 module.exports = exports;
 
