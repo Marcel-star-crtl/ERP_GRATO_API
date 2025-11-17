@@ -1,13 +1,3 @@
-// scripts/createTechnicalTeam.js
-/**
- * BULK USER CREATION SCRIPT
- * Creates technical team members and NOC operators with proper hierarchy
- * 
- * IMPORTANT: Backup database before running!
- * 
- * Usage: node scripts/createTechnicalTeam.js
- */
-
 const mongoose = require('mongoose');
 const path = require('path');
 const bcrypt = require('bcryptjs');
@@ -29,7 +19,7 @@ const TECHNICAL_TEAM = [
   },
   {
     fullName: 'Sunday',
-    email: 'sunday@gratoglobal.com', // Create appropriate email
+    email: 'sunday@gratoglobal.com', 
     phone: '671308804',
     cluster: 'Bonaberi 1',
     position: 'Field Technician',
@@ -49,7 +39,7 @@ const TECHNICAL_TEAM = [
   },
   {
     fullName: 'Abeeb',
-    email: 'abeeb@gratoglobal.com', // Create appropriate email
+    email: 'abeeb@gratoglobal.com', 
     phone: '680986406',
     cluster: 'Bonaberi 2',
     position: 'Field Technician',

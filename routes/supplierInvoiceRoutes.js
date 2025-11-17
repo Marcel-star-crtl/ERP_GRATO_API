@@ -15,6 +15,9 @@ const {
 } = require('../middlewares/supplierAuthMiddleware');
 const upload = require('../middlewares/uploadMiddleware');
 
+// ===============================
+// SUPPLIER REGISTRATION & AUTH
+// ===============================
 
 router.post('/register-onboard',
   upload.fields([
@@ -28,124 +31,11 @@ router.post('/register-onboard',
 );
 
 router.post('/register', supplierController.registerSupplier);
-
-// Email verification (public)
 router.get('/verify-email/:token', supplierController.verifySupplierEmail);
-
-// Supplier login (public)
 router.post('/login', supplierController.loginSupplier);
 
 // ===============================
-// SUPPLIER PROFILE MANAGEMENT
-// ===============================
-
-// Get complete supplier profile (admin or supplier)
-router.get('/:supplierId/complete-profile',
-  authMiddleware, // Works for both admin and supplier auth
-  unifiedSupplierController.getCompleteSupplierProfile
-);
-
-// Update supplier profile
-router.put('/:supplierId/profile',
-  authMiddleware,
-  unifiedSupplierController.updateSupplierProfile
-);
-
-// Supplier's own dashboard
-router.get('/dashboard',
-  supplierAuthMiddleware,
-  requireActiveSupplier,
-  unifiedSupplierController.getSupplierDashboard
-);
-
-router.get('/profile', 
-  supplierAuthMiddleware, 
-  supplierController.getSupplierProfile
-);
-
-router.put('/profile', 
-  supplierAuthMiddleware, 
-  requireActiveSupplier,
-  supplierController.updateSupplierProfile
-);
-
-router.get('/rfq-requests',
-  supplierAuthMiddleware,
-  requireActiveSupplier,
-  supplierRfqController.getSupplierRfqRequests
-);
-
-// Get specific RFQ details
-router.get('/rfq-requests/:rfqId',
-  supplierAuthMiddleware,
-  requireActiveSupplier,
-  supplierRfqController.getSupplierRfqById
-);
-
-// ===============================
-// ADMIN OPERATIONS
-// ===============================
-
-// Bulk import suppliers
-router.post('/bulk-import',
-  authMiddleware,
-  requireRoles('admin', 'supply_chain'),
-  unifiedSupplierController.bulkImportSuppliers
-);
-
-// Approve/Reject supplier
-router.post('/:supplierId/approve-reject',
-  authMiddleware,
-  requireRoles('admin', 'supply_chain', 'finance'),
-  unifiedSupplierController.approveOrRejectSupplier
-);
-
-// Get all suppliers (existing - keep for backward compatibility)
-router.get('/admin/all',
-  authMiddleware,
-  requireRoles('admin', 'finance', 'supply_chain'),
-  supplierController.getAllSuppliers
-);
-
-// ===============================
-// CONTRACT MANAGEMENT
-// ===============================
-
-// Create contract for supplier (admin)
-router.post('/contracts',
-  authMiddleware,
-  requireRoles('admin', 'supply_chain'),
-  contractController.createContract
-);
-
-// Get supplier's contracts
-router.get('/:supplierId/contracts',
-  authMiddleware,
-  contractController.getSupplierContracts
-);
-
-// Link invoice to contract (manual)
-router.post('/contracts/:contractId/link-invoice',
-  authMiddleware,
-  requireRoles('admin', 'finance'),
-  contractController.linkInvoiceToContract
-);
-
-// Unlink invoice from contract
-router.delete('/contracts/:contractId/invoices/:invoiceId',
-  authMiddleware,
-  requireRoles('admin', 'finance'),
-  contractController.unlinkInvoiceFromContract
-);
-
-// Get contract with linked invoices
-router.get('/contracts/:contractId/with-invoices',
-  authMiddleware,
-  contractController.getContractWithInvoices
-);
-
-// ===============================
-// INVOICE MANAGEMENT (Existing)
+// SUPPLY CHAIN COORDINATOR ROUTES (WITH DOCUMENT SIGNING)
 // ===============================
 
 // Get invoices pending supply chain assignment
@@ -155,10 +45,21 @@ router.get('/supply-chain/invoices/pending',
   supplierInvoiceController.getSupplierInvoicesPendingSupplyChainAssignment
 );
 
-// Assign invoice to department (Supply Chain Coordinator)
+// NEW: Download invoice for signing (Supply Chain & Approvers)
+router.get('/invoices/:invoiceId/download-for-signing',
+  authMiddleware,
+  supplierInvoiceController.downloadInvoiceForSigning
+);
+
+// Assign invoice to department WITH signed document upload
 router.post('/supply-chain/invoices/:invoiceId/assign',
   authMiddleware,
   requireRoles('admin', 'supply_chain'),
+  upload.fields([
+    { name: 'signedDocument', maxCount: 1 }
+  ]),
+  upload.validateFiles,
+  upload.cleanupTempFiles,
   supplierInvoiceController.assignSupplierInvoiceBySupplyChain
 );
 
@@ -183,26 +84,76 @@ router.get('/supply-chain/dashboard/stats',
   supplierInvoiceController.getSupplyChainDashboardStats
 );
 
-// Submit invoice (existing)
-router.post('/invoices',
-  supplierAuthMiddleware,
+// ===============================
+// SUPERVISOR/APPROVER ROUTES (WITH DOCUMENT SIGNING)
+// ===============================
+
+// Get pending supplier approvals for user
+router.get('/supervisor/pending',
+  authMiddleware,
+  requireRoles('supervisor', 'admin', 'finance', 'hr', 'it', 'technical'),
+  supplierInvoiceController.getPendingSupplierApprovalsForUser
+);
+
+// Process supplier invoice approval/rejection WITH signed document
+router.put('/supervisor/invoices/:invoiceId/decision',
+  authMiddleware,
+  requireRoles('supervisor', 'admin', 'finance', 'hr', 'it', 'technical'),
   upload.fields([
-    { name: 'invoiceFile', maxCount: 1 },
-    { name: 'poFile', maxCount: 1 }
+    { name: 'signedDocument', maxCount: 1 }
   ]),
   upload.validateFiles,
   upload.cleanupTempFiles,
-  supplierInvoiceController.submitSupplierInvoice
+  supplierInvoiceController.processSupplierApprovalStep
 );
 
-// Get supplier's invoices (existing)
-router.get('/invoices',
+// ===============================
+// SUPPLIER PROFILE MANAGEMENT
+// ===============================
+
+router.get('/:supplierId/complete-profile',
+  authMiddleware,
+  unifiedSupplierController.getCompleteSupplierProfile
+);
+
+router.put('/:supplierId/profile',
+  authMiddleware,
+  unifiedSupplierController.updateSupplierProfile
+);
+
+router.get('/dashboard',
   supplierAuthMiddleware,
   requireActiveSupplier,
-  supplierInvoiceController.getSupplierInvoices
+  unifiedSupplierController.getSupplierDashboard
 );
 
-// Submit quote for RFQ
+router.get('/profile', 
+  supplierAuthMiddleware, 
+  supplierController.getSupplierProfile
+);
+
+router.put('/profile', 
+  supplierAuthMiddleware, 
+  requireActiveSupplier,
+  supplierController.updateSupplierProfile
+);
+
+// ===============================
+// SUPPLIER RFQ ROUTES
+// ===============================
+
+router.get('/rfq-requests',
+  supplierAuthMiddleware,
+  requireActiveSupplier,
+  supplierRfqController.getSupplierRfqRequests
+);
+
+router.get('/rfq-requests/:rfqId',
+  supplierAuthMiddleware,
+  requireActiveSupplier,
+  supplierRfqController.getSupplierRfqById
+);
+
 router.post('/rfq-requests/:rfqId/submit-quote',
   supplierAuthMiddleware,
   requireActiveSupplier,
@@ -216,19 +167,138 @@ router.post('/rfq-requests/:rfqId/submit-quote',
   supplierRfqController.submitQuote
 );
 
-// Get supplier's submitted quotes
 router.get('/quotes',
   supplierAuthMiddleware,
   requireActiveSupplier,
   supplierRfqController.getSupplierQuotes
 );
 
-// Get supplier dashboard data
-router.get('/dashboard',
-  supplierAuthMiddleware,
-  requireActiveSupplier,
-  supplierRfqController.getSupplierDashboard
+// ===============================
+// ADMIN OPERATIONS
+// ===============================
+
+router.post('/bulk-import',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain'),
+  unifiedSupplierController.bulkImportSuppliers
 );
+
+router.post('/:supplierId/approve-reject',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  unifiedSupplierController.approveOrRejectSupplier
+);
+
+router.get('/admin/all',
+  authMiddleware,
+  requireRoles('admin', 'finance', 'supply_chain'),
+  supplierController.getAllSuppliers
+);
+
+router.put('/admin/:supplierId/status',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  supplierController.updateSupplierStatus
+);
+
+// ===============================
+// SUPPLIER ONBOARDING ADMIN ROUTES
+// ===============================
+
+router.get('/admin/onboarding/applications',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  supplierOnboardingController.getAllApplications
+);
+
+router.get('/admin/onboarding/applications/:applicationId',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  supplierOnboardingController.getApplicationById
+);
+
+router.put('/admin/onboarding/applications/:applicationId/status',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  supplierOnboardingController.updateApplicationStatus
+);
+
+router.post('/admin/onboarding/applications/:applicationId/notes',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  supplierOnboardingController.addReviewNote
+);
+
+router.post('/admin/onboarding/applications/:applicationId/documents',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  upload.fields([
+    { name: 'documents', maxCount: 10 }
+  ]),
+  upload.validateFiles,
+  upload.cleanupTempFiles,
+  supplierOnboardingController.uploadAdditionalDocuments
+);
+
+router.get('/admin/onboarding/applications/:applicationId/documents/:documentId',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  supplierOnboardingController.downloadDocument
+);
+
+router.get('/admin/onboarding/statistics',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  supplierOnboardingController.getOnboardingStatistics
+);
+
+router.put('/admin/onboarding/applications/bulk-update',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  supplierOnboardingController.bulkUpdateApplications
+);
+
+router.get('/admin/onboarding/export',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  supplierOnboardingController.exportApplications
+);
+
+// ===============================
+// CONTRACT MANAGEMENT
+// ===============================
+
+router.post('/contracts',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain'),
+  contractController.createContract
+);
+
+router.get('/:supplierId/contracts',
+  authMiddleware,
+  contractController.getSupplierContracts
+);
+
+router.post('/contracts/:contractId/link-invoice',
+  authMiddleware,
+  requireRoles('admin', 'finance'),
+  contractController.linkInvoiceToContract
+);
+
+router.delete('/contracts/:contractId/invoices/:invoiceId',
+  authMiddleware,
+  requireRoles('admin', 'finance'),
+  contractController.unlinkInvoiceFromContract
+);
+
+router.get('/contracts/:contractId/with-invoices',
+  authMiddleware,
+  contractController.getContractWithInvoices
+);
+
+// ===============================
+// SUPPLIER INVOICE SUBMISSION
+// ===============================
 
 router.post('/invoices',
   supplierAuthMiddleware,
@@ -242,98 +312,20 @@ router.post('/invoices',
   supplierInvoiceController.submitSupplierInvoice
 );
 
-// Get supplier's invoices
 router.get('/invoices',
   supplierAuthMiddleware,
   requireActiveSupplier,
   supplierInvoiceController.getSupplierInvoices
 );
 
-// Get specific supplier invoice details
 router.get('/invoices/:invoiceId',
   combinedAuthMiddleware,
   supplierInvoiceController.getSupplierInvoiceDetails
 );
 
-router.get('/admin/all',
-  authMiddleware,
-  requireRoles('admin', 'finance', 'supply_chain'),
-  supplierController.getAllSuppliers
-);
-
-// Approve/reject supplier (admin/finance only)
-router.put('/admin/:supplierId/status',
-  authMiddleware,
-  requireRoles('admin', 'supply_chain', 'finance'),
-  supplierController.updateSupplierStatus
-);
-
-router.get('/admin/onboarding/applications',
-  authMiddleware,
-  requireRoles('admin', 'supply_chain', 'finance'),
-  supplierOnboardingController.getAllApplications
-);
-
-// Get specific application by ID
-router.get('/admin/onboarding/applications/:applicationId',
-  authMiddleware,
-  requireRoles('admin', 'supply_chain', 'finance'),
-  supplierOnboardingController.getApplicationById
-);
-
-// Update application status (review, approve, reject)
-router.put('/admin/onboarding/applications/:applicationId/status',
-  authMiddleware,
-  requireRoles('admin', 'supply_chain', 'finance'),
-  supplierOnboardingController.updateApplicationStatus
-);
-
-// Add review comments/notes to application
-router.post('/admin/onboarding/applications/:applicationId/notes',
-  authMiddleware,
-  requireRoles('admin', 'supply_chain', 'finance'),
-  supplierOnboardingController.addReviewNote
-);
-
-// Upload additional documents for application
-router.post('/admin/onboarding/applications/:applicationId/documents',
-  authMiddleware,
-  requireRoles('admin', 'supply_chain', 'finance'),
-  upload.fields([
-    { name: 'documents', maxCount: 10 }
-  ]),
-  upload.validateFiles,
-  upload.cleanupTempFiles,
-  supplierOnboardingController.uploadAdditionalDocuments
-);
-
-// Download application documents
-router.get('/admin/onboarding/applications/:applicationId/documents/:documentId',
-  authMiddleware,
-  requireRoles('admin', 'supply_chain', 'finance'),
-  supplierOnboardingController.downloadDocument
-);
-
-// Get onboarding statistics/dashboard data
-router.get('/admin/onboarding/statistics',
-  authMiddleware,
-  requireRoles('admin', 'supply_chain', 'finance'),
-  supplierOnboardingController.getOnboardingStatistics
-);
-
-// Bulk update applications
-router.put('/admin/onboarding/applications/bulk-update',
-  authMiddleware,
-  requireRoles('admin', 'supply_chain', 'finance'),
-  supplierOnboardingController.bulkUpdateApplications
-);
-
-// Export applications data
-router.get('/admin/onboarding/export',
-  authMiddleware,
-  requireRoles('admin', 'supply_chain', 'finance'),
-  supplierOnboardingController.exportApplications
-);
+// ===============================
+// FINANCE ADMIN ROUTES
+// ===============================
 
 router.get('/admin/invoices',
   authMiddleware,
@@ -341,76 +333,53 @@ router.get('/admin/invoices',
   supplierInvoiceController.getSupplierInvoicesForFinance
 );
 
-// Update supplier invoice details (finance only) - OPTIONAL
 router.put('/admin/invoices/:invoiceId/details',
   authMiddleware,
   requireRoles('finance', 'admin'),
   supplierInvoiceController.updateSupplierInvoiceDetails
 );
 
-// Combined process and assign endpoint
 router.post('/admin/invoices/:invoiceId/process-and-assign',
   authMiddleware,
   requireRoles('finance', 'admin'),
   async (req, res) => {
-    // This endpoint allows updating details and assigning in one API call
     const { department, comments, updateDetails } = req.body;
-    
-    // Reuse the existing assign endpoint with updateDetails
     req.body = { department, comments, updateDetails };
     return supplierInvoiceController.assignSupplierInvoiceToDepartment(req, res);
   }
 );
 
-// Assign supplier invoice to department (finance only)
 router.post('/admin/invoices/:invoiceId/assign',
   authMiddleware,
   requireRoles('finance', 'admin'),
   supplierInvoiceController.assignSupplierInvoiceToDepartment
 );
 
-// Bulk assign supplier invoices
 router.post('/admin/invoices/bulk-assign',
   authMiddleware,
   requireRoles('finance', 'admin'),
   supplierInvoiceController.bulkAssignSupplierInvoices
 );
 
-// Process supplier invoice payment
 router.post('/admin/invoices/:invoiceId/payment',
   authMiddleware,
   requireRoles('finance', 'admin'),
   supplierInvoiceController.processSupplierInvoicePayment
 );
 
-// Mark supplier invoice as processed (NEW - final finance step)
 router.put('/admin/invoices/:invoiceId/process',
   authMiddleware,
   requireRoles('finance', 'admin'),
   supplierInvoiceController.markSupplierInvoiceAsProcessed
 );
 
-// Get supplier invoice analytics
 router.get('/admin/analytics',
   authMiddleware,
   requireRoles('finance', 'admin'),
   supplierInvoiceController.getSupplierInvoiceAnalytics
 );
 
-router.get('/supervisor/pending',
-  authMiddleware,
-  requireRoles('supervisor', 'admin', 'finance', 'hr', 'it'),
-  supplierInvoiceController.getPendingSupplierApprovalsForUser
-);
-
-// Process supplier invoice approval/rejection
-router.put('/supervisor/invoices/:invoiceId/decision',
-  authMiddleware,
-  requireRoles('supervisor', 'admin'),
-  supplierInvoiceController.processSupplierApprovalStep
-);
-
-// Export routes
 module.exports = router;
+
 
 

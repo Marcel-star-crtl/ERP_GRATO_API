@@ -9,7 +9,7 @@ const { handleMulterError, validateFiles, cleanupTempFiles } = require('../middl
 router.post(
   '/folders',
   authMiddleware,
-  requireRoles('admin', 'supply_chain', 'finance', 'hr', 'it', 'supervisor'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   sharepointController.createFolder
 );
 
@@ -147,7 +147,7 @@ router.get(
 router.get(
   '/stats/department/:department',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   sharepointController.getDepartmentStats
 );
 

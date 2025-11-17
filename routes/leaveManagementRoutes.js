@@ -32,13 +32,13 @@ router.post('/preview-approval-chain',
 
 router.get('/supervisor', 
   authMiddleware, 
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'), 
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'), 
   leaveController.getSupervisorLeaves
 );
 
 router.get('/supervisor/:leaveId', 
   authMiddleware, 
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   leaveController.getEmployeeLeave
 );
 
@@ -68,7 +68,7 @@ router.get('/admin/:leaveId',
 
 router.put('/:leaveId/supervisor', 
   authMiddleware, 
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'), 
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'), 
   leaveController.processSupervisorDecision
 );
 
@@ -100,7 +100,7 @@ router.get('/dashboard/stats',
 
 router.get('/analytics/general',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   leaveController.getLeaveAnalytics
 );
 
@@ -118,7 +118,7 @@ router.get('/hr/analytics',
 
 router.get('/statistics',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   leaveController.getLeaveStats
 );
 
@@ -307,7 +307,7 @@ router.get('/wellness/employee/:employeeId',
 // Department wellness overview
 router.get('/wellness/department/:department',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain', 'technical'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   async (req, res) => {
     try {
       const { department } = req.params;
@@ -385,47 +385,4 @@ module.exports = router;
 
 
 
-
-
-
-
-
-// const express = require('express');
-// const router = express.Router();
-// const leaveController = require('../controllers/leaveManagementController');
-// const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware');
-// const upload = require('../middlewares/uploadMiddleware');
-
-// // Employee routes
-// router.get('/employee/leaves', authMiddleware, requireRoles('employee', 'supervisor', 'admin', 'hr'), leaveController.getEmployeeLeaves);
-// router.get('/employee/balance', authMiddleware, requireRoles('employee', 'supervisor', 'admin', 'hr'), leaveController.getEmployeeLeaveBalance);
-// router.get('/employee/leave/:leaveId', authMiddleware, requireRoles('employee', 'supervisor', 'admin', 'hr'), leaveController.getLeaveById);
-// router.post('/employee/leave', authMiddleware, requireRoles('employee', 'supervisor', 'admin', 'hr'), upload.array('supportingDocuments', 5), leaveController.createLeave);
-// router.put('/employee/leave/:leaveId', authMiddleware, requireRoles('employee', 'supervisor', 'admin', 'hr'), leaveController.updateLeave);
-// router.delete('/employee/leave/:leaveId', authMiddleware, requireRoles('employee', 'supervisor', 'admin', 'hr'), leaveController.deleteLeave);
-// router.post('/employee/leave/draft', authMiddleware, requireRoles('employee', 'supervisor', 'admin', 'hr'), leaveController.saveDraft);
-// router.put('/employee/leave/draft/:leaveId', authMiddleware, requireRoles('employee', 'supervisor', 'admin', 'hr'), leaveController.saveDraft);
-
-// // Supervisor routes (includes dept head, president)
-// router.get('/supervisor/leaves', authMiddleware, requireRoles('supervisor', 'admin', 'hr'), leaveController.getSupervisorLeaves);
-// router.post('/supervisor/leave/:leaveId/decision', authMiddleware, requireRoles('supervisor', 'admin'), leaveController.processSupervisorDecision);
-
-// // HR routes
-// router.get('/hr/leaves', authMiddleware, requireRoles('hr', 'admin'), leaveController.getHRLeaves);
-// router.post('/hr/leave/:leaveId/decision', authMiddleware, requireRoles('hr', 'admin'), leaveController.processHRDecision);
-
-// // Admin routes
-// router.get('/admin/leaves', authMiddleware, requireRoles('admin'), leaveController.getAllLeaves);
-
-// // Universal routes
-// router.get('/leaves/role', authMiddleware, leaveController.getLeavesByRole);
-// router.get('/leaves/stats', authMiddleware, requireRoles('hr', 'admin'), leaveController.getLeaveStats);
-// router.get('/leaves/analytics', authMiddleware, requireRoles('hr', 'admin'), leaveController.getLeaveAnalytics);
-// router.get('/leaves/dashboard', authMiddleware, leaveController.getDashboardStats);
-// router.get('/leaves/approval-chain-preview', authMiddleware, requireRoles('employee', 'supervisor', 'admin', 'hr'), leaveController.getApprovalChainPreview);
-
-// // Single leave by ID (universal access with permission check)
-// router.get('/leave/:leaveId', authMiddleware, leaveController.getLeaveById);
-
-// module.exports = router;
 

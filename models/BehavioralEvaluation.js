@@ -40,8 +40,8 @@ const BehavioralEvaluationSchema = new mongoose.Schema({
     score: {
       type: Number,
       required: true,
-      min: 1,
-      max: 5
+      min: 1.0,  
+      max: 5.0   
     },
     comments: {
       type: String,

@@ -7,7 +7,7 @@ const quarterlyEvaluationController = require('../controllers/quarterlyEvaluatio
 router.get(
   '/statistics',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   quarterlyEvaluationController.getEvaluationStatistics
 );
 
@@ -22,7 +22,7 @@ router.get(
 router.get(
   '/',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   quarterlyEvaluationController.getEvaluations
 );
 
@@ -37,7 +37,7 @@ router.get(
 router.post(
   '/generate',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   quarterlyEvaluationController.generateQuarterlyEvaluation
 );
 
@@ -45,7 +45,7 @@ router.post(
 router.post(
   '/:id/submit',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   quarterlyEvaluationController.submitEvaluation
 );
 
@@ -53,7 +53,7 @@ router.post(
 router.post(
   '/:id/approve',
   authMiddleware,
-  requireRoles('employee', 'supervisor', 'admin', 'finance', 'it', 'hr', 'supply_chain'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   quarterlyEvaluationController.approveEvaluation
 );
 

@@ -8,79 +8,124 @@ router.use(authMiddleware);
 
 // Project CRUD Operations
 router.post('/', 
-    requireRoles('admin', 'supply_chain', 'manager', 'supervisor'),
+    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
     projectController.createProject
 );
 
 router.get('/', 
-    requireRoles('admin', 'supply_chain', 'manager', 'supervisor', 'finance', 'employee', 'it', 'hr', 'buyer', 'hse', 'technical'),
+    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
     projectController.getProjects
 );
 
 router.get('/active', 
-    requireRoles('admin', 'supply_chain', 'manager', 'supervisor', 'finance', 'employee', 'it', 'hr', 'buyer', 'hse', 'technical'),
+    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
     projectController.getActiveProjects
 );
 
 router.get('/stats', 
-    requireRoles('admin', 'supply_chain', 'manager', 'supervisor'),
+    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
     projectController.getProjectStats
 );
 
 // Supervisor milestone routes
 router.get('/my-milestones',
-    requireRoles('admin', 'supply_chain', 'manager', 'supervisor', 'finance', 'employee', 'it', 'hr', 'buyer', 'hse', 'technical'),
+    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
     projectController.getSupervisorMilestones
 );
 
 router.get('/:projectId/milestones/:milestoneId',
-    requireRoles('admin', 'supply_chain', 'manager', 'supervisor', 'finance', 'employee', 'it', 'hr', 'buyer', 'hse', 'technical'),
+    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
     projectController.getMilestoneDetails
 );
 
 router.post('/:projectId/milestones/:milestoneId/complete',
-    requireRoles('admin', 'supply_chain', 'manager', 'supervisor', 'finance', 'employee', 'it', 'hr', 'buyer', 'hse', 'technical'),
+    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
     projectController.completeMilestone
 );
 
 router.get('/search', 
-    requireRoles('admin', 'supply_chain', 'manager', 'supervisor', 'finance', 'employee', 'it', 'hr', 'buyer', 'hse', 'technical'),
+    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
     projectController.searchProjects
 );
 
 router.get('/my-projects', 
-    requireRoles('admin', 'supply_chain', 'manager', 'supervisor', 'finance', 'employee', 'it', 'hr', 'buyer', 'hse', 'technical'),
+    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
     projectController.getUserProjects
 );
 
 router.get('/department/:department', 
-    requireRoles('admin', 'supply_chain', 'manager', 'supervisor', 'finance', 'employee', 'it', 'hr', 'buyer', 'hse', 'technical'),
+    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
     projectController.getProjectsByDepartment
 );
 
 router.get('/:projectId', 
-    requireRoles('admin', 'supply_chain', 'manager', 'supervisor', 'finance', 'employee', 'it', 'hr', 'buyer', 'hse', 'technical'),
+    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
     projectController.getProjectById
 );
 
 router.put('/:projectId', 
-    requireRoles('admin', 'supply_chain', 'manager', 'supervisor', 'finance', 'employee', 'it', 'hr', 'buyer', 'hse', 'technical'),
+    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
     projectController.updateProject
 );
 
 router.patch('/:projectId/status', 
-    requireRoles('admin', 'supply_chain', 'manager', 'supervisor', 'finance', 'employee', 'it', 'hr', 'buyer', 'hse', 'technical'),
+    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
     projectController.updateProjectStatus
 );
 
 router.patch('/:projectId/progress', 
-    requireRoles('admin', 'supply_chain', 'manager', 'supervisor', 'employee', 'it', 'hr', 'buyer', 'hse', 'technical', 'finance'),
+    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
     projectController.updateProjectProgress
 );
 
 router.delete('/:projectId', 
-    requireRoles('admin', 'supply_chain', 'manager', 'supervisor', 'finance', 'employee', 'it', 'hr', 'buyer', 'hse', 'technical'),
+    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
     projectController.deleteProject
+);
+
+// Analytics
+router.get('/:projectId/analytics', 
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+  projectController.getProjectAnalytics
+);
+
+// Risk Management
+router.post('/:projectId/risks',
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+  projectController.addProjectRisk
+);
+
+router.patch('/:projectId/risks/:riskId/status',
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+  projectController.updateRiskStatus
+);
+
+// Issue Management
+router.post('/:projectId/issues',
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+  projectController.addProjectIssue
+);
+
+router.patch('/:projectId/issues/:issueId/resolve',
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+  projectController.resolveIssue
+);
+
+// Change Management
+router.post('/:projectId/change-requests',
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+  projectController.addChangeRequest
+);
+
+router.post('/:projectId/change-requests/:changeRequestId/process',
+  requireRoles('admin', 'supply_chain', 'project'),
+  projectController.processChangeRequest
+);
+
+// Meeting Management
+router.post('/:projectId/meetings',
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+  projectController.logProjectMeeting
 );
 
 router.get(

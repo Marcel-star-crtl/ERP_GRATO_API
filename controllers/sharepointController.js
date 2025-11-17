@@ -430,65 +430,6 @@ const uploadFile = async (req, res) => {
   }
 };
 
-// const getFiles = async (req, res) => {
-//   try {
-//     const { folderId } = req.params;
-//     const { search, sortBy, tags } = req.query;
-
-//     const folder = await SharePointFolder.findById(folderId);
-//     if (!folder) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'Folder not found'
-//       });
-//     }
-
-//     let query = { folderId, isDeleted: false };
-
-//     // Search filter
-//     if (search) {
-//       query.name = { $regex: search, $options: 'i' };
-//     }
-
-//     // Tags filter
-//     if (tags) {
-//       const tagArray = tags.split(',').map(t => t.trim());
-//       query.tags = { $in: tagArray };
-//     }
-
-//     let fileQuery = SharePointFile.find(query)
-//       .populate('uploadedBy', 'fullName email')
-//       .populate('sharedWith.userId', 'fullName email');
-
-//     // Sorting
-//     if (sortBy === 'recent') {
-//       fileQuery = fileQuery.sort({ uploadedAt: -1 });
-//     } else if (sortBy === 'size') {
-//       fileQuery = fileQuery.sort({ size: -1 });
-//     } else if (sortBy === 'name') {
-//       fileQuery = fileQuery.sort({ name: 1 });
-//     } else {
-//       fileQuery = fileQuery.sort({ uploadedAt: -1 });
-//     }
-
-//     const files = await fileQuery.exec();
-
-//     res.json({
-//       success: true,
-//       data: files,
-//       count: files.length
-//     });
-
-//   } catch (error) {
-//     console.error('Get files error:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to fetch files',
-//       error: error.message
-//     });
-//   }
-// };
-
 const getFiles = async (req, res) => {
   try {
     const { folderId } = req.params;
@@ -1096,71 +1037,6 @@ const generateShareLink = async (req, res) => {
   }
 };
 
-// ============ SEARCH & DISCOVERY ============
-
-// const globalSearch = async (req, res) => {
-//   try {
-//     const { query, fileType, department } = req.query;
-//     const user = await User.findById(req.user.userId);
-
-//     if (!query) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Search query is required'
-//       });
-//     }
-
-//     let searchQuery = {
-//       isDeleted: false,
-//       $or: [
-//         { name: { $regex: query, $options: 'i' } },
-//         { description: { $regex: query, $options: 'i' } },
-//         { tags: { $in: [new RegExp(query, 'i')] } }
-//       ]
-//     };
-
-//     // File type filter
-//     if (fileType) {
-//       searchQuery.mimetype = { $regex: fileType, $options: 'i' };
-//     }
-
-//     const files = await SharePointFile.find(searchQuery)
-//       .populate('uploadedBy', 'fullName email')
-//       .populate('folderId', 'name department')
-//       .sort({ uploadedAt: -1 })
-//       .limit(50);
-
-//     // Filter by access permissions
-//     const accessibleFiles = files.filter(file => {
-//       const folder = file.folderId;
-//       if (!folder) return false;
-      
-//       return (
-//         folder.isPublic ||
-//         folder.department === user.department ||
-//         folder.accessControl.allowedDepartments.includes(user.department) ||
-//         folder.accessControl.allowedUsers.includes(req.user.userId) ||
-//         user.role === 'admin'
-//       );
-//     });
-
-//     res.json({
-//       success: true,
-//       data: accessibleFiles,
-//       count: accessibleFiles.length
-//     });
-
-//   } catch (error) {
-//     console.error('Global search error:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to search files',
-//       error: error.message
-//     });
-//   }
-// };
-
-
 const globalSearch = async (req, res) => {
   try {
     const { query, fileType, department } = req.query;
@@ -1234,53 +1110,6 @@ const globalSearch = async (req, res) => {
     });
   }
 };
-
-// const getRecentFiles = async (req, res) => {
-//   try {
-//     const { days = 7 } = req.query;
-//     const user = await User.findById(req.user.userId);
-
-//     const startDate = new Date();
-//     startDate.setDate(startDate.getDate() - parseInt(days));
-
-//     const files = await SharePointFile.find({
-//       uploadedAt: { $gte: startDate },
-//       isDeleted: false
-//     })
-//       .populate('uploadedBy', 'fullName email')
-//       .populate('folderId', 'name department')
-//       .sort({ uploadedAt: -1 })
-//       .limit(20);
-
-//     // Filter by access permissions
-//     const accessibleFiles = files.filter(file => {
-//       const folder = file.folderId;
-//       if (!folder) return false;
-      
-//       return (
-//         folder.isPublic ||
-//         folder.department === user.department ||
-//         folder.accessControl.allowedDepartments.includes(user.department) ||
-//         folder.accessControl.allowedUsers.includes(req.user.userId) ||
-//         user.role === 'admin'
-//       );
-//     });
-
-//     res.json({
-//       success: true,
-//       data: accessibleFiles,
-//       count: accessibleFiles.length
-//     });
-
-//   } catch (error) {
-//     console.error('Get recent files error:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to fetch recent files',
-//       error: error.message
-//     });
-//   }
-// };
 
 const getRecentFiles = async (req, res) => {
   try {

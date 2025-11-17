@@ -7,7 +7,7 @@ const behavioralEvaluationController = require('../controllers/behavioralEvaluat
 router.get(
   '/default-criteria',
   authMiddleware,
-  requireRoles('admin', 'supply_chain', 'manager', 'supervisor', 'finance', 'employee', 'it', 'hr', 'buyer', 'hse', 'technical'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   behavioralEvaluationController.getDefaultCriteria
 );
 
@@ -22,7 +22,7 @@ router.get(
 router.get(
   '/',
   authMiddleware,
-  requireRoles('admin', 'supply_chain', 'manager', 'supervisor', 'finance', 'employee', 'it', 'hr', 'buyer', 'hse', 'technical'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   behavioralEvaluationController.getEvaluations
 );
 
@@ -37,7 +37,7 @@ router.get(
 router.post(
   '/',
   authMiddleware,
-  requireRoles('admin', 'supply_chain', 'manager', 'supervisor', 'finance', 'employee', 'it', 'hr', 'buyer', 'hse', 'technical'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   behavioralEvaluationController.createOrUpdateEvaluation
 );
 
@@ -45,7 +45,7 @@ router.post(
 router.post(
   '/:id/submit',
   authMiddleware,
-  requireRoles('admin', 'supply_chain', 'manager', 'supervisor', 'finance', 'employee', 'it', 'hr', 'buyer', 'hse', 'technical'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   behavioralEvaluationController.submitEvaluation
 );
 
@@ -60,7 +60,7 @@ router.post(
 router.delete(
   '/:id',
   authMiddleware,
-  requireRoles('admin', 'supply_chain', 'manager', 'supervisor', 'finance', 'employee', 'it', 'hr', 'buyer', 'hse', 'technical'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   behavioralEvaluationController.deleteEvaluation
 );
 

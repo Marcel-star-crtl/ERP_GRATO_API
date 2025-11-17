@@ -180,7 +180,7 @@ const getNextBudgetCodeStatus = (currentLevel, totalLevels) => {
     case 2:
       return 'pending_finance';
     case 3:
-      return 'active'; // Budget code becomes active after all approvals
+      return 'active'; 
     default:
       return 'active';
   }
@@ -318,6 +318,81 @@ const getBudgetCodeApprovalStats = (budgetCodes) => {
   return stats;
 };
 
+/**
+ * Get approval chain for budget transfers
+ * Requires approval from both budget owners + finance + HOB
+ */
+const getBudgetTransferApprovalChain = (requester, fromBudgetCode, toBudgetCode) => {
+  const chain = [];
+  let level = 1;
+
+  console.log(`Generating transfer approval chain from ${fromBudgetCode.code} to ${toBudgetCode.code}`);
+
+  // Level 1: Source Budget Owner (if not the requester)
+  if (fromBudgetCode.budgetOwner && 
+      fromBudgetCode.budgetOwner.toString() !== requester._id.toString()) {
+    const User = require('../models/User');
+    // Note: In production, you'd populate budgetOwner properly
+    chain.push({
+      level: level++,
+      approver: {
+        name: 'Source Budget Owner',
+        email: fromBudgetCode.budgetOwner.email || 'owner@company.com',
+        role: 'Budget Owner'
+      },
+      status: 'pending',
+      assignedDate: new Date()
+    });
+  }
+
+  // Level 2: Destination Budget Owner (if different from source)
+  if (toBudgetCode.budgetOwner && 
+      toBudgetCode.budgetOwner.toString() !== fromBudgetCode.budgetOwner?.toString() &&
+      toBudgetCode.budgetOwner.toString() !== requester._id.toString()) {
+    chain.push({
+      level: level++,
+      approver: {
+        name: 'Destination Budget Owner',
+        email: toBudgetCode.budgetOwner.email || 'owner@company.com',
+        role: 'Budget Owner'
+      },
+      status: 'pending',
+      assignedDate: new Date()
+    });
+  }
+
+  // Level 3: Finance Officer
+  chain.push({
+    level: level++,
+    approver: {
+      name: 'Ms. Rambell Mambo',
+      email: 'ranibellmambo@gratoengineering.com',
+      role: 'Finance Officer'
+    },
+    status: 'pending',
+    assignedDate: new Date()
+  });
+
+  // Level 4: Head of Business (for large transfers > 5M)
+  const executive = DEPARTMENT_STRUCTURE['Executive'];
+  if (fromBudgetCode.budget > 5000000 && executive) {
+    chain.push({
+      level: level++,
+      approver: {
+        name: executive.head,
+        email: executive.headEmail,
+        role: 'Head of Business'
+      },
+      status: 'pending',
+      assignedDate: new Date()
+    });
+  }
+
+  console.log(`Transfer approval chain created with ${chain.length} levels`);
+
+  return chain;
+};
+
 module.exports = {
   getBudgetCodeApprovalChain,
   getNextBudgetCodeStatus,
@@ -325,7 +400,8 @@ module.exports = {
   canUserApproveBudgetCode,
   validateBudgetCodeApproval,
   getBudgetCodeApprovalStats,
-  getFallbackBudgetCodeApprovalChain
+  getFallbackBudgetCodeApprovalChain,
+  getBudgetTransferApprovalChain
 };
 
 

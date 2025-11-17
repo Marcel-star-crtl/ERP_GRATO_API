@@ -820,6 +820,357 @@ const allocateBudgetToRequisition = async (req, res) => {
   }
 };
 
+
+const getBudgetDashboard = async (req, res) => {
+  try {
+    const { department, budgetType, fiscalYear } = req.query;
+
+    const filters = {};
+    if (department) filters.department = department;
+    if (budgetType) filters.budgetType = budgetType;
+    if (fiscalYear) filters.fiscalYear = parseInt(fiscalYear);
+
+    const dashboardData = await BudgetCode.getDashboardData(filters);
+
+    res.json({
+      success: true,
+      data: dashboardData
+    });
+  } catch (error) {
+    console.error('Get budget dashboard error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch budget dashboard',
+      error: error.message
+    });
+  }
+};
+
+// ============================================
+// BUDGET REPORTS & ANALYTICS
+// ============================================
+
+const getBudgetUtilizationReport = async (req, res) => {
+  try {
+    const { department, budgetType, fiscalYear } = req.query;
+
+    const filters = {};
+    if (department) filters.department = department;
+    if (budgetType) filters.budgetType = budgetType;
+    if (fiscalYear) filters.fiscalYear = parseInt(fiscalYear);
+
+    const report = await BudgetCode.getUtilizationReport(filters);
+
+    res.json({
+      success: true,
+      data: report
+    });
+  } catch (error) {
+    console.error('Get utilization report error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate utilization report',
+      error: error.message
+    });
+  }
+};
+
+const getBudgetForecast = async (req, res) => {
+  try {
+    const { codeId } = req.params;
+
+    let budgetCode = await BudgetCode.findById(codeId);
+    if (!budgetCode) {
+      budgetCode = await BudgetCode.findOne({ code: codeId.toUpperCase() });
+    }
+
+    if (!budgetCode) {
+      return res.status(404).json({
+        success: false,
+        message: 'Budget code not found'
+      });
+    }
+
+    const forecast = budgetCode.getForecast();
+
+    res.json({
+      success: true,
+      data: {
+        budgetCode: {
+          code: budgetCode.code,
+          name: budgetCode.name,
+          budget: budgetCode.budget,
+          used: budgetCode.used,
+          remaining: budgetCode.remaining,
+          utilizationPercentage: budgetCode.utilizationPercentage
+        },
+        forecast
+      }
+    });
+  } catch (error) {
+    console.error('Get budget forecast error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate budget forecast',
+      error: error.message
+    });
+  }
+};
+
+// ============================================
+// BUDGET REVISIONS
+// ============================================
+
+const requestBudgetRevision = async (req, res) => {
+  try {
+    const { codeId } = req.params;
+    const { newBudget, reason } = req.body;
+
+    if (!newBudget || !reason) {
+      return res.status(400).json({
+        success: false,
+        message: 'New budget amount and reason are required'
+      });
+    }
+
+    let budgetCode = await BudgetCode.findById(codeId);
+    if (!budgetCode) {
+      budgetCode = await BudgetCode.findOne({ code: codeId.toUpperCase() });
+    }
+
+    if (!budgetCode) {
+      return res.status(404).json({
+        success: false,
+        message: 'Budget code not found'
+      });
+    }
+
+    const revision = await budgetCode.requestBudgetRevision(
+      parseFloat(newBudget),
+      reason,
+      req.user.userId
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Budget revision requested successfully',
+      data: {
+        budgetCode,
+        revision
+      }
+    });
+  } catch (error) {
+    console.error('Request budget revision error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to request budget revision',
+      error: error.message
+    });
+  }
+};
+
+const getBudgetRevisions = async (req, res) => {
+  try {
+    const { codeId } = req.params;
+    const { status } = req.query;
+
+    let budgetCode = await BudgetCode.findById(codeId)
+      .populate('budgetRevisions.requestedBy', 'fullName email department')
+      .populate('budgetRevisions.approvedBy', 'fullName email')
+      .populate('budgetRevisions.rejectedBy', 'fullName email');
+
+    if (!budgetCode) {
+      budgetCode = await BudgetCode.findOne({ code: codeId.toUpperCase() })
+        .populate('budgetRevisions.requestedBy', 'fullName email department')
+        .populate('budgetRevisions.approvedBy', 'fullName email')
+        .populate('budgetRevisions.rejectedBy', 'fullName email');
+    }
+
+    if (!budgetCode) {
+      return res.status(404).json({
+        success: false,
+        message: 'Budget code not found'
+      });
+    }
+
+    let revisions = budgetCode.budgetRevisions;
+
+    if (status) {
+      revisions = revisions.filter(r => r.status === status);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        budgetCode: {
+          _id: budgetCode._id,
+          code: budgetCode.code,
+          name: budgetCode.name,
+          budget: budgetCode.budget
+        },
+        revisions
+      }
+    });
+  } catch (error) {
+    console.error('Get budget revisions error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch budget revisions',
+      error: error.message
+    });
+  }
+};
+
+const approveBudgetRevision = async (req, res) => {
+  try {
+    const { codeId, revisionId } = req.params;
+    const { comments } = req.body;
+
+    let budgetCode = await BudgetCode.findById(codeId);
+    if (!budgetCode) {
+      budgetCode = await BudgetCode.findOne({ code: codeId.toUpperCase() });
+    }
+
+    if (!budgetCode) {
+      return res.status(404).json({
+        success: false,
+        message: 'Budget code not found'
+      });
+    }
+
+    const revision = await budgetCode.approveBudgetRevision(
+      revisionId,
+      req.user.userId,
+      comments
+    );
+
+    res.json({
+      success: true,
+      message: revision.status === 'approved' 
+        ? 'Budget revision approved and applied'
+        : 'Budget revision approved. Moved to next level.',
+      data: {
+        budgetCode,
+        revision
+      }
+    });
+  } catch (error) {
+    console.error('Approve budget revision error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to approve budget revision',
+      error: error.message
+    });
+  }
+};
+
+const rejectBudgetRevision = async (req, res) => {
+  try {
+    const { codeId, revisionId } = req.params;
+    const { rejectionReason } = req.body;
+
+    if (!rejectionReason) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rejection reason is required'
+      });
+    }
+
+    let budgetCode = await BudgetCode.findById(codeId);
+    if (!budgetCode) {
+      budgetCode = await BudgetCode.findOne({ code: codeId.toUpperCase() });
+    }
+
+    if (!budgetCode) {
+      return res.status(404).json({
+        success: false,
+        message: 'Budget code not found'
+      });
+    }
+
+    const revision = await budgetCode.rejectBudgetRevision(
+      revisionId,
+      req.user.userId,
+      rejectionReason
+    );
+
+    res.json({
+      success: true,
+      message: 'Budget revision rejected',
+      data: {
+        budgetCode,
+        revision
+      }
+    });
+  } catch (error) {
+    console.error('Reject budget revision error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to reject budget revision',
+      error: error.message
+    });
+  }
+};
+
+const getPendingRevisions = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const budgetCodes = await BudgetCode.find({
+      'budgetRevisions.approvalChain.approver.email': user.email,
+      'budgetRevisions.approvalChain.status': 'pending',
+      'budgetRevisions.status': 'pending'
+    })
+      .populate('budgetOwner', 'fullName email department')
+      .populate('budgetRevisions.requestedBy', 'fullName email department');
+
+    const pendingRevisions = [];
+
+    budgetCodes.forEach(budgetCode => {
+      budgetCode.budgetRevisions.forEach(revision => {
+        if (revision.status === 'pending') {
+          const currentStep = revision.approvalChain.find(
+            step => step.status === 'pending' && step.approver.email === user.email
+          );
+
+          if (currentStep) {
+            pendingRevisions.push({
+              budgetCode: {
+                _id: budgetCode._id,
+                code: budgetCode.code,
+                name: budgetCode.name,
+                currentBudget: budgetCode.budget
+              },
+              revision: revision,
+              currentApprovalLevel: currentStep.level
+            });
+          }
+        }
+      });
+    });
+
+    res.json({
+      success: true,
+      data: pendingRevisions,
+      count: pendingRevisions.length
+    });
+  } catch (error) {
+    console.error('Get pending revisions error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch pending revisions',
+      error: error.message
+    });
+  }
+};
+
+
 module.exports = {
   createBudgetCode,
   processBudgetCodeApproval,
@@ -829,7 +1180,15 @@ module.exports = {
   updateBudgetCode,
   deleteBudgetCode,
   getBudgetCodeUtilization,
-  allocateBudgetToRequisition
+  allocateBudgetToRequisition,
+  getBudgetDashboard,
+  getBudgetUtilizationReport,
+  getBudgetForecast,
+  requestBudgetRevision,
+  getBudgetRevisions,
+  approveBudgetRevision,
+  rejectBudgetRevision,
+  getPendingRevisions
 };
 
 

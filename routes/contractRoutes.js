@@ -7,14 +7,14 @@ const upload = require('../middlewares/uploadMiddleware');
 // Get all contracts
 router.get('/',
   authMiddleware,
-  requireRoles('admin', 'supply_chain', 'finance', 'supervisor'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   contractController.getAllContracts
 );
 
 // Get specific contract by ID
 router.get('/:contractId',
   authMiddleware,
-  requireRoles('admin', 'supply_chain', 'finance', 'supervisor'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   contractController.getContractById
 );
 
@@ -242,7 +242,7 @@ router.put('/:contractId/milestones/:milestoneId',
 // Add communication record
 router.post('/:contractId/communications',
   authMiddleware,
-  requireRoles('admin', 'supply_chain', 'finance', 'supervisor'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   async (req, res) => {
     try {
       const { contractId } = req.params;
@@ -349,7 +349,7 @@ router.post('/:contractId/documents',
 // Download contract document
 router.get('/:contractId/documents/:documentId',
   authMiddleware,
-  requireRoles('admin', 'supply_chain', 'finance', 'supervisor'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   async (req, res) => {
     try {
       const { contractId, documentId } = req.params;
@@ -652,7 +652,7 @@ router.put('/bulk/status',
 // Advanced contract search
 router.post('/search',
   authMiddleware,
-  requireRoles('admin', 'supply_chain', 'finance', 'supervisor'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   async (req, res) => {
     try {
       const {

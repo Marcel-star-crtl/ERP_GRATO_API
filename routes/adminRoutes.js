@@ -1,6 +1,3 @@
-// ============================================================
-// routes/adminRoutes.js - Complete Admin Backend
-// ============================================================
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
@@ -159,9 +156,7 @@ router.get('/dashboard', async (req, res) => {
   }
 });
 
-// ============================================================
-// USER MANAGEMENT
-// ============================================================
+
 /**
  * Get all users with pagination and filters
  * GET /api/admin/users
@@ -458,9 +453,7 @@ router.post('/users/:userId/reset-password', async (req, res) => {
   }
 });
 
-// ============================================================
-// SITES MANAGEMENT
-// ============================================================
+
 /**
  * Get all sites with pagination and filters
  * GET /api/admin/sites
@@ -653,9 +646,7 @@ router.delete('/sites/:siteId', async (req, res) => {
   }
 });
 
-// ============================================================
-// MAINTENANCE MANAGEMENT
-// ============================================================
+
 /**
  * Get all maintenance records
  * GET /api/admin/maintenance
@@ -807,9 +798,7 @@ router.delete('/maintenance/:maintenanceId', async (req, res) => {
   }
 });
 
-// ============================================================
-// PARTS MANAGEMENT
-// ============================================================
+
 /**
  * Get all parts
  * GET /api/admin/parts

@@ -100,62 +100,52 @@
 
 
 
-
 require('dotenv').config();
 const mongoose = require('mongoose');
-const User = require('../models/User');
+const SupplierInvoice = require('../models/SupplierInvoice');
 
-async function createAdminUsers() {
+async function removeAllSupplierInvoices() {
   try {
+    // Connect to MongoDB
     await mongoose.connect(process.env.MONGO_URI);
-    
-    const adminUsers = [
-      {
-        email: 'qiroketeam@gmail.com',
-        password: 'admin1234', 
-        fullName: 'System Administrator',
-        role: 'finance',
-        department: 'Finance',
-        isActive: true,
-        emailVerified: true
-      }
-    ];
+    console.log('Connected to MongoDB');
 
-    console.log('Creating admin users...');
-    
-    // First, delete existing admin users to avoid duplicates
-    for (const userData of adminUsers) {
-      await User.deleteOne({ email: userData.email });
-      console.log(`Cleared existing user: ${userData.email}`);
-    }
-    
-    // Create new admin users
-    for (const userData of adminUsers) {
-      const user = new User(userData);
-      await user.save(); // Password will be hashed by the pre-save middleware
-      console.log(`Admin user ${userData.email} created successfully`);
+    // Count existing invoices
+    const count = await SupplierInvoice.countDocuments();
+    console.log(`\nFound ${count} supplier invoice(s) in the system`);
+
+    if (count === 0) {
+      console.log('No supplier invoices to remove.');
+      return;
     }
 
-    console.log('\nAdmin users created:');
+    // Ask for confirmation (in production, you might want to add actual user input)
+    console.log('\n⚠️  WARNING: This will delete ALL supplier invoices!');
+    console.log('This action cannot be undone.\n');
+
+    // Delete all supplier invoices
+    const result = await SupplierInvoice.deleteMany({});
+    
+    console.log(`\n✅ Successfully removed ${result.deletedCount} supplier invoice(s)`);
+    console.log('\nCleanup Summary:');
     console.log('---------------------');
-    console.log('1. Primary Admin:');
-    console.log('   Email: marcel.ngong@gratoglobal.com');
-    console.log('   Password: admin1234');
-    console.log('   Department: IT');
+    console.log(`Total Deleted: ${result.deletedCount}`);
+    console.log('Status: All supplier invoices removed from the system');
     console.log('---------------------');
-    console.log('\nNote: Passwords were automatically hashed by the User model');
 
   } catch (error) {
-    console.error('Error creating admin users:', error);
+    console.error('\n❌ Error removing supplier invoices:', error);
+    console.error('Error details:', error.message);
   } finally {
+    // Disconnect from MongoDB
     await mongoose.disconnect();
+    console.log('\nDisconnected from MongoDB');
     process.exit(0);
   }
 }
 
-createAdminUsers();
-
-
+// Run the cleanup script
+removeAllSupplierInvoices();
 
 
 
