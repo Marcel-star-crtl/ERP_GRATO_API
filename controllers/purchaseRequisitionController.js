@@ -1,6 +1,6 @@
 const PurchaseRequisition = require('../models/PurchaseRequisition');
 const User = require('../models/User');
-const { getApprovalChain } = require('../config/requisitionApprovalChain');
+const { getApprovalChainForRequisition } = require('../config/requisitionApprovalChain');
 const { sendPurchaseRequisitionEmail, sendEmail } = require('../services/emailService');
 const fs = require('fs');
 const path = require('path');
@@ -133,8 +133,8 @@ const createRequisition = async (req, res) => {
     console.log('Processed items:', processedItems);
 
     // Generate approval chain based on employee name and department
-    const { getApprovalChain } = require('../config/requisitionApprovalChain');
-    const approvalChain = getApprovalChain(employee.fullName, employee.department);
+    const { getApprovalChainForRequisition } = require('../config/requisitionApprovalChain');
+    const approvalChain = getApprovalChainForRequisition(employee.fullName, employee.department);
     console.log('Generated approval chain:', JSON.stringify(approvalChain, null, 2));
 
     if (!approvalChain || approvalChain.length === 0) {
@@ -1390,7 +1390,7 @@ const getApprovalChainPreview = async (req, res) => {
     }
 
     // Generate approval chain
-    const approvalChain = getApprovalChain(employeeName, department);
+    const approvalChain = getApprovalChainForRequisition(employeeName, department);
 
     if (!approvalChain || approvalChain.length === 0) {
       return res.status(400).json({
@@ -3644,355 +3644,6 @@ const getPaymentMethodOptions = async (req, res) => {
 };
 
 
-/**
- * Send petty cash form notification to employee
- */
-const sendPettyCashFormNotificationToEmployee = async (requisition) => {
-  try {
-    await sendEmail({
-      to: requisition.employee.email,
-      subject: `Petty Cash Form Generated - ${requisition.title}`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background-color: #f6ffed; padding: 20px; border-radius: 8px; border-left: 4px solid #52c41a;">
-            <h2 style="color: #52c41a; margin-top: 0;">✓ Requisition Approved - Petty Cash Form Generated</h2>
-            <p>Dear ${requisition.employee.fullName},</p>
-            <p>Your purchase requisition has been approved and a petty cash form has been generated.</p>
-            
-            <div style="background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
-              <h4>Requisition Details</h4>
-              <ul>
-                <li><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
-                <li><strong>Title:</strong> ${requisition.title}</li>
-                <li><strong>Amount:</strong> XAF ${requisition.budgetXAF.toLocaleString()}</li>
-                <li><strong>Payment Method:</strong> Petty Cash</li>
-              </ul>
-            </div>
-            
-            <div style="background-color: #fff7e6; padding: 15px; border-radius: 8px; margin: 15px 0;">
-              <h4>Petty Cash Form</h4>
-              <p><strong>Form Number:</strong> ${requisition.pettyCashForm.formNumber}</p>
-              <p>The assigned buyer will handle the petty cash disbursement process.</p>
-            </div>
-            
-            <p><strong>Next Steps:</strong></p>
-            <ul>
-              <li>Your assigned buyer will download the petty cash form</li>
-              <li>The procurement process will continue as scheduled</li>
-              <li>You will be notified of any updates</li>
-            </ul>
-            
-            <p>You can track your requisition status in your employee dashboard.</p>
-            
-            <p>Best regards,<br>Procurement Team</p>
-          </div>
-        </div>
-      `
-    });
-    
-    console.log('Petty cash form notification sent to employee:', requisition.employee.email);
-  } catch (error) {
-    console.error('Error sending employee notification:', error);
-    throw error;
-  }
-};
-
-/**
- * Process head approval decision
- * ENHANCED: Auto-generate petty cash form if payment method is cash
- */
-const processHeadApproval = async (req, res) => {
-  try {
-    const { requisitionId } = req.params;
-    const { decision, comments } = req.body;
-    
-    console.log('=== PROCESS HEAD APPROVAL ===');
-    console.log('Requisition ID:', requisitionId);
-    console.log('Decision:', decision);
-    
-    const user = await User.findById(req.user.userId);
-    const requisition = await PurchaseRequisition.findById(requisitionId)
-      .populate('employee', 'fullName email department')
-      .populate('supplyChainReview.assignedBuyer', 'fullName email');
-    
-    if (!requisition) {
-      return res.status(404).json({
-        success: false,
-        message: 'Requisition not found'
-      });
-    }
-    
-    // Verify status
-    if (requisition.status !== 'pending_head_approval') {
-      return res.status(400).json({
-        success: false,
-        message: `Cannot process approval. Current status: ${requisition.status}`
-      });
-    }
-    
-    // Update head approval
-    requisition.headApproval = {
-      decision: decision,
-      comments: comments,
-      decisionDate: new Date(),
-      decidedBy: req.user.userId
-    };
-    
-    if (decision === 'approved') {
-      requisition.status = 'approved';
-      
-      // NEW: Auto-generate petty cash form if payment method is cash
-      const paymentMethod = requisition.supplyChainReview?.paymentMethod;
-      
-      if (paymentMethod === 'cash') {
-        console.log('Payment method is cash - generating petty cash form');
-        
-        try {
-          // Generate petty cash form number
-          await requisition.generatePettyCashFormNumber();
-          
-          console.log('Petty cash form generated:', requisition.pettyCashForm.formNumber);
-          
-          // Save requisition with petty cash form
-          await requisition.save();
-          
-          // Send notification to buyer about petty cash form
-          if (requisition.supplyChainReview.assignedBuyer) {
-            await sendPettyCashFormNotificationToBuyer(requisition);
-          }
-          
-          // Send notification to employee
-          await sendPettyCashFormNotificationToEmployee(requisition);
-          
-        } catch (pettyCashError) {
-          console.error('Error generating petty cash form:', pettyCashError);
-          // Continue with approval even if petty cash generation fails
-          // The form can be regenerated later if needed
-        }
-      } else {
-        console.log('Payment method is bank - no petty cash form needed');
-        await requisition.save();
-      }
-      
-      // Send approval notification
-      try {
-        await sendEmail({
-          to: requisition.employee.email,
-          subject: `Requisition Approved - ${requisition.title}`,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <div style="background-color: #f6ffed; padding: 20px; border-radius: 8px; border-left: 4px solid #52c41a;">
-                <h2 style="color: #52c41a; margin-top: 0;">✓ Requisition Approved</h2>
-                <p>Dear ${requisition.employee.fullName},</p>
-                <p>Your purchase requisition has been approved by ${user.fullName} (Head of Business Dev & Supply Chain).</p>
-                
-                <div style="background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                  <h4>Requisition Details</h4>
-                  <ul>
-                    <li><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
-                    <li><strong>Title:</strong> ${requisition.title}</li>
-                    <li><strong>Budget:</strong> XAF ${requisition.budgetXAF.toLocaleString()}</li>
-                    <li><strong>Payment Method:</strong> ${paymentMethod === 'cash' ? 'Petty Cash' : 'Bank Transfer'}</li>
-                    <li><strong>Approval Date:</strong> ${new Date().toLocaleDateString('en-GB')}</li>
-                  </ul>
-                </div>
-                
-                ${paymentMethod === 'cash' ? `
-                <div style="background-color: #fff7e6; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                  <h4>Petty Cash Form Generated</h4>
-                  <p><strong>Form Number:</strong> ${requisition.pettyCashForm?.formNumber}</p>
-                  <p>A petty cash form has been automatically generated for this requisition. Your assigned buyer will handle the petty cash disbursement process.</p>
-                </div>
-                ` : `
-                <div style="background-color: #e6f7ff; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                  <h4>Bank Transfer Payment</h4>
-                  <p>This requisition will be processed through the standard procurement process with bank transfer payment.</p>
-                  <p>Your assigned buyer will begin the sourcing process and send RFQs to qualified suppliers.</p>
-                </div>
-                `}
-                
-                <p><strong>Next Steps:</strong></p>
-                <ul>
-                  ${paymentMethod === 'cash' ? 
-                    '<li>Your assigned buyer will download the petty cash form</li><li>The procurement process will continue as scheduled</li><li>You will be notified of any updates</li>' :
-                    '<li>Your assigned buyer will create and send RFQs to suppliers</li><li>Suppliers will submit their quotations</li><li>The buyer will evaluate quotes and select the best option</li><li>You will be notified when procurement is complete</li>'
-                  }
-                </ul>
-                
-                <p>You can track your requisition status in your employee dashboard.</p>
-                <p>Best regards,<br>Procurement Team</p>
-              </div>
-            </div>
-          `
-        });
-        
-        console.log('Approval email sent to employee');
-      } catch (emailError) {
-        console.error('Failed to send approval email:', emailError);
-        // Don't fail the approval if email fails
-      }
-      
-    } else if (decision === 'rejected') {
-      requisition.status = 'rejected';
-      await requisition.save();
-      
-      // Send rejection notification
-      try {
-        await sendEmail({
-          to: requisition.employee.email,
-          subject: `Requisition Rejected - ${requisition.title}`,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <div style="background-color: #fff2f0; padding: 20px; border-radius: 8px; border-left: 4px solid #ff4d4f;">
-                <h2 style="color: #ff4d4f; margin-top: 0;">✗ Requisition Rejected</h2>
-                <p>Dear ${requisition.employee.fullName},</p>
-                <p>Your purchase requisition has been rejected by ${user.fullName} (Head of Business Dev & Supply Chain).</p>
-                
-                <div style="background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                  <h4>Requisition Details</h4>
-                  <ul>
-                    <li><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
-                    <li><strong>Title:</strong> ${requisition.title}</li>
-                    <li><strong>Rejection Date:</strong> ${new Date().toLocaleDateString('en-GB')}</li>
-                  </ul>
-                </div>
-                
-                ${comments ? `
-                <div style="background-color: #fff7e6; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                  <h4>Rejection Reason</h4>
-                  <p>${comments}</p>
-                </div>
-                ` : ''}
-                
-                <p>If you believe this rejection was made in error or have additional information, please contact your supervisor or the Supply Chain team.</p>
-                <p>Best regards,<br>Procurement Team</p>
-              </div>
-            </div>
-          `
-        });
-        
-        console.log('Rejection email sent to employee');
-      } catch (emailError) {
-        console.error('Failed to send rejection email:', emailError);
-        // Don't fail the rejection if email fails
-      }
-    }
-    
-    res.json({
-      success: true,
-      message: `Requisition ${decision}`,
-      data: {
-        requisitionId: requisition._id,
-        requisitionNumber: requisition.requisitionNumber,
-        status: requisition.status,
-        decision: decision,
-        pettyCashForm: requisition.pettyCashForm?.generated ? {
-          formNumber: requisition.pettyCashForm.formNumber,
-          generatedDate: requisition.pettyCashForm.generatedDate,
-          status: requisition.pettyCashForm.status
-        } : null,
-        paymentMethod: requisition.supplyChainReview?.paymentMethod
-      }
-    });
-    
-  } catch (error) {
-    console.error('Error processing head approval:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to process head approval',
-      error: error.message
-    });
-  }
-};
-
-// ✅ NEW: Notification function
-const sendPettyCashFormNotificationToBuyer = async (requisition, pettyCashForm) => {
-  try {
-    const buyer = requisition.supplyChainReview?.assignedBuyer;
-    
-    if (!buyer || !buyer.email) {
-      console.warn('No buyer assigned to send notification');
-      return;
-    }
-    
-    const paymentMethodLabel = requisition.paymentMethod === 'cash' ? 
-      '💵 Cash Payment' : '🏦 Bank Transfer';
-    
-    await sendEmail({
-      to: buyer.email,
-      subject: `🔔 New Purchase Requisition Approved - ${paymentMethodLabel}`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px;">
-            <h2 style="color: #1890ff;">📋 Approved Purchase Requisition</h2>
-            <p>Dear ${buyer.fullName},</p>
-            <p>A purchase requisition has been approved and assigned to you:</p>
-            
-            <div style="background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
-              <h4>Requisition Details</h4>
-              <ul style="list-style: none; padding: 0;">
-                <li><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
-                <li><strong>Title:</strong> ${requisition.title}</li>
-                <li><strong>Requester:</strong> ${requisition.employee.fullName}</li>
-                <li><strong>Department:</strong> ${requisition.department}</li>
-                <li><strong>Budget:</strong> XAF ${requisition.budgetXAF?.toLocaleString()}</li>
-                <li><strong>Payment Method:</strong> ${paymentMethodLabel}</li>
-              </ul>
-            </div>
-            
-            <div style="background-color: #f6ffed; padding: 15px; border-radius: 8px; margin: 15px 0;">
-              <h4 style="color: #52c41a;">✅ Petty Cash Form Generated</h4>
-              <p><strong>Form Number:</strong> ${pettyCashForm.formNumber}</p>
-              <p>A petty cash form has been automatically generated with all requisition details.</p>
-              <p>You can download this form from your buyer dashboard.</p>
-            </div>
-            
-            ${requisition.paymentMethod === 'cash' ? `
-            <div style="background-color: #fff7e6; padding: 15px; border-radius: 8px; margin: 15px 0;">
-              <h4 style="color: #faad14;">💵 Cash Payment Process</h4>
-              <p><strong>Next Steps:</strong></p>
-              <ol>
-                <li>Download the petty cash form from your dashboard</li>
-                <li>Process the cash disbursement as per company policy</li>
-                <li>RFQ creation is optional for cash payments</li>
-              </ol>
-            </div>
-            ` : `
-            <div style="background-color: #f0f5ff; padding: 15px; border-radius: 8px; margin: 15px 0;">
-              <h4 style="color: #1890ff;">🏦 Bank Transfer Process</h4>
-              <p><strong>Next Steps:</strong></p>
-              <ol>
-                <li>Review the requisition details in your dashboard</li>
-                <li>Create RFQ and invite suppliers if needed</li>
-                <li>Evaluate quotes and create purchase order</li>
-              </ol>
-            </div>
-            `}
-            
-            <p style="text-align: center; margin-top: 20px;">
-              <a href="${process.env.FRONTEND_URL}/buyer/dashboard" 
-                 style="background-color: #1890ff; color: white; padding: 12px 24px; 
-                        text-decoration: none; border-radius: 4px; display: inline-block;">
-                View in Dashboard
-              </a>
-            </p>
-            
-            <p style="color: #666; font-size: 12px; margin-top: 20px;">
-              Please log in to your buyer portal to access all features.
-            </p>
-          </div>
-        </div>
-      `
-    });
-    
-    console.log('✅ Notification sent to buyer:', buyer.email);
-    
-  } catch (error) {
-    console.error('Failed to send buyer notification:', error);
-    // Don't throw - notification failure shouldn't block the process
-  }
-};
-
 // NEW: Get Finance Requisitions for Verification
 const getFinanceRequisitions = async (req, res) => {
   try {
@@ -4432,6 +4083,567 @@ const getFinanceDashboardData = async (req, res) => {
 };
 
 
+const processSupplyChainBusinessDecisions = async (req, res) => {
+  try {
+    const { requisitionId } = req.params;
+    const { 
+      sourcingType, 
+      purchaseType,
+      paymentMethod, 
+      assignedBuyer, 
+      estimatedCost,
+      comments 
+    } = req.body;
+    
+    console.log('\n=== SUPPLY CHAIN BUSINESS DECISIONS ===');
+    console.log('Requisition ID:', requisitionId);
+    console.log('Sourcing Type:', sourcingType);
+    console.log('Purchase Type:', purchaseType);
+    console.log('Payment Method:', paymentMethod);
+    console.log('Assigned Buyer:', assignedBuyer);
+    
+    const user = await User.findById(req.user.userId);
+    
+    // Verify user is Supply Chain Coordinator or Admin
+    const canProcess = 
+      user.role === 'admin' ||
+      user.role === 'supply_chain' ||
+      user.email === 'lukong.lambert@gratoglobal.com';
+    
+    if (!canProcess) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Only Supply Chain Coordinator can make these decisions.'
+      });
+    }
+    
+    const requisition = await PurchaseRequisition.findById(requisitionId)
+      .populate('employee', 'fullName email department')
+      .populate('financeVerification.verifiedBy', 'fullName email');
+    
+    if (!requisition) {
+      return res.status(404).json({
+        success: false,
+        message: 'Requisition not found'
+      });
+    }
+    
+    // ✅ CRITICAL: Must be after finance verification
+    if (requisition.status !== 'pending_supply_chain_review') {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot process at this stage. Current status: ${requisition.status}. Must be 'pending_supply_chain_review'`
+      });
+    }
+    
+    // ============================================
+    // VALIDATION: All business decisions required
+    // ============================================
+    const validationErrors = [];
+    
+    if (!sourcingType || !['direct_purchase', 'quotation_required', 'tender_process', 'framework_agreement'].includes(sourcingType)) {
+      validationErrors.push('Valid sourcing type is required');
+    }
+    
+    if (!purchaseType || !['opex', 'capex', 'standard', 'emergency'].includes(purchaseType)) {
+      validationErrors.push('Valid purchase type is required');
+    }
+    
+    if (!paymentMethod || !['bank', 'cash'].includes(paymentMethod)) {
+      validationErrors.push('Valid payment method (bank or cash) is required');
+    }
+    
+    if (!assignedBuyer) {
+      validationErrors.push('Buyer assignment is required');
+    }
+    
+    if (validationErrors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: validationErrors
+      });
+    }
+    
+    // ============================================
+    // VALIDATE BUYER EXISTS AND IS ACTIVE
+    // ============================================
+    const buyer = await User.findOne({
+      _id: assignedBuyer,
+      $or: [
+        { role: 'buyer' },
+        { departmentRole: 'buyer' },
+        { email: 'lukong.lambert@gratoglobal.com' } // Coordinator can also be buyer
+      ],
+      isActive: true
+    });
+    
+    if (!buyer) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid buyer selected or buyer is not active'
+      });
+    }
+    
+    console.log(`✅ Buyer validated: ${buyer.fullName}`);
+    
+    // ============================================
+    // UPDATE SUPPLY CHAIN REVIEW WITH BUSINESS DECISIONS
+    // ============================================
+    requisition.supplyChainReview = {
+      ...requisition.supplyChainReview,
+      
+      // Business Decisions
+      sourcingType: sourcingType,
+      purchaseTypeAssigned: purchaseType,
+      paymentMethod: paymentMethod, // ✅ NEW FIELD
+      
+      // Buyer Assignment
+      assignedBuyer: assignedBuyer,
+      buyerAssignmentDate: new Date(),
+      buyerAssignedBy: req.user.userId,
+      
+      // Additional Details
+      estimatedCost: estimatedCost || requisition.budgetXAF || requisition.financeVerification?.assignedBudget,
+      comments: comments,
+      
+      // Decision Status
+      decision: 'approve',
+      decisionDate: new Date(),
+      decidedBy: req.user.userId
+    };
+    
+    // Update main fields
+    requisition.purchaseType = purchaseType;
+    requisition.paymentMethod = paymentMethod;
+    
+    // ✅ CRITICAL: Move to Head of Business for final approval
+    requisition.status = 'pending_head_approval';
+    
+    await requisition.save();
+    
+    console.log('✅ Supply Chain business decisions recorded');
+    console.log(`   Sourcing: ${sourcingType}`);
+    console.log(`   Purchase Type: ${purchaseType}`);
+    console.log(`   Payment: ${paymentMethod}`);
+    console.log(`   Buyer: ${buyer.fullName}`);
+    console.log(`   Next: Head of Business approval`);
+    
+    // ============================================
+    // SEND NOTIFICATIONS
+    // ============================================
+    const notifications = [];
+    
+    // 1. Notify assigned buyer (they'll process after head approval)
+    notifications.push(
+      sendEmail({
+        to: buyer.email,
+        subject: `Purchase Requisition Assigned - Pending Head Approval - ${requisition.employee.fullName}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px; border-left: 4px solid #1890ff;">
+              <h2 style="color: #1890ff; margin-top: 0;">📋 New Purchase Assignment (Pending Final Approval)</h2>
+              <p>Dear ${buyer.fullName},</p>
+              <p>You have been assigned a purchase requisition by ${user.fullName}. It is currently pending final approval from the Head of Business.</p>
+              
+              <div style="background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h4>Assignment Details</h4>
+                <ul>
+                  <li><strong>Requisition:</strong> ${requisition.title}</li>
+                  <li><strong>Requester:</strong> ${requisition.employee.fullName}</li>
+                  <li><strong>Department:</strong> ${requisition.employee.department}</li>
+                  <li><strong>Budget:</strong> XAF ${(estimatedCost || requisition.budgetXAF || 0).toLocaleString()}</li>
+                  <li><strong>Sourcing Type:</strong> ${sourcingType.replace('_', ' ').toUpperCase()}</li>
+                  <li><strong>Purchase Type:</strong> ${purchaseType.toUpperCase()}</li>
+                  <li><strong>Payment Method:</strong> ${paymentMethod === 'cash' ? '💵 PETTY CASH' : '🏦 BANK TRANSFER'}</li>
+                </ul>
+              </div>
+              
+              ${paymentMethod === 'cash' ? `
+              <div style="background-color: #fff7e6; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #faad14;">
+                <h4 style="color: #faad14; margin-top: 0;">💵 Petty Cash Payment</h4>
+                <p>This requisition will be paid through petty cash. Once the Head of Business approves, a petty cash form will be automatically generated for you to download.</p>
+              </div>
+              ` : `
+              <div style="background-color: #f6ffed; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #52c41a;">
+                <h4 style="color: #52c41a; margin-top: 0;">🏦 Bank Transfer Payment</h4>
+                <p>This requisition will be processed through standard procurement with bank transfer payment. You'll begin the RFQ process after head approval.</p>
+              </div>
+              `}
+              
+              <p><strong>Next Steps:</strong></p>
+              <ul>
+                <li>Wait for Head of Business approval</li>
+                <li>You'll receive another notification when approved</li>
+                ${paymentMethod === 'cash' ? 
+                  '<li>Download the auto-generated petty cash form</li>' :
+                  '<li>Begin RFQ/sourcing process</li>'
+                }
+              </ul>
+            </div>
+          </div>
+        `
+      }).catch(error => {
+        console.error('Failed to send buyer notification:', error);
+        return { error, type: 'buyer' };
+      })
+    );
+    
+    // 2. Notify Head of Business for final approval
+    const headOfBusiness = await User.findOne({
+      email: 'kelvin.eyong@gratoglobal.com'
+    });
+    
+    if (headOfBusiness) {
+      notifications.push(
+        sendEmail({
+          to: headOfBusiness.email,
+          subject: `Purchase Requisition Ready for Final Approval - ${requisition.employee.fullName}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;">
+                <h2 style="color: #856404; margin-top: 0;">⚡ Final Approval Required</h2>
+                <p>Dear Mr. Kelvin,</p>
+                <p>A purchase requisition has completed all business decisions and is ready for your final approval.</p>
+                
+                <div style="background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                  <h4>Requisition Summary</h4>
+                  <ul>
+                    <li><strong>Requester:</strong> ${requisition.employee.fullName} (${requisition.employee.department})</li>
+                    <li><strong>Title:</strong> ${requisition.title}</li>
+                    <li><strong>Budget:</strong> XAF ${(estimatedCost || requisition.budgetXAF || 0).toLocaleString()}</li>
+                    <li><strong>Budget Code:</strong> ${requisition.financeVerification?.budgetCode || 'N/A'}</li>
+                  </ul>
+                </div>
+                
+                <div style="background-color: #e6f7ff; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                  <h4>✅ Business Decisions Made by ${user.fullName}</h4>
+                  <ul>
+                    <li><strong>Sourcing Type:</strong> ${sourcingType.replace('_', ' ').toUpperCase()}</li>
+                    <li><strong>Purchase Type:</strong> ${purchaseType.toUpperCase()}</li>
+                    <li><strong>Payment Method:</strong> ${paymentMethod === 'cash' ? 'PETTY CASH' : 'BANK TRANSFER'}</li>
+                    <li><strong>Assigned Buyer:</strong> ${buyer.fullName}</li>
+                  </ul>
+                </div>
+                
+                ${paymentMethod === 'cash' ? `
+                <div style="background-color: #fff7e6; padding: 10px; border-radius: 5px; margin: 10px 0;">
+                  <p style="margin: 0;"><strong>💡 Note:</strong> Petty cash form will be auto-generated upon your approval</p>
+                </div>
+                ` : ''}
+                
+                <div style="text-align: center; margin: 20px 0;">
+                  <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/head-business/requisitions/${requisition._id}"
+                     style="background-color: #ffc107; color: #333; padding: 12px 24px;
+                            text-decoration: none; border-radius: 6px; font-weight: bold;">
+                    Review & Approve
+                  </a>
+                </div>
+              </div>
+            </div>
+          `
+        }).catch(error => {
+          console.error('Failed to send head notification:', error);
+          return { error, type: 'head' };
+        })
+      );
+    }
+    
+    // 3. Notify employee of progress
+    notifications.push(
+      sendEmail({
+        to: requisition.employee.email,
+        subject: `Purchase Requisition Update - Business Decisions Made`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background-color: #d1ecf1; padding: 20px; border-radius: 8px; border-left: 4px solid #17a2b8;">
+              <h2 style="color: #0c5460; margin-top: 0;">✓ Business Decisions Completed</h2>
+              <p>Dear ${requisition.employee.fullName},</p>
+              <p>Your purchase requisition has been processed by the Supply Chain team and is now pending final approval.</p>
+              
+              <div style="background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h4>Processing Details</h4>
+                <ul>
+                  <li><strong>Requisition:</strong> ${requisition.title}</li>
+                  <li><strong>Processed by:</strong> ${user.fullName}</li>
+                  <li><strong>Sourcing Method:</strong> ${sourcingType.replace('_', ' ')}</li>
+                  <li><strong>Purchase Type:</strong> ${purchaseType.toUpperCase()}</li>
+                  <li><strong>Payment Method:</strong> ${paymentMethod === 'cash' ? 'Petty Cash' : 'Bank Transfer'}</li>
+                  <li><strong>Assigned Buyer:</strong> ${buyer.fullName}</li>
+                  <li><strong>Current Status:</strong> Pending Head of Business Approval</li>
+                </ul>
+              </div>
+              
+              <p>You will be notified once the Head of Business approves your requisition.</p>
+            </div>
+          </div>
+        `
+      }).catch(error => {
+        console.error('Failed to send employee notification:', error);
+        return { error, type: 'employee' };
+      })
+    );
+    
+    // Wait for notifications
+    const notificationResults = await Promise.allSettled(notifications);
+    
+    console.log('\n=== SUPPLY CHAIN DECISIONS COMPLETED ===');
+    
+    res.json({
+      success: true,
+      message: 'Business decisions recorded successfully. Moving to head approval.',
+      data: {
+        requisitionId: requisition._id,
+        requisitionNumber: requisition.requisitionNumber,
+        status: requisition.status,
+        businessDecisions: {
+          sourcingType,
+          purchaseType,
+          paymentMethod,
+          assignedBuyer: {
+            id: buyer._id,
+            name: buyer.fullName,
+            email: buyer.email
+          }
+        },
+        nextStep: 'Head of Business Final Approval'
+      },
+      notifications: {
+        sent: notificationResults.filter(r => r.status === 'fulfilled' && !r.value?.error).length,
+        failed: notificationResults.filter(r => r.status === 'rejected' || r.value?.error).length
+      }
+    });
+    
+  } catch (error) {
+    console.error('Process supply chain business decisions error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process business decisions',
+      error: error.message
+    });
+  }
+};
+
+
+/**
+ * Process head approval decision
+ * ENHANCED: Auto-generate petty cash form if payment method is cash
+ */
+const processHeadApproval = async (req, res) => {
+  try {
+    const { requisitionId } = req.params;
+    const { decision, comments } = req.body;
+    
+    console.log('=== PROCESS HEAD APPROVAL ===');
+    console.log('Requisition ID:', requisitionId);
+    console.log('Decision:', decision);
+    
+    const user = await User.findById(req.user.userId);
+    
+    // Verify authorization
+    if (!['admin', 'supply_chain'].includes(user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Only admin or supply chain head can approve.'
+      });
+    }
+    
+    const requisition = await PurchaseRequisition.findById(requisitionId)
+      .populate('employee', 'fullName email department')
+      .populate('supplyChainReview.assignedBuyer', 'fullName email');
+    
+    if (!requisition) {
+      return res.status(404).json({
+        success: false,
+        message: 'Requisition not found'
+      });
+    }
+    
+    // Verify status
+    if (requisition.status !== 'pending_head_approval') {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot process approval. Current status: ${requisition.status}`
+      });
+    }
+    
+    // Update head approval
+    requisition.headApproval = {
+      decision: decision,
+      comments: comments,
+      decisionDate: new Date(),
+      decidedBy: req.user.userId
+    };
+    
+    if (decision === 'approved') {
+      requisition.status = 'approved';
+      
+      // NEW: Auto-generate petty cash form if payment method is cash
+      const paymentMethod = requisition.supplyChainReview?.paymentMethod;
+      
+      if (paymentMethod === 'cash') {
+        console.log('Payment method is cash - generating petty cash form');
+        
+        try {
+          // Generate petty cash form number
+          await requisition.generatePettyCashFormNumber();
+          
+          console.log('Petty cash form generated:', requisition.pettyCashForm.formNumber);
+          
+          // Save requisition with petty cash form
+          await requisition.save();
+          
+          // Send notification to buyer about petty cash form
+          if (requisition.supplyChainReview.assignedBuyer) {
+            await sendPettyCashFormNotificationToBuyer(requisition);
+          }
+          
+          // Send notification to employee
+          await sendPettyCashFormNotificationToEmployee(requisition);
+          
+        } catch (pettyCashError) {
+          console.error('Error generating petty cash form:', pettyCashError);
+          // Continue with approval even if petty cash generation fails
+          // The form can be regenerated later if needed
+        }
+      } else {
+        console.log('Payment method is bank - no petty cash form needed');
+        await requisition.save();
+      }
+      
+      // Send approval notification
+      try {
+        await sendEmail({
+          to: requisition.employee.email,
+          subject: `Requisition Approved - ${requisition.title}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <div style="background-color: #f6ffed; padding: 20px; border-radius: 8px; border-left: 4px solid #52c41a;">
+                <h2 style="color: #52c41a; margin-top: 0;">✓ Requisition Approved</h2>
+                <p>Dear ${requisition.employee.fullName},</p>
+                <p>Your purchase requisition has been approved by ${user.fullName} (Head of Business Dev & Supply Chain).</p>
+                
+                <div style="background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                  <h4>Requisition Details</h4>
+                  <ul>
+                    <li><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
+                    <li><strong>Title:</strong> ${requisition.title}</li>
+                    <li><strong>Budget:</strong> XAF ${requisition.budgetXAF.toLocaleString()}</li>
+                    <li><strong>Payment Method:</strong> ${paymentMethod === 'cash' ? 'Petty Cash' : 'Bank Transfer'}</li>
+                    <li><strong>Approval Date:</strong> ${new Date().toLocaleDateString('en-GB')}</li>
+                  </ul>
+                </div>
+                
+                ${paymentMethod === 'cash' ? `
+                <div style="background-color: #fff7e6; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                  <h4>Petty Cash Form Generated</h4>
+                  <p><strong>Form Number:</strong> ${requisition.pettyCashForm?.formNumber}</p>
+                  <p>A petty cash form has been automatically generated for this requisition. Your assigned buyer will handle the petty cash disbursement process.</p>
+                </div>
+                ` : `
+                <div style="background-color: #e6f7ff; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                  <h4>Bank Transfer Payment</h4>
+                  <p>This requisition will be processed through the standard procurement process with bank transfer payment.</p>
+                  <p>Your assigned buyer will begin the sourcing process and send RFQs to qualified suppliers.</p>
+                </div>
+                `}
+                
+                <p><strong>Next Steps:</strong></p>
+                <ul>
+                  ${paymentMethod === 'cash' ? 
+                    '<li>Your assigned buyer will download the petty cash form</li><li>The procurement process will continue as scheduled</li><li>You will be notified of any updates</li>' :
+                    '<li>Your assigned buyer will create and send RFQs to suppliers</li><li>Suppliers will submit their quotations</li><li>The buyer will evaluate quotes and select the best option</li><li>You will be notified when procurement is complete</li>'
+                  }
+                </ul>
+                
+                <p>You can track your requisition status in your employee dashboard.</p>
+                <p>Best regards,<br>Procurement Team</p>
+              </div>
+            </div>
+          `
+        });
+        
+        console.log('Approval email sent to employee');
+      } catch (emailError) {
+        console.error('Failed to send approval email:', emailError);
+        // Don't fail the approval if email fails
+      }
+      
+    } else if (decision === 'rejected') {
+      requisition.status = 'rejected';
+      await requisition.save();
+      
+      // Send rejection notification
+      try {
+        await sendEmail({
+          to: requisition.employee.email,
+          subject: `Requisition Rejected - ${requisition.title}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <div style="background-color: #fff2f0; padding: 20px; border-radius: 8px; border-left: 4px solid #ff4d4f;">
+                <h2 style="color: #ff4d4f; margin-top: 0;">✗ Requisition Rejected</h2>
+                <p>Dear ${requisition.employee.fullName},</p>
+                <p>Your purchase requisition has been rejected by ${user.fullName} (Head of Business Dev & Supply Chain).</p>
+                
+                <div style="background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                  <h4>Requisition Details</h4>
+                  <ul>
+                    <li><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
+                    <li><strong>Title:</strong> ${requisition.title}</li>
+                    <li><strong>Rejection Date:</strong> ${new Date().toLocaleDateString('en-GB')}</li>
+                  </ul>
+                </div>
+                
+                ${comments ? `
+                <div style="background-color: #fff7e6; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                  <h4>Rejection Reason</h4>
+                  <p>${comments}</p>
+                </div>
+                ` : ''}
+                
+                <p>If you believe this rejection was made in error or have additional information, please contact your supervisor or the Supply Chain team.</p>
+                <p>Best regards,<br>Procurement Team</p>
+              </div>
+            </div>
+          `
+        });
+        
+        console.log('Rejection email sent to employee');
+      } catch (emailError) {
+        console.error('Failed to send rejection email:', emailError);
+        // Don't fail the rejection if email fails
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: `Requisition ${decision}`,
+      data: {
+        requisitionId: requisition._id,
+        requisitionNumber: requisition.requisitionNumber,
+        status: requisition.status,
+        decision: decision,
+        pettyCashForm: requisition.pettyCashForm?.generated ? {
+          formNumber: requisition.pettyCashForm.formNumber,
+          generatedDate: requisition.pettyCashForm.generatedDate,
+          status: requisition.pettyCashForm.status
+        } : null,
+        paymentMethod: requisition.supplyChainReview?.paymentMethod
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error processing head approval:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process head approval',
+      error: error.message
+    });
+  }
+};
+
+
+
 // Export all functions
 module.exports = {
   // Core CRUD operations
@@ -4476,18 +4688,15 @@ module.exports = {
   assignBuyer,
   assignBuyerWithPaymentMethod,
   getPaymentMethodOptions,
-  processHeadApproval,
-  processHeadApproval,
-  sendPettyCashFormNotificationToBuyer,
-  sendPettyCashFormNotificationToEmployee,
+  // processHeadApproval,
   getBuyerRequisitions,
-  // getFinanceRequisitions,
   getAvailableBuyers,
   getHeadApprovalRequisitions,
   getBudgetCodesForVerification,
 
   // Finance Dashboard
   getFinanceDashboardData,
+  processSupplyChainBusinessDecisions,
 
   // Draft management
   saveDraft

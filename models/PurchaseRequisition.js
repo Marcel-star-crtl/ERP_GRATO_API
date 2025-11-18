@@ -42,7 +42,6 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
   },
   budgetHolder: {
     type: String,
-    required: true
   },
   urgency: {
     type: String,

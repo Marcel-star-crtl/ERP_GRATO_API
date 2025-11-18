@@ -191,7 +191,7 @@ router.post('/:supplierId/approve-reject',
 
 router.get('/admin/all',
   authMiddleware,
-  requireRoles('admin', 'finance', 'supply_chain'),
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   supplierController.getAllSuppliers
 );
 

@@ -69,6 +69,7 @@ const enhancedUserRoutes = loadRoute('./routes/enhancedUserRoutes', 'enhancedUse
 const enhancedBehavioralRoutes = loadRoute('./routes/enhancedBehavioralEvaluationRoutes', 'enhancedBehavioralRoutes');
 const scheduledReportRoutes = loadRoute('./routes/scheduledReportRoutes', 'scheduledReportRoutes');
 const migrationRoutes = loadRoute('./routes/migrationRoutes', 'migrationRoutes');
+const headApprovalRoutes = require('./routes/headApproval');
 
 console.log('✅ Route loading complete\n');
 
@@ -291,6 +292,7 @@ if (enhancedBehavioralRoutes) app.use('/api/enhanced-behavioral-evaluations', en
 if (migrationRoutes) app.use('/api/migration', migrationRoutes);
 if (scheduledReportRoutes) app.use('/api/scheduled-reports', scheduledReportRoutes);
 if (budgetTransferRoutes) app.use('/api/budget-transfers', budgetTransferRoutes);
+if (headApprovalRoutes) app.use('/api/head-approval', headApprovalRoutes);
 
 try {
   app.use('/api/hr', require('./routes/hrRoutes'));
