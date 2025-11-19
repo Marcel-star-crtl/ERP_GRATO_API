@@ -15,6 +15,7 @@ const CashRequestSchema = new mongoose.Schema({
       'emergency', 
       'project-materials', 
       'training', 
+      'expense',
       'accommodation',      
       'perdiem',           
       'utility',   
@@ -24,7 +25,6 @@ const CashRequestSchema = new mongoose.Schema({
       'toll-gates',        
       'office-items',      
       'other'
-
     ],
     required: true
   },

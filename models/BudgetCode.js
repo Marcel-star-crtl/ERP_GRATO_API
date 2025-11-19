@@ -40,6 +40,7 @@ const budgetCodeSchema = new mongoose.Schema({
     required: true,
     enum: [
       'General',
+      'Roll Out',
       'IT',
       'HR',
       'Finance',

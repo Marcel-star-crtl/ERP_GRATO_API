@@ -58,34 +58,66 @@ const getBudgetCodeApprovalChain = (creatorName, department, budgetType = 'depar
 
   // Level 1: Departmental Head (if creator is not already the department head)
   const deptHead = DEPARTMENT_STRUCTURE[creatorDepartmentName];
-  if (deptHead && creatorData.name !== deptHead.head) {
-    chain.push({
-      level: 1,
-      approver: {
-        name: deptHead.head,
-        email: deptHead.headEmail,
-        role: 'Departmental Head',
-        department: creatorDepartmentName
-      },
-      status: 'pending',
-      assignedDate: new Date()
-    });
+  if (deptHead) {
+    // Extract string values - handle both object and string formats
+    let headName, headEmail;
+    
+    if (typeof deptHead.head === 'object' && deptHead.head !== null) {
+      // Head is an object
+      headName = deptHead.head.name;
+      headEmail = deptHead.head.email;
+    } else {
+      // Head is a string
+      headName = deptHead.head;
+      headEmail = deptHead.headEmail;
+    }
+    
+    // Only add if creator is not the department head
+    if (creatorData.name !== headName) {
+      chain.push({
+        level: 1,
+        approver: {
+          name: headName,
+          email: headEmail,
+          role: 'Departmental Head',
+          department: creatorDepartmentName
+        },
+        status: 'pending',
+        assignedDate: new Date()
+      });
+    }
   }
 
   // Level 2: Head of Business (President/Executive)
   const executive = DEPARTMENT_STRUCTURE['Executive'];
-  if (executive && !chain.find(step => step.approver.email === executive.headEmail)) {
-    chain.push({
-      level: chain.length + 1,
-      approver: {
-        name: executive.head,
-        email: executive.headEmail,
-        role: 'Head of Business',
-        department: 'Executive'
-      },
-      status: 'pending',
-      assignedDate: new Date()
-    });
+  if (executive) {
+    // Extract the actual string values from the executive object
+    let executiveHead, executiveEmail;
+    
+    if (typeof executive.head === 'object' && executive.head !== null) {
+      // Head is an object
+      executiveHead = executive.head.name;
+      executiveEmail = executive.head.email;
+    } else {
+      // Head is a string
+      executiveHead = executive.head;
+      executiveEmail = executive.headEmail;
+    }
+    
+    // Only add if not already in chain
+    if (!chain.find(step => step.approver.email === executiveEmail)) {
+      chain.push({
+        level: chain.length + 1,
+        approver: {
+          name: executiveHead,
+          email: executiveEmail,
+          role: 'Head of Business',
+          department: 'Executive'
+        },
+        status: 'pending',
+        assignedDate: new Date()
+      });
+    }
   }
 
   // Level 3: Finance Officer (Final approval and budget code activation)
@@ -125,11 +157,24 @@ const getFallbackBudgetCodeApprovalChain = (department) => {
 
   // Level 1: Department Head (if exists)
   if (DEPARTMENT_STRUCTURE[department]) {
+    const deptHead = DEPARTMENT_STRUCTURE[department];
+    let headName, headEmail;
+    
+    if (typeof deptHead.head === 'object' && deptHead.head !== null) {
+      // Head is an object
+      headName = deptHead.head.name;
+      headEmail = deptHead.head.email;
+    } else {
+      // Head is a string
+      headName = deptHead.head;
+      headEmail = deptHead.headEmail;
+    }
+    
     chain.push({
       level: level++,
       approver: {
-        name: DEPARTMENT_STRUCTURE[department].head,
-        email: DEPARTMENT_STRUCTURE[department].headEmail,
+        name: headName,
+        email: headEmail,
         role: 'Departmental Head',
         department: department
       },
@@ -141,11 +186,23 @@ const getFallbackBudgetCodeApprovalChain = (department) => {
   // Level 2: Head of Business
   const executive = DEPARTMENT_STRUCTURE['Executive'];
   if (executive) {
+    let executiveHead, executiveEmail;
+    
+    if (typeof executive.head === 'object' && executive.head !== null) {
+      // Head is an object
+      executiveHead = executive.head.name;
+      executiveEmail = executive.head.email;
+    } else {
+      // Head is a string
+      executiveHead = executive.head;
+      executiveEmail = executive.headEmail;
+    }
+    
     chain.push({
       level: level++,
       approver: {
-        name: executive.head,
-        email: executive.headEmail,
+        name: executiveHead,
+        email: executiveEmail,
         role: 'Head of Business',
         department: 'Executive'
       },
@@ -197,8 +254,11 @@ const getUserBudgetCodeApprovalLevel = (userRole, userEmail) => {
   if (userRole === 'admin') {
     // Check if this admin is the head of business (President)
     const executive = DEPARTMENT_STRUCTURE['Executive'];
-    if (executive && executive.headEmail === userEmail) {
-      return 2; // Head of Business level
+    if (executive) {
+      const executiveEmail = typeof executive.head === 'object' ? executive.head.email : executive.headEmail;
+      if (executiveEmail === userEmail) {
+        return 2; // Head of Business level
+      }
     }
     return 1; // Departmental Head level
   }
@@ -376,11 +436,14 @@ const getBudgetTransferApprovalChain = (requester, fromBudgetCode, toBudgetCode)
   // Level 4: Head of Business (for large transfers > 5M)
   const executive = DEPARTMENT_STRUCTURE['Executive'];
   if (fromBudgetCode.budget > 5000000 && executive) {
+    const executiveHead = typeof executive.head === 'object' ? executive.head.name : executive.head;
+    const executiveEmail = typeof executive.head === 'object' ? executive.head.email : executive.headEmail;
+    
     chain.push({
       level: level++,
       approver: {
-        name: executive.head,
-        email: executive.headEmail,
+        name: executiveHead,
+        email: executiveEmail,
         role: 'Head of Business'
       },
       status: 'pending',
@@ -403,7 +466,3 @@ module.exports = {
   getFallbackBudgetCodeApprovalChain,
   getBudgetTransferApprovalChain
 };
-
-
-
-
