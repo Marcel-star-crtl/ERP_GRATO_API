@@ -17,12 +17,14 @@ const CashRequestSchema = new mongoose.Schema({
       'training', 
       'accommodation',      
       'perdiem',           
-      'bills',             
+      'utility',   
+      'internet',          
       'staff-transportation', 
       'staff-entertainment',  
       'toll-gates',        
       'office-items',      
       'other'
+
     ],
     required: true
   },
