@@ -1,5 +1,3 @@
-// backend/models/ActionItem.js
-
 const mongoose = require('mongoose');
 
 const ActionItemSchema = new mongoose.Schema({

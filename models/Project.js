@@ -158,7 +158,7 @@ const projectSchema = new mongoose.Schema({
   department: {
     type: String,
     required: true,
-    enum: ['Operations', 'IT', 'Finance', 'HR', 'Marketing', 'Supply Chain', 'Facilities']
+    enum: ['Roll Out', 'Operations', 'IT', 'Finance', 'HR', 'Marketing', 'Supply Chain', 'Facilities']
   },
   projectManager: {
     type: mongoose.Schema.Types.ObjectId,
