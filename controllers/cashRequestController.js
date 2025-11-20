@@ -1612,6 +1612,678 @@ const getSupervisorJustification = async (req, res) => {
 };
 
 
+// const createRequest = async (req, res) => {
+//   try {
+//     console.log('=== CREATE CASH REQUEST ===');
+//     console.log('Request body:', JSON.stringify(req.body, null, 2));
+//     console.log('Files received:', req.files?.length || 0);
+
+//     const {
+//       requestType,
+//       amountRequested,
+//       purpose,
+//       businessJustification,
+//       urgency,
+//       requiredDate,
+//       projectCode,
+//       projectId, // ✅ NEW: Project integration
+//       itemizedBreakdown
+//     } = req.body;
+
+//     // Get user details
+//     const employee = await User.findById(req.user.userId);
+//     if (!employee) {
+//       return res.status(404).json({ 
+//         success: false, 
+//         message: 'Employee not found' 
+//       });
+//     }
+
+//     console.log(`Creating cash request for: ${employee.fullName} (${employee.email})`);
+
+//     // Parse itemized breakdown
+//     let parsedBreakdown = null;
+//     if (itemizedBreakdown) {
+//       try {
+//         parsedBreakdown = typeof itemizedBreakdown === 'string' 
+//           ? JSON.parse(itemizedBreakdown) 
+//           : itemizedBreakdown;
+
+//         if (Array.isArray(parsedBreakdown) && parsedBreakdown.length > 0) {
+//           const breakdownTotal = parsedBreakdown.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
+//           const discrepancy = Math.abs(breakdownTotal - parseFloat(amountRequested));
+
+//           if (discrepancy > 1) {
+//             return res.status(400).json({
+//               success: false,
+//               message: `Itemized breakdown total (XAF ${breakdownTotal.toFixed(2)}) must match requested amount (XAF ${parseFloat(amountRequested).toFixed(2)})`
+//             });
+//           }
+
+//           console.log(`✓ Itemized breakdown validated: ${parsedBreakdown.length} items, total XAF ${breakdownTotal.toLocaleString()}`);
+//         } else {
+//           parsedBreakdown = null;
+//         }
+//       } catch (parseError) {
+//         console.error('Error parsing itemized breakdown:', parseError);
+//         return res.status(400).json({
+//           success: false,
+//           message: 'Invalid itemized breakdown format'
+//         });
+//       }
+//     }
+
+//     // ✅ NEW: Validate and get project with budget code
+//     let selectedProject = null;
+//     let projectBudgetCode = null;
+
+//     if (projectId) {
+//       console.log(`\n🎯 Project ID provided: ${projectId}`);
+
+//       selectedProject = await Project.findById(projectId)
+//         .populate('budgetCodeId', 'code name budget used remaining');
+
+//       if (!selectedProject) {
+//         return res.status(404).json({
+//           success: false,
+//           message: 'Selected project not found'
+//         });
+//       }
+
+//       console.log(`✅ Project found: ${selectedProject.name} (${selectedProject.code})`);
+
+//       // Check if project has budget code
+//       if (selectedProject.budgetCodeId) {
+//         projectBudgetCode = selectedProject.budgetCodeId;
+//         console.log(`💰 Project has budget code: ${projectBudgetCode.code} - ${projectBudgetCode.name}`);
+//         console.log(`   Available: XAF ${projectBudgetCode.remaining.toLocaleString()}`);
+
+//         // Validate budget sufficiency
+//         if (projectBudgetCode.remaining < parseFloat(amountRequested)) {
+//           return res.status(400).json({
+//             success: false,
+//             message: `Insufficient budget in project. Available: XAF ${projectBudgetCode.remaining.toLocaleString()}, Requested: XAF ${parseFloat(amountRequested).toLocaleString()}`
+//           });
+//         }
+
+//         console.log(`✅ Budget check passed`);
+//       } else {
+//         console.log(`⚠️  Project has no budget code assigned - will need manual budget assignment`);
+//       }
+//     }
+
+//     // Generate approval chain
+//     console.log('\n📋 Generating approval chain...');
+//     const approvalChain = getCashRequestApprovalChain(employee.email);
+
+//     if (!approvalChain || approvalChain.length === 0) {
+//       console.error('❌ Failed to generate approval chain');
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Unable to determine approval chain. Please contact HR for assistance.'
+//       });
+//     }
+
+//     console.log(`✓ Approval chain generated with ${approvalChain.length} levels`);
+
+//     // Verify Finance Officer is final approver
+//     const lastApprover = approvalChain[approvalChain.length - 1];
+//     if (!lastApprover || lastApprover.approver.role !== 'Finance Officer') {
+//       console.error('❌ Finance Officer is not the final approver');
+//       return res.status(500).json({
+//         success: false,
+//         message: 'System error: Invalid approval chain configuration.'
+//       });
+//     }
+
+//     console.log(`✅ Finance Officer (${lastApprover.approver.name}) is final approver at Level ${lastApprover.level}`);
+
+//     // Process attachments
+//     let attachments = [];
+//     if (req.files && req.files.length > 0) {
+//       console.log(`\n📎 Processing ${req.files.length} attachment(s)...`);
+
+//       const uploadDir = path.join(__dirname, '../uploads/attachments');
+
+//       try {
+//         await fs.promises.mkdir(uploadDir, { recursive: true, mode: 0o755 });
+//         console.log(`✓ Attachments directory ready: ${uploadDir}`);
+//       } catch (dirError) {
+//         console.error('❌ Failed to create attachments directory:', dirError);
+//         throw new Error('Failed to prepare upload directory');
+//       }
+
+//       for (let i = 0; i < req.files.length; i++) {
+//         const file = req.files[i];
+        
+//         try {
+//           console.log(`\n   Processing file ${i + 1}/${req.files.length}: ${file.originalname}`);
+          
+//           if (!file.path || !fs.existsSync(file.path)) {
+//             console.error(`   ❌ Temp file not found: ${file.path}`);
+//             continue;
+//           }
+
+//           const timestamp = Date.now();
+//           const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+//           const fileName = `${timestamp}-${i}-${sanitizedName}`;
+//           const destinationPath = path.join(uploadDir, fileName);
+
+//           await fs.promises.rename(file.path, destinationPath);
+          
+//           // Verify file
+//           if (!fs.existsSync(destinationPath)) {
+//             throw new Error(`File was not moved: ${fileName}`);
+//           }
+
+//           attachments.push({
+//             name: file.originalname,
+//             publicId: fileName,
+//             url: `/uploads/attachments/${fileName}`,
+//             size: file.size,
+//             mimetype: file.mimetype,
+//             uploadedAt: new Date()
+//           });
+
+//           console.log(`   ✅ Attachment ${i + 1} processed successfully`);
+
+//         } catch (fileError) {
+//           console.error(`   ❌ Error processing file ${file.originalname}:`, fileError);
+//           continue;
+//         }
+//       }
+
+//       console.log(`\n✅ ${attachments.length} attachment(s) processed successfully`);
+//     }
+
+//     // ✅ Create cash request with project budget integration
+//     console.log('\n💾 Creating CashRequest document...');
+//     const cashRequest = new CashRequest({
+//       employee: req.user.userId,
+//       requestMode: 'advance',
+//       requestType,
+//       amountRequested: parseFloat(amountRequested),
+//       purpose,
+//       businessJustification,
+//       urgency,
+//       requiredDate: new Date(requiredDate),
+//       projectCode,
+//       attachments,
+//       itemizedBreakdown: parsedBreakdown || [],
+//       status: 'pending_supervisor',
+//       approvalChain: approvalChain,
+      
+//       // ✅ NEW: Project integration
+//       projectId: selectedProject ? selectedProject._id : null,
+      
+//       // ✅ NEW: Auto-assign project budget code if available
+//       budgetAllocation: projectBudgetCode ? {
+//         budgetCodeId: projectBudgetCode._id,
+//         budgetCode: projectBudgetCode.code,
+//         allocatedAmount: parseFloat(amountRequested),
+//         allocationStatus: 'pending',
+//         assignedBy: null, 
+//         assignedAt: null
+//       } : null
+//     });
+
+//     console.log('Saving cash request...');
+//     await cashRequest.save();
+//     console.log(`✅ Cash request created with ID: ${cashRequest._id}`);
+
+//     // Populate employee details
+//     await cashRequest.populate('employee', 'fullName email department');
+//     if (selectedProject) {
+//       await cashRequest.populate('projectId', 'name code department');
+//     }
+
+//     // Send notifications
+//     console.log('\n📧 Sending notifications...');
+//     const notifications = [];
+
+//     // Notify first approver
+//     const firstApprover = approvalChain[0];
+//     if (firstApprover && firstApprover.approver.email) {
+//       notifications.push(
+//         sendCashRequestEmail.newRequestToSupervisor(
+//           firstApprover.approver.email,
+//           employee.fullName,
+//           parseFloat(amountRequested),
+//           cashRequest._id,
+//           purpose
+//         ).catch(error => {
+//           console.error('Failed to send supervisor notification:', error);
+//           return { error, type: 'supervisor' };
+//         })
+//       );
+//     }
+
+//     // Enhanced notification for admins (include project info)
+//     const admins = await User.find({ role: 'admin' }).select('email fullName');
+//     if (admins.length > 0) {
+//       const projectInfo = selectedProject 
+//         ? `<li><strong>Project:</strong> ${selectedProject.name} (${selectedProject.code})</li>
+//            <li><strong>Budget Code:</strong> ${projectBudgetCode ? projectBudgetCode.code : 'To be assigned'}</li>`
+//         : '<li><strong>Project:</strong> Not specified</li>';
+
+//       notifications.push(
+//         sendEmail({
+//           to: admins.map(a => a.email),
+//           subject: `New Cash Request from ${employee.fullName}`,
+//           html: `
+//             <h3>New Cash Request Submitted</h3>
+//             <p>A new cash request has been submitted by <strong>${employee.fullName}</strong></p>
+
+//             <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
+//               <ul>
+//                 <li><strong>Request ID:</strong> REQ-${cashRequest._id.toString().slice(-6).toUpperCase()}</li>
+//                 <li><strong>Employee:</strong> ${employee.fullName} (${employee.department})</li>
+//                 <li><strong>Amount:</strong> XAF ${parseFloat(amountRequested).toLocaleString()}</li>
+//                 <li><strong>Type:</strong> ${requestType}</li>
+//                 <li><strong>Urgency:</strong> ${urgency}</li>
+//                 ${projectInfo}
+//                 ${attachments.length > 0 ? `<li><strong>Attachments:</strong> ${attachments.length} file(s)</li>` : ''}
+//                 <li><strong>Approval Levels:</strong> ${approvalChain.length}</li>
+//               </ul>
+//             </div>
+//           `
+//         }).catch(error => {
+//           console.error('Failed to send admin notification:', error);
+//           return { error, type: 'admin' };
+//         })
+//       );
+//     }
+
+//     await Promise.allSettled(notifications);
+
+//     console.log('\n=== REQUEST CREATED SUCCESSFULLY ===');
+//     console.log(`Request ID: ${cashRequest._id}`);
+//     console.log(`Attachments: ${attachments.length}`);
+//     if (selectedProject) {
+//       console.log(`Project: ${selectedProject.name}`);
+//       console.log(`Budget Code: ${projectBudgetCode ? projectBudgetCode.code : 'None'}`);
+//     }
+//     console.log('=====================================\n');
+
+//     res.status(201).json({
+//       success: true,
+//       message: 'Cash request created successfully',
+//       data: cashRequest,
+//       metadata: {
+//         attachmentsUploaded: attachments.length,
+//         hasItemizedBreakdown: !!(parsedBreakdown && parsedBreakdown.length > 0),
+//         approvalLevels: approvalChain.length,
+//         finalApprover: lastApprover.approver.name,
+//         projectBudgetAssigned: !!projectBudgetCode
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('❌ Create cash request error:', error);
+//     console.error('Stack trace:', error.stack);
+
+//     // Clean up uploaded files on error
+//     if (req.files && req.files.length > 0) {
+//       await Promise.allSettled(
+//         req.files.map(file => {
+//           if (file.path && fs.existsSync(file.path)) {
+//             return fs.promises.unlink(file.path).catch(e => 
+//               console.error('File cleanup failed:', e.message)
+//             );
+//           }
+//         })
+//       );
+//     }
+
+//     res.status(500).json({
+//       success: false,
+//       message: error.message || 'Failed to create cash request',
+//       error: process.env.NODE_ENV === 'development' ? error.message : 'An error occurred'
+//     });
+//   }
+// };
+
+
+// const createRequest = async (req, res) => {
+//   try {
+//     console.log('=== CREATE CASH REQUEST ===');
+//     console.log('Request body:', JSON.stringify(req.body, null, 2));
+//     console.log('Files received:', req.files?.length || 0);
+
+//     const {
+//       requestType,
+//       amountRequested,
+//       purpose,
+//       businessJustification,
+//       urgency,
+//       requiredDate,
+//       projectCode,
+//       projectId,
+//       itemizedBreakdown
+//     } = req.body;
+
+//     // Get user details
+//     const employee = await User.findById(req.user.userId);
+//     if (!employee) {
+//       return res.status(404).json({ 
+//         success: false, 
+//         message: 'Employee not found' 
+//       });
+//     }
+
+//     console.log(`Creating cash request for: ${employee.fullName} (${employee.email})`);
+
+//     // Parse itemized breakdown
+//     let parsedBreakdown = null;
+//     if (itemizedBreakdown) {
+//       try {
+//         parsedBreakdown = typeof itemizedBreakdown === 'string' 
+//           ? JSON.parse(itemizedBreakdown) 
+//           : itemizedBreakdown;
+
+//         if (Array.isArray(parsedBreakdown) && parsedBreakdown.length > 0) {
+//           const breakdownTotal = parsedBreakdown.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
+//           const discrepancy = Math.abs(breakdownTotal - parseFloat(amountRequested));
+
+//           if (discrepancy > 1) {
+//             return res.status(400).json({
+//               success: false,
+//               message: `Itemized breakdown total (XAF ${breakdownTotal.toFixed(2)}) must match requested amount (XAF ${parseFloat(amountRequested).toFixed(2)})`
+//             });
+//           }
+
+//           console.log(`✓ Itemized breakdown validated: ${parsedBreakdown.length} items, total XAF ${breakdownTotal.toLocaleString()}`);
+//         } else {
+//           parsedBreakdown = null;
+//         }
+//       } catch (parseError) {
+//         console.error('Error parsing itemized breakdown:', parseError);
+//         return res.status(400).json({
+//           success: false,
+//           message: 'Invalid itemized breakdown format'
+//         });
+//       }
+//     }
+
+//     // ✅ NEW: Validate and get project with budget code
+//     let selectedProject = null;
+//     let projectBudgetCode = null;
+
+//     if (projectId) {
+//       console.log(`\n🎯 Project ID provided: ${projectId}`);
+
+//       selectedProject = await Project.findById(projectId)
+//         .populate('budgetCodeId', 'code name budget used remaining');
+
+//       if (!selectedProject) {
+//         return res.status(404).json({
+//           success: false,
+//           message: 'Selected project not found'
+//         });
+//       }
+
+//       console.log(`✅ Project found: ${selectedProject.name} (${selectedProject.code})`);
+
+//       // Check if project has budget code
+//       if (selectedProject.budgetCodeId) {
+//         projectBudgetCode = selectedProject.budgetCodeId;
+//         console.log(`💰 Project has budget code: ${projectBudgetCode.code} - ${projectBudgetCode.name}`);
+//         console.log(`   Available: XAF ${projectBudgetCode.remaining.toLocaleString()}`);
+
+//         // Validate budget sufficiency
+//         if (projectBudgetCode.remaining < parseFloat(amountRequested)) {
+//           return res.status(400).json({
+//             success: false,
+//             message: `Insufficient budget in project. Available: XAF ${projectBudgetCode.remaining.toLocaleString()}, Requested: XAF ${parseFloat(amountRequested).toLocaleString()}`
+//           });
+//         }
+
+//         console.log(`✅ Budget check passed`);
+//       } else {
+//         console.log(`⚠️  Project has no budget code assigned - will need manual budget assignment`);
+//       }
+//     }
+
+//     // Generate approval chain
+//     console.log('\n📋 Generating approval chain...');
+//     const approvalChain = getCashRequestApprovalChain(employee.email);
+
+//     if (!approvalChain || approvalChain.length === 0) {
+//       console.error('❌ Failed to generate approval chain');
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Unable to determine approval chain. Please contact HR for assistance.'
+//       });
+//     }
+
+//     console.log(`✓ Approval chain generated with ${approvalChain.length} levels`);
+
+//     // Map approval chain to proper format
+//     const mappedApprovalChain = mapApprovalChainForCashRequest(approvalChain);
+//     console.log(`✓ Approval chain mapped for CashRequest schema`);
+
+//     // Verify Finance Officer is final approver
+//     const lastApprover = approvalChain[approvalChain.length - 1];
+//     if (!lastApprover || lastApprover.approver.role !== 'Finance Officer') {
+//       console.error('❌ Finance Officer is not the final approver');
+//       return res.status(500).json({
+//         success: false,
+//         message: 'System error: Invalid approval chain configuration.'
+//       });
+//     }
+
+//     console.log(`✅ Finance Officer (${lastApprover.approver.name}) is final approver at Level ${lastApprover.level}`);
+
+//     // ✅ UPDATED: Process attachments using local storage
+//     let attachments = [];
+//     if (req.files && req.files.length > 0) {
+//       console.log(`\n📎 Processing ${req.files.length} attachment(s)...`);
+
+//       for (let i = 0; i < req.files.length; i++) {
+//         const file = req.files[i];
+        
+//         try {
+//           console.log(`   Processing file ${i + 1}/${req.files.length}: ${file.originalname}`);
+          
+//           // Save file using local storage
+//           const fileMetadata = await saveFile(
+//             file,
+//             STORAGE_CATEGORIES.CASH_REQUESTS,
+//             'attachments', // subfolder
+//             null // auto-generate filename
+//           );
+
+//           attachments.push({
+//             name: file.originalname,
+//             publicId: fileMetadata.publicId,
+//             url: fileMetadata.url,
+//             localPath: fileMetadata.localPath, // ✅ Store local path
+//             size: file.size,
+//             mimetype: file.mimetype,
+//             uploadedAt: new Date()
+//           });
+
+//           console.log(`   ✅ Saved: ${fileMetadata.publicId}`);
+
+//         } catch (fileError) {
+//           console.error(`   ❌ Error processing ${file.originalname}:`, fileError);
+//           continue;
+//         }
+//       }
+
+//       console.log(`\n✅ ${attachments.length} attachment(s) processed successfully`);
+//     }
+
+//     // ✅ Create cash request with project budget integration
+//     console.log('\n💾 Creating CashRequest document...');
+//     const cashRequest = new CashRequest({
+//       employee: req.user.userId,
+//       requestMode: 'advance',
+//       requestType,
+//       amountRequested: parseFloat(amountRequested),
+//       purpose,
+//       businessJustification,
+//       urgency,
+//       requiredDate: new Date(requiredDate),
+//       projectCode,
+//       attachments,
+//       itemizedBreakdown: parsedBreakdown || [],
+//       status: 'pending_supervisor',
+//       approvalChain: mappedApprovalChain,
+      
+//       // ✅ NEW: Project integration
+//       projectId: selectedProject ? selectedProject._id : null,
+      
+//       // ✅ NEW: Auto-assign project budget code if available
+//       budgetAllocation: projectBudgetCode ? {
+//         budgetCodeId: projectBudgetCode._id,
+//         budgetCode: projectBudgetCode.code,
+//         allocatedAmount: parseFloat(amountRequested),
+//         allocationStatus: 'pending',
+//         assignedBy: null, 
+//         assignedAt: null
+//       } : null
+//     });
+
+//     console.log('Saving cash request...');
+//     await cashRequest.save();
+//     console.log(`✅ Cash request created with ID: ${cashRequest._id}`);
+
+//     // Populate employee details
+//     await cashRequest.populate('employee', 'fullName email department');
+//     if (selectedProject) {
+//       await cashRequest.populate('projectId', 'name code department');
+//     }
+
+//     // Send notifications
+//     console.log('\n📧 Sending notifications...');
+//     const notifications = [];
+
+//     // Notify first approver
+//     const firstApprover = approvalChain[0];
+//     if (firstApprover && firstApprover.approver.email) {
+//       notifications.push(
+//         sendCashRequestEmail.newRequestToSupervisor(
+//           firstApprover.approver.email,
+//           employee.fullName,
+//           parseFloat(amountRequested),
+//           cashRequest._id,
+//           purpose
+//         ).catch(error => {
+//           console.error('Failed to send supervisor notification:', error);
+//           return { error, type: 'supervisor' };
+//         })
+//       );
+//     }
+
+//     // Enhanced notification for admins (include project info)
+//     const admins = await User.find({ role: 'admin' }).select('email fullName');
+//     if (admins.length > 0) {
+//       const projectInfo = selectedProject 
+//         ? `<li><strong>Project:</strong> ${selectedProject.name} (${selectedProject.code})</li>
+//            <li><strong>Budget Code:</strong> ${projectBudgetCode ? projectBudgetCode.code : 'To be assigned'}</li>`
+//         : '<li><strong>Project:</strong> Not specified</li>';
+
+//       const itemizedInfo = parsedBreakdown && parsedBreakdown.length > 0
+//         ? `<li><strong>Itemized Breakdown:</strong> ${parsedBreakdown.length} expense items</li>`
+//         : '';
+
+//       notifications.push(
+//         sendEmail({
+//           to: admins.map(a => a.email),
+//           subject: `New Cash Request from ${employee.fullName}`,
+//           html: `
+//             <h3>New Cash Request Submitted</h3>
+//             <p>A new cash request has been submitted by <strong>${employee.fullName}</strong></p>
+
+//             <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
+//               <ul>
+//                 <li><strong>Request ID:</strong> REQ-${cashRequest._id.toString().slice(-6).toUpperCase()}</li>
+//                 <li><strong>Employee:</strong> ${employee.fullName} (${employee.department})</li>
+//                 <li><strong>Amount:</strong> XAF ${parseFloat(amountRequested).toLocaleString()}</li>
+//                 <li><strong>Type:</strong> ${requestType}</li>
+//                 <li><strong>Urgency:</strong> ${urgency}</li>
+//                 ${projectInfo}
+//                 ${itemizedInfo}
+//                 ${attachments.length > 0 ? `<li><strong>Attachments:</strong> ${attachments.length} file(s)</li>` : ''}
+//                 <li><strong>Approval Levels:</strong> ${approvalChain.length}</li>
+//               </ul>
+//             </div>
+
+//             ${parsedBreakdown && parsedBreakdown.length > 0 ? `
+//             <div style="background-color: #e6f7ff; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #1890ff;">
+//               <p><strong>📋 Itemized Expenses (Top 5):</strong></p>
+//               <ul>
+//                 ${parsedBreakdown.slice(0, 5).map(item => `
+//                   <li>${item.description}: XAF ${parseFloat(item.amount).toLocaleString()}${item.category ? ` (${item.category})` : ''}</li>
+//                 `).join('')}
+//                 ${parsedBreakdown.length > 5 ? `<li><em>...and ${parsedBreakdown.length - 5} more items</em></li>` : ''}
+//               </ul>
+//             </div>
+//             ` : ''}
+//           `
+//         }).catch(error => {
+//           console.error('Failed to send admin notification:', error);
+//           return { error, type: 'admin' };
+//         })
+//       );
+//     }
+
+//     await Promise.allSettled(notifications);
+
+//     console.log('\n=== REQUEST CREATED SUCCESSFULLY ===');
+//     console.log(`Request ID: ${cashRequest._id}`);
+//     console.log(`Attachments: ${attachments.length}`);
+//     if (parsedBreakdown) {
+//       console.log(`Itemized Breakdown: ${parsedBreakdown.length} items`);
+//     }
+//     if (selectedProject) {
+//       console.log(`Project: ${selectedProject.name}`);
+//       console.log(`Budget Code: ${projectBudgetCode ? projectBudgetCode.code : 'None'}`);
+//     }
+//     console.log('=====================================\n');
+
+//     res.status(201).json({
+//       success: true,
+//       message: 'Cash request created successfully',
+//       data: cashRequest,
+//       metadata: {
+//         attachmentsUploaded: attachments.length,
+//         hasItemizedBreakdown: !!(parsedBreakdown && parsedBreakdown.length > 0),
+//         itemizedExpenseCount: parsedBreakdown ? parsedBreakdown.length : 0,
+//         approvalLevels: approvalChain.length,
+//         finalApprover: lastApprover.approver.name,
+//         projectBudgetAssigned: !!projectBudgetCode
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('❌ Create cash request error:', error);
+//     console.error('Stack trace:', error.stack);
+
+//     // ✅ UPDATED: Clean up uploaded files on error
+//     if (req.files && req.files.length > 0) {
+//       console.log('Cleaning up uploaded files due to error...');
+//       await Promise.allSettled(
+//         req.files.map(file => {
+//           if (file.path && fsSync.existsSync(file.path)) {
+//             return fs.promises.unlink(file.path).catch(e => 
+//               console.error('File cleanup failed:', e.message)
+//             );
+//           }
+//         })
+//       );
+//     }
+
+//     res.status(500).json({
+//       success: false,
+//       message: error.message || 'Failed to create cash request',
+//       error: process.env.NODE_ENV === 'development' ? error.message : 'An error occurred'
+//     });
+//   }
+// };
+
+
 const createRequest = async (req, res) => {
   try {
     console.log('=== CREATE CASH REQUEST ===');
@@ -1706,9 +2378,9 @@ const createRequest = async (req, res) => {
           });
         }
 
-        console.log(`✅ Budget check passed`);
+        console.log('✅ Budget check passed');
       } else {
-        console.log(`⚠️  Project has no budget code assigned - will need manual budget assignment`);
+        console.log('⚠️  Project has no budget code assigned - will need manual budget assignment');
       }
     }
 
@@ -1728,7 +2400,7 @@ const createRequest = async (req, res) => {
 
     // Map approval chain to proper format
     const mappedApprovalChain = mapApprovalChainForCashRequest(approvalChain);
-    console.log(`✓ Approval chain mapped for CashRequest schema`);
+    console.log('✓ Approval chain mapped for CashRequest schema');
 
     // Verify Finance Officer is final approver
     const lastApprover = approvalChain[approvalChain.length - 1];
@@ -1749,10 +2421,10 @@ const createRequest = async (req, res) => {
 
       for (let i = 0; i < req.files.length; i++) {
         const file = req.files[i];
-        
+
         try {
           console.log(`   Processing file ${i + 1}/${req.files.length}: ${file.originalname}`);
-          
+
           // Save file using local storage
           const fileMetadata = await saveFile(
             file,
@@ -1798,10 +2470,10 @@ const createRequest = async (req, res) => {
       itemizedBreakdown: parsedBreakdown || [],
       status: 'pending_supervisor',
       approvalChain: mappedApprovalChain,
-      
+
       // ✅ NEW: Project integration
       projectId: selectedProject ? selectedProject._id : null,
-      
+
       // ✅ NEW: Auto-assign project budget code if available
       budgetAllocation: projectBudgetCode ? {
         budgetCodeId: projectBudgetCode._id,
@@ -1823,13 +2495,17 @@ const createRequest = async (req, res) => {
       await cashRequest.populate('projectId', 'name code department');
     }
 
-    // Send notifications
+    // ============================================
+    // FIXED: Send notifications with better error handling
+    // ============================================
     console.log('\n📧 Sending notifications...');
     const notifications = [];
 
     // Notify first approver
     const firstApprover = approvalChain[0];
     if (firstApprover && firstApprover.approver.email) {
+      console.log(`📧 Notifying first approver: ${firstApprover.approver.email}`);
+      
       notifications.push(
         sendCashRequestEmail.newRequestToSupervisor(
           firstApprover.approver.email,
@@ -1847,6 +2523,8 @@ const createRequest = async (req, res) => {
     // Enhanced notification for admins (include project info)
     const admins = await User.find({ role: 'admin' }).select('email fullName');
     if (admins.length > 0) {
+      console.log(`📧 Notifying ${admins.length} admin(s)`);
+      
       const projectInfo = selectedProject 
         ? `<li><strong>Project:</strong> ${selectedProject.name} (${selectedProject.code})</li>
            <li><strong>Budget Code:</strong> ${projectBudgetCode ? projectBudgetCode.code : 'To be assigned'}</li>`
@@ -1855,6 +2533,17 @@ const createRequest = async (req, res) => {
       const itemizedInfo = parsedBreakdown && parsedBreakdown.length > 0
         ? `<li><strong>Itemized Breakdown:</strong> ${parsedBreakdown.length} expense items</li>`
         : '';
+
+      const breakdownDetails = parsedBreakdown && parsedBreakdown.length > 0 ? 
+        `<div style="background-color: #e6f7ff; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #1890ff;">
+          <p><strong>📋 Itemized Expenses (Top 5):</strong></p>
+          <ul>
+            ${parsedBreakdown.slice(0, 5).map(item => 
+              `<li>${item.description}: XAF ${parseFloat(item.amount).toLocaleString()}${item.category ? ` (${item.category})` : ''}</li>`
+            ).join('')}
+            ${parsedBreakdown.length > 5 ? `<li><em>...and ${parsedBreakdown.length - 5} more items</em></li>` : ''}
+          </ul>
+        </div>` : '';
 
       notifications.push(
         sendEmail({
@@ -1878,17 +2567,7 @@ const createRequest = async (req, res) => {
               </ul>
             </div>
 
-            ${parsedBreakdown && parsedBreakdown.length > 0 ? `
-            <div style="background-color: #e6f7ff; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #1890ff;">
-              <p><strong>📋 Itemized Expenses (Top 5):</strong></p>
-              <ul>
-                ${parsedBreakdown.slice(0, 5).map(item => `
-                  <li>${item.description}: XAF ${parseFloat(item.amount).toLocaleString()}${item.category ? ` (${item.category})` : ''}</li>
-                `).join('')}
-                ${parsedBreakdown.length > 5 ? `<li><em>...and ${parsedBreakdown.length - 5} more items</em></li>` : ''}
-              </ul>
-            </div>
-            ` : ''}
+            ${breakdownDetails}
           `
         }).catch(error => {
           console.error('Failed to send admin notification:', error);
@@ -1897,7 +2576,30 @@ const createRequest = async (req, res) => {
       );
     }
 
-    await Promise.allSettled(notifications);
+    // Wait for ALL notifications with better error handling
+    console.log(`📧 Sending ${notifications.length} notification(s)...`);
+    const notificationResults = await Promise.allSettled(notifications);
+
+    // Log notification results
+    let successCount = 0;
+    let failureCount = 0;
+
+    notificationResults.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        if (result.value && !result.value.error) {
+          successCount++;
+          console.log(`✅ Notification ${index + 1} sent successfully`);
+        } else {
+          failureCount++;
+          console.error(`❌ Notification ${index + 1} failed:`, result.value?.error);
+        }
+      } else {
+        failureCount++;
+        console.error(`❌ Notification ${index + 1} rejected:`, result.reason);
+      }
+    });
+
+    console.log(`📧 Notification summary: ${successCount} succeeded, ${failureCount} failed`);
 
     console.log('\n=== REQUEST CREATED SUCCESSFULLY ===');
     console.log(`Request ID: ${cashRequest._id}`);
@@ -1921,7 +2623,9 @@ const createRequest = async (req, res) => {
         itemizedExpenseCount: parsedBreakdown ? parsedBreakdown.length : 0,
         approvalLevels: approvalChain.length,
         finalApprover: lastApprover.approver.name,
-        projectBudgetAssigned: !!projectBudgetCode
+        projectBudgetAssigned: !!projectBudgetCode,
+        notificationsSent: successCount,
+        notificationsFailed: failureCount
       }
     });
 

@@ -5,7 +5,6 @@ const { sendPurchaseRequisitionEmail, sendEmail } = require('../services/emailSe
 const fs = require('fs');
 const path = require('path');
 
-// Create new purchase requisition
 const createRequisition = async (req, res) => {
   try {
     console.log('=== CREATE PURCHASE REQUISITION STARTED ===');
@@ -77,11 +76,9 @@ const createRequisition = async (req, res) => {
       });
     }
 
-
     console.log('Parsed items:', parsedItems);
 
-
-    // UPDATED: Validate items exist in database
+    // Validate items exist in database
     const itemIds = parsedItems.map(item => item.itemId).filter(Boolean);
     
     if (itemIds.length !== parsedItems.length) {
@@ -93,7 +90,7 @@ const createRequisition = async (req, res) => {
 
     // Check if items exist and are active
     try {
-      const Item = require('../models/Item'); // Adjust path as needed
+      const Item = require('../models/Item');
       const validItems = await Item.find({ 
         _id: { $in: itemIds },
         isActive: true 
@@ -132,9 +129,8 @@ const createRequisition = async (req, res) => {
 
     console.log('Processed items:', processedItems);
 
-    // Generate approval chain based on employee name and department
-    const { getApprovalChainForRequisition } = require('../config/requisitionApprovalChain');
-    const approvalChain = getApprovalChainForRequisition(employee.fullName, employee.department);
+    // ✅ FIXED: Generate approval chain using employee EMAIL instead of name
+    const approvalChain = getApprovalChainForRequisition(employee.email);
     console.log('Generated approval chain:', JSON.stringify(approvalChain, null, 2));
 
     if (!approvalChain || approvalChain.length === 0) {
@@ -147,18 +143,14 @@ const createRequisition = async (req, res) => {
     // Process attachments if any
     let attachments = [];
     if (req.files && req.files.length > 0) {
-      // Process file attachments
       for (const file of req.files) {
         try {
           const fileName = `${Date.now()}-${file.originalname}`;
           const uploadDir = path.join(__dirname, '../uploads/requisitions');
           const filePath = path.join(uploadDir, fileName);
 
-          // Ensure directory exists
-          const fs = require('fs');
           await fs.promises.mkdir(uploadDir, { recursive: true });
 
-          // Move file to permanent location
           if (file.path) {
             await fs.promises.rename(file.path, filePath);
           }
@@ -176,7 +168,7 @@ const createRequisition = async (req, res) => {
       }
     }
 
-    // Create the purchase requisition with processed items
+    // ✅ FIXED: Properly map approval chain structure to match schema
     const requisition = new PurchaseRequisition({
       requisitionNumber,
       employee: req.user.userId,
@@ -188,21 +180,22 @@ const createRequisition = async (req, res) => {
       urgency,
       deliveryLocation,
       expectedDate: new Date(expectedDate),
-      justificationOfPurchase: justification, // Use the corrected field name
+      justificationOfPurchase: justification,
       justificationOfPreferredSupplier,
-      items: processedItems, // Use processed items with itemId
+      items: processedItems,
       attachments,
       status: 'pending_supervisor',
       approvalChain: approvalChain.map(step => ({
         level: step.level,
         approver: {
-          name: step.approver,
-          email: step.email,
-          role: step.role,
-          department: step.department
+          // ✅ FIXED: Access nested properties correctly
+          name: step.approver.name,
+          email: step.approver.email,
+          role: step.approver.role,
+          department: step.approver.department
         },
-        status: 'pending',
-        assignedDate: new Date()
+        status: step.status || 'pending',
+        assignedDate: step.assignedDate || new Date()
       }))
     });
 
@@ -211,30 +204,30 @@ const createRequisition = async (req, res) => {
       justificationOfPurchase: requisition.justificationOfPurchase,
       justificationLength: requisition.justificationOfPurchase?.length,
       itemsCount: requisition.items.length,
-      approvalChainCount: requisition.approvalChain.length
+      approvalChainCount: requisition.approvalChain.length,
+      firstApprover: requisition.approvalChain[0]?.approver
     });
 
     await requisition.save();
-    console.log('Requisition saved successfully with ID:', requisition._id);
+    console.log('✅ Requisition saved successfully with ID:', requisition._id);
 
     // Populate employee details for response
     await requisition.populate('employee', 'fullName email department');
 
-    // === ENHANCED EMAIL NOTIFICATIONS ===
+    // === EMAIL NOTIFICATIONS ===
     const notifications = [];
     console.log('=== STARTING EMAIL NOTIFICATIONS ===');
 
-    // Get first approver (supervisor)
+    // Get first approver
     const firstApprover = approvalChain[0];
     console.log('First approver details:', firstApprover);
 
-    if (firstApprover && firstApprover.email) {
-      console.log('Sending notification to first approver:', firstApprover.email);
+    if (firstApprover && firstApprover.approver.email) {
+      console.log('Sending notification to first approver:', firstApprover.approver.email);
       
       try {
-        // Enhanced supervisor notification
         const supervisorNotification = await sendEmail({
-          to: firstApprover.email,
+          to: firstApprover.approver.email,
           subject: `New Purchase Requisition Requires Your Approval - ${employee.fullName}`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -287,7 +280,7 @@ const createRequisition = async (req, res) => {
 
               <div style="background-color: #f0f8ff; border-left: 4px solid #1890ff; padding: 15px; margin: 20px 0;">
                 <h4 style="margin: 0 0 10px 0; color: #1890ff;">Justification</h4>
-                <p style="margin: 0; color: #333;">${justificationOfPurchase}</p>
+                <p style="margin: 0; color: #333;">${justification}</p>
               </div>
 
               <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">
@@ -317,8 +310,6 @@ const createRequisition = async (req, res) => {
         console.error('Failed to send supervisor notification:', error);
         notifications.push(Promise.resolve({ error, type: 'supervisor' }));
       }
-    } else {
-      console.log('No first approver found or email missing');
     }
 
     // Notify admins about new requisition
@@ -351,7 +342,7 @@ const createRequisition = async (req, res) => {
                   <li style="padding: 5px 0;"><strong>Budget:</strong> XAF ${budgetXAF ? parseFloat(budgetXAF).toLocaleString() : 'Not specified'}</li>
                   <li style="padding: 5px 0;"><strong>Urgency:</strong> ${urgency}</li>
                   <li style="padding: 5px 0;"><strong>Status:</strong> Pending Approval</li>
-                  <li style="padding: 5px 0;"><strong>Current Approver:</strong> ${firstApprover?.name} (${firstApprover?.email})</li>
+                  <li style="padding: 5px 0;"><strong>Current Approver:</strong> ${firstApprover?.approver.name} (${firstApprover?.approver.email})</li>
                 </ul>
               </div>
 
@@ -393,7 +384,7 @@ const createRequisition = async (req, res) => {
                 <li style="padding: 5px 0;"><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
                 <li style="padding: 5px 0;"><strong>Title:</strong> ${title}</li>
                 <li style="padding: 5px 0;"><strong>Status:</strong> Pending Approval</li>
-                <li style="padding: 5px 0;"><strong>Current Approver:</strong> ${firstApprover?.name}</li>
+                <li style="padding: 5px 0;"><strong>Current Approver:</strong> ${firstApprover?.approver.name}</li>
               </ul>
             </div>
 
@@ -427,7 +418,6 @@ const createRequisition = async (req, res) => {
     console.log('Waiting for all notifications to complete...');
     const notificationResults = await Promise.allSettled(notifications);
     
-    // Log detailed results
     notificationResults.forEach((result, index) => {
       if (result.status === 'rejected') {
         console.error(`Notification ${index} failed:`, result.reason);
@@ -2827,15 +2817,13 @@ const processFinanceVerification = async (req, res) => {
           });
       }
 
-      // FIXED: Define allocationAmount early so it's available throughout
       const allocationAmount = parseFloat(assignedBudget) || requisition.budgetXAF || 0;
 
-      // FIXED: Budget code allocation with proper validation
+      // Budget code allocation (your existing code)
       let budgetCodeDoc = null;
       if (decision === 'approved' && budgetCode) {
           const BudgetCode = require('../models/BudgetCode');
           
-          // Find budget code (case-insensitive)
           budgetCodeDoc = await BudgetCode.findOne({ 
             code: { $regex: new RegExp(`^${budgetCode}$`, 'i') }
           });
@@ -2847,13 +2835,11 @@ const processFinanceVerification = async (req, res) => {
               });
           }
 
-          // FIX: Clean up any invalid data before validation
           if (budgetCodeDoc.budgetType && !['OPEX', 'CAPEX', 'PROJECT', 'OPERATIONAL'].includes(budgetCodeDoc.budgetType)) {
               console.log(`⚠ Fixing invalid budgetType: ${budgetCodeDoc.budgetType} → OPERATIONAL`);
               budgetCodeDoc.budgetType = 'OPERATIONAL';
           }
 
-          // Remove allocations without amount field
           if (budgetCodeDoc.allocations && budgetCodeDoc.allocations.length > 0) {
               const validAllocations = budgetCodeDoc.allocations.filter(
                   alloc => alloc.amount !== undefined && alloc.amount !== null
@@ -2864,7 +2850,6 @@ const processFinanceVerification = async (req, res) => {
               }
           }
 
-          // Check if budget code is active
           if (!budgetCodeDoc.active) {
               return res.status(400).json({
                   success: false,
@@ -2874,7 +2859,6 @@ const processFinanceVerification = async (req, res) => {
 
           const remaining = budgetCodeDoc.budget - (budgetCodeDoc.used || 0);
 
-          // Check if sufficient budget
           if (remaining < allocationAmount) {
               return res.status(400).json({
                   success: false,
@@ -2882,26 +2866,20 @@ const processFinanceVerification = async (req, res) => {
               });
           }
 
-          // FIXED: Properly allocate budget with all required fields
           try {
-              // Initialize allocations array if it doesn't exist
               if (!budgetCodeDoc.allocations) {
                   budgetCodeDoc.allocations = [];
               }
 
-              // CRITICAL FIX: Add allocation with ALL REQUIRED FIELDS
               budgetCodeDoc.allocations.push({
                   requisitionId: requisitionId,
-                  amount: allocationAmount, // ✅ REQUIRED FIELD - now properly defined
+                  amount: allocationAmount,
                   allocatedBy: req.user.userId,
                   allocatedDate: new Date(),
                   status: 'allocated'
               });
 
-              // Update used amount
               budgetCodeDoc.used = (budgetCodeDoc.used || 0) + allocationAmount;
-
-              // Save budget code
               await budgetCodeDoc.save();
               
               console.log(`✅ Budget allocated: XAF ${allocationAmount.toLocaleString()} from ${budgetCode}`);
@@ -2909,7 +2887,6 @@ const processFinanceVerification = async (req, res) => {
           } catch (allocationError) {
               console.error('Budget allocation error:', allocationError);
               
-              // Provide detailed error message
               if (allocationError.name === 'ValidationError') {
                   const errors = Object.values(allocationError.errors)
                       .map(err => err.message)
@@ -2931,7 +2908,7 @@ const processFinanceVerification = async (req, res) => {
       // Update finance verification
       requisition.financeVerification = {
           budgetAvailable: budgetAvailable,
-          assignedBudget: allocationAmount, // Use the defined variable
+          assignedBudget: allocationAmount,
           budgetCode: budgetCode,
           budgetAllocation: budgetAllocation,
           costCenter: costCenter,
@@ -2943,15 +2920,32 @@ const processFinanceVerification = async (req, res) => {
           decision: decision
       };
 
+      // ✅ CRITICAL FIX: Move to supply chain review instead of head approval
       if (decision === 'approved') {
-          requisition.status = 'pending_head_approval';
+          requisition.status = 'pending_supply_chain_review'; // ✅ CORRECT - goes to supply chain first
+          console.log('✅ Status updated to: pending_supply_chain_review');
       } else {
           requisition.status = 'rejected';
+          console.log('✅ Status updated to: rejected');
       }
 
-      // Save requisition
+      // Update approval chain status for finance step
+      const financeStepIndex = requisition.approvalChain.findIndex(
+          step => step.approver.email.toLowerCase() === user.email.toLowerCase() && 
+                  step.status === 'pending'
+      );
+
+      if (financeStepIndex !== -1) {
+          requisition.approvalChain[financeStepIndex].status = decision === 'approved' ? 'approved' : 'rejected';
+          requisition.approvalChain[financeStepIndex].comments = comments;
+          requisition.approvalChain[financeStepIndex].actionDate = new Date();
+          requisition.approvalChain[financeStepIndex].actionTime = new Date().toLocaleTimeString('en-GB');
+          requisition.approvalChain[financeStepIndex].decidedBy = req.user.userId;
+      }
+
       try {
           await requisition.save();
+          console.log('✅ Requisition saved successfully');
       } catch (saveError) {
           console.error('Requisition save error:', saveError);
           
@@ -2979,21 +2973,22 @@ const processFinanceVerification = async (req, res) => {
       const { sendEmail } = require('../services/emailService');
       
       if (decision === 'approved') {
-          // Notify Head of Business
-          const headOfBusiness = await User.findOne({
-              email: 'kelvin.eyong@gratoglobal.com'
+          // ✅ FIXED: Notify Supply Chain Coordinator instead of Head of Business
+          const supplyChainCoordinator = await User.findOne({
+              email: 'lukong.lambert@gratoglobal.com'
           });
 
-          if (headOfBusiness) {
+          if (supplyChainCoordinator) {
               notifications.push(
                   sendEmail({
-                      to: headOfBusiness.email,
-                      subject: `Purchase Requisition Ready for Final Approval - ${requisition.employee.fullName}`,
+                      to: supplyChainCoordinator.email,
+                      subject: `Purchase Requisition Ready for Business Decisions - ${requisition.employee.fullName}`,
                       html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <div style="background-color: #d4edda; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
-                <h2 style="color: #155724; margin-top: 0;">Budget Verified - Ready for Final Approval</h2>
-                <p>A purchase requisition has been verified by Finance and is ready for your final approval.</p>
+              <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px; border-left: 4px solid #1890ff;">
+                <h2 style="color: #1890ff; margin-top: 0;">📋 Budget Verified - Ready for Supply Chain Review</h2>
+                <p>Dear ${supplyChainCoordinator.fullName},</p>
+                <p>A purchase requisition has been verified by Finance and is ready for your business decisions.</p>
                 
                 <div style="background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
                   <h4>Requisition Details</h4>
@@ -3004,17 +2999,16 @@ const processFinanceVerification = async (req, res) => {
                     ${budgetCode ? `<li><strong>Budget Code:</strong> ${budgetCode}</li>` : ''}
                     ${budgetCodeDoc ? `<li><strong>Budget Remaining:</strong> XAF ${(budgetCodeDoc.budget - budgetCodeDoc.used).toLocaleString()}</li>` : ''}
                     <li><strong>Items Count:</strong> ${requisition.items.length}</li>
-                    ${costCenter ? `<li><strong>Cost Center:</strong> ${costCenter}</li>` : ''}
                   </ul>
                 </div>
                 
-                <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                  <h4 style="color: #856404;">Your Responsibilities:</h4>
+                <div style="background-color: #fff7e6; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                  <h4 style="color: #faad14;">Your Responsibilities:</h4>
                   <ul style="color: #856404;">
-                    <li>Select sourcing type (direct purchase, competitive bidding)</li>
-                    <li>Assign purchase type (OPEX, CAPEX)</li>
+                    <li>Select sourcing type (direct purchase, competitive bidding, framework)</li>
+                    <li>Assign purchase type (OPEX, CAPEX, standard, emergency)</li>
+                    <li>Choose payment method (bank transfer or petty cash)</li>
                     <li>Assign suitable buyer for procurement</li>
-                    <li>Provide final approval for requisition</li>
                   </ul>
                 </div>
                 
@@ -3026,18 +3020,18 @@ const processFinanceVerification = async (req, res) => {
                 ` : ''}
 
                 <div style="text-align: center; margin: 20px 0;">
-                  <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/head-business/requisitions/${requisition._id}"
-                    style="background-color: #28a745; color: white; padding: 12px 24px;
+                  <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/supply-chain/requisitions/${requisition._id}"
+                    style="background-color: #1890ff; color: white; padding: 12px 24px;
                            text-decoration: none; border-radius: 6px; font-weight: bold;">
-                    Review & Make Business Decisions
+                    Make Business Decisions
                   </a>
                 </div>
               </div>
             </div>
           `
                   }).catch(error => {
-                      console.error('Failed to send head of business notification:', error);
-                      return { error, type: 'head_business' };
+                      console.error('Failed to send supply chain notification:', error);
+                      return { error, type: 'supply_chain' };
                   })
               );
           }
@@ -3046,11 +3040,11 @@ const processFinanceVerification = async (req, res) => {
           notifications.push(
               sendEmail({
                   to: requisition.employee.email,
-                  subject: 'Purchase Requisition - Budget Verified and Approved',
+                  subject: 'Purchase Requisition - Budget Verified',
                   html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <div style="background-color: #d4edda; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
-              <h2 style="color: #155724; margin-top: 0;">Budget Verification Complete</h2>
+              <h2 style="color: #155724; margin-top: 0;">✅ Budget Verification Complete</h2>
               <p>Dear ${requisition.employee.fullName},</p>
               <p>Your purchase requisition has been verified and approved by the Finance team.</p>
               
@@ -3062,7 +3056,7 @@ const processFinanceVerification = async (req, res) => {
                   <li><strong>Assigned Budget:</strong> XAF ${allocationAmount.toLocaleString()}</li>
                   ${budgetCode ? `<li><strong>Budget Code:</strong> ${budgetCode}</li>` : ''}
                   ${costCenter ? `<li><strong>Cost Center:</strong> ${costCenter}</li>` : ''}
-                  <li><strong>Next Step:</strong> Head of Business Final Approval</li>
+                  <li><strong>Next Step:</strong> Supply Chain Business Decisions</li>
                 </ul>
               </div>
               
@@ -3073,7 +3067,7 @@ const processFinanceVerification = async (req, res) => {
               </div>
               ` : ''}
               
-              <p>Your requisition will now be reviewed by the Head of Business Development & Supply Chain.</p>
+              <p>Your requisition will now be reviewed by the Supply Chain Coordinator who will make business decisions including sourcing type, payment method, and buyer assignment.</p>
             </div>
           </div>
         `
@@ -3083,7 +3077,7 @@ const processFinanceVerification = async (req, res) => {
               })
           );
       } else {
-          // Rejection notification
+          // Rejection notification (your existing code)
           notifications.push(
               sendEmail({
                   to: requisition.employee.email,
@@ -3131,7 +3125,7 @@ const processFinanceVerification = async (req, res) => {
               requisition,
               budgetAllocation: budgetCodeDoc ? {
                   budgetCode: budgetCodeDoc.code,
-                  allocatedAmount: allocationAmount, // Use the defined variable
+                  allocatedAmount: allocationAmount,
                   remainingBudget: budgetCodeDoc.budget - budgetCodeDoc.used,
                   utilizationRate: Math.round((budgetCodeDoc.used / budgetCodeDoc.budget) * 100)
               } : null
@@ -3644,34 +3638,81 @@ const getPaymentMethodOptions = async (req, res) => {
 };
 
 
-// NEW: Get Finance Requisitions for Verification
 const getFinanceRequisitions = async (req, res) => {
   try {
+      console.log('\n=== FETCHING FINANCE REQUISITIONS ===');
+      
       const user = await User.findById(req.user.userId);
-
-      // Check permissions
-      const canView =
-          user.role === 'admin' ||
-          user.role === 'finance' ||
-          user.email === 'ranibellmambo@gratoengineering.com';
-
-      if (!canView) {
-          return res.status(403).json({
-              success: false,
-              message: 'Access denied'
+      
+      if (!user) {
+          return res.status(404).json({ 
+              success: false, 
+              message: 'User not found' 
           });
       }
 
-      const requisitions = await PurchaseRequisition.find({
-          status: 'pending_finance_verification'
-      })
+      const financeEmail = user.email.toLowerCase();
+
+      // ✅ FIXED: Get all requisitions where finance officer needs to act or has acted
+      const query = {
+          $or: [
+              // Requisitions at finance verification stage
+              { status: 'pending_finance_verification' },
+              
+              // Requisitions where this finance officer is the current pending approver
+              {
+                  'approvalChain': {
+                      $elemMatch: {
+                          'approver.email': financeEmail,
+                          'status': 'pending'
+                      }
+                  }
+              },
+              
+              // Requisitions where finance has already verified (for history)
+              {
+                  'financeVerification.verifiedBy': req.user.userId
+              },
+              
+              // Requisitions that have been verified and moved forward
+              {
+                  'financeVerification.decision': { $exists: true, $ne: 'pending' }
+              }
+          ]
+      };
+
+      console.log('Finance query:', JSON.stringify(query, null, 2));
+
+      const requisitions = await PurchaseRequisition.find(query)
           .populate('employee', 'fullName email department')
-          .sort({ createdAt: -1 });
+          .populate('financeVerification.verifiedBy', 'fullName email')
+          .sort({ createdAt: -1 })
+          .lean();
+
+      console.log(`✅ Found ${requisitions.length} requisitions for finance`);
+
+      // Add helpful flags to each requisition
+      const enrichedRequisitions = requisitions.map(req => {
+          const currentStep = req.approvalChain?.find(step => step.status === 'pending');
+          const financeStep = req.approvalChain?.find(step => 
+              step.approver.email.toLowerCase() === financeEmail
+          );
+
+          return {
+              ...req,
+              currentApprovalStep: currentStep,
+              financeApprovalStep: financeStep,
+              isAwaitingFinance: currentStep && 
+                  currentStep.approver.email.toLowerCase() === financeEmail,
+              financeHasActed: financeStep && financeStep.status !== 'pending'
+          };
+      });
 
       res.json({
           success: true,
-          data: requisitions,
-          count: requisitions.length
+          data: enrichedRequisitions,
+          count: enrichedRequisitions.length,
+          pending: enrichedRequisitions.filter(r => r.isAwaitingFinance).length
       });
 
   } catch (error) {
@@ -3824,12 +3865,53 @@ const getBuyerRequisitions = async (req, res) => {
   }
 };
 
-// NEW: Get Head of Business Requisitions for Final Approval (with business decisions)
+// // NEW: Get Head of Business Requisitions for Final Approval (with business decisions)
+// const getHeadApprovalRequisitions = async (req, res) => {
+//   try {
+//       const user = await User.findById(req.user.userId);
+
+//       // Check permissions (Head of Business Dev & Supply Chain)
+//       const canView =
+//           user.role === 'admin' ||
+//           user.email === 'kelvin.eyong@gratoglobal.com';
+
+//       if (!canView) {
+//           return res.status(403).json({
+//               success: false,
+//               message: 'Access denied'
+//           });
+//       }
+
+//       const requisitions = await PurchaseRequisition.find({
+//           status: 'pending_head_approval' // This status comes after finance verification
+//       })
+//           .populate('employee', 'fullName email department')
+//           .populate('financeVerification.verifiedBy', 'fullName')
+//           .sort({ createdAt: -1 });
+
+//       res.json({
+//           success: true,
+//           data: requisitions,
+//           count: requisitions.length,
+//           message: 'Requisitions ready for final approval and business decisions'
+//       });
+
+//   } catch (error) {
+//       console.error('Get head approval requisitions error:', error);
+//       res.status(500).json({
+//           success: false,
+//           message: 'Failed to fetch head approval requisitions',
+//           error: error.message
+//       });
+//   }
+// };
+
 const getHeadApprovalRequisitions = async (req, res) => {
   try {
+      console.log('\n=== FETCHING HEAD APPROVAL REQUISITIONS ===');
+      
       const user = await User.findById(req.user.userId);
 
-      // Check permissions (Head of Business Dev & Supply Chain)
       const canView =
           user.role === 'admin' ||
           user.email === 'kelvin.eyong@gratoglobal.com';
@@ -3842,17 +3924,79 @@ const getHeadApprovalRequisitions = async (req, res) => {
       }
 
       const requisitions = await PurchaseRequisition.find({
-          status: 'pending_head_approval' // This status comes after finance verification
+          status: 'pending_head_approval'
       })
           .populate('employee', 'fullName email department')
           .populate('financeVerification.verifiedBy', 'fullName')
-          .sort({ createdAt: -1 });
+          .populate('supplyChainReview.assignedBuyer', 'fullName email')
+          .sort({ createdAt: -1 })
+          .lean();
+
+      console.log(`Found ${requisitions.length} requisitions for head approval`);
+
+      // ✅ FIXED: Map requisitions with correct payment method
+      const enrichedRequisitions = requisitions.map(req => {
+          // Get payment method from the right place
+          const paymentMethod = req.paymentMethod || 
+                               req.supplyChainReview?.paymentMethod || 
+                               'bank'; // Default fallback
+          
+          console.log(`Requisition ${req.requisitionNumber} payment method:`, {
+              mainField: req.paymentMethod,
+              supplyChainField: req.supplyChainReview?.paymentMethod,
+              final: paymentMethod
+          });
+
+          return {
+              id: req._id,
+              requisitionNumber: req.requisitionNumber,
+              title: req.title,
+              requester: req.employee?.fullName,
+              department: req.employee?.department || req.department,
+              category: req.itemCategory,
+              budgetXAF: req.budgetXAF,
+              urgency: req.urgency,
+              status: req.status,
+              submittedDate: req.createdAt,
+              expectedDeliveryDate: req.expectedDate,
+              
+              // Supply Chain Decisions
+              sourcingType: req.supplyChainReview?.sourcingType,
+              purchaseType: req.supplyChainReview?.purchaseTypeAssigned || req.purchaseType,
+              paymentMethod: paymentMethod, // ✅ Use the determined payment method
+              estimatedCost: req.supplyChainReview?.estimatedCost,
+              
+              // Buyer Information
+              assignedBuyer: req.supplyChainReview?.assignedBuyer ? {
+                  id: req.supplyChainReview.assignedBuyer._id || req.supplyChainReview.assignedBuyer,
+                  name: req.supplyChainReview.assignedBuyer.fullName,
+                  email: req.supplyChainReview.assignedBuyer.email
+              } : null,
+              buyerAssignmentDate: req.supplyChainReview?.buyerAssignmentDate,
+              
+              // Finance Verification
+              financeVerification: {
+                  budgetCode: req.financeVerification?.budgetCode,
+                  assignedBudget: req.financeVerification?.assignedBudget,
+                  verifiedBy: req.financeVerification?.verifiedBy?.fullName
+              },
+              
+              // Head Approval Status
+              headApproval: {
+                  decision: req.headApproval?.decision || 'pending',
+                  businessDecisions: req.headApproval?.businessDecisions || {}
+              },
+              
+              // Items
+              items: req.items || []
+          };
+      });
 
       res.json({
           success: true,
-          data: requisitions,
-          count: requisitions.length,
-          message: 'Requisitions ready for final approval and business decisions'
+          data: enrichedRequisitions,
+          count: enrichedRequisitions.length,
+          message: 'Requisitions ready for final approval'
       });
 
   } catch (error) {
@@ -3864,7 +4008,6 @@ const getHeadApprovalRequisitions = async (req, res) => {
       });
   }
 };
-
 
 const getBudgetCodesForVerification = async (req, res) => {
   try {

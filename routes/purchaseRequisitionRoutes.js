@@ -191,6 +191,7 @@ router.put('/:requisitionId/supply-chain-decisions',
       
       console.log('\n=== SUPPLY CHAIN BUSINESS DECISIONS ===');
       console.log('Requisition ID:', requisitionId);
+      console.log('Payment Method:', paymentMethod);
       
       const User = require('../models/User');
       const PurchaseRequisition = require('../models/PurchaseRequisition');

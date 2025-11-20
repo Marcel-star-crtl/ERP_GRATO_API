@@ -63,10 +63,16 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
   },
   justificationOfPreferredSupplier: String,
 
-  // NEW: Purchase Type Field
+  // // NEW: Purchase Type Field
+  // purchaseType: {
+  //   type: String,
+  //   enum: ['standard', 'non_standard', 'emergency', 'framework', 'capital'],
+  //   default: 'standard'
+  // },
+
   purchaseType: {
     type: String,
-    enum: ['standard', 'non_standard', 'emergency', 'framework', 'capital'],
+    enum: ['opex', 'capex', 'standard', 'emergency'], // ✅ UPDATED enum values
     default: 'standard'
   },
 
@@ -202,7 +208,7 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
   paymentMethod: {
     type: String,
     enum: ['bank', 'cash'],
-    default: 'bank',
+    default: 'cash',
     required: function() {
       // Only required after finance verification
       return this.status !== 'draft' && 
@@ -216,10 +222,10 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
     assignedOfficer: String,
     estimatedCost: Number,
 
-    // Purchase type determined during supply chain review
     purchaseTypeAssigned: {
       type: String,
-      enum: ['standard', 'non_standard', 'emergency', 'framework', 'capital']
+      enum: ['opex', 'capex', 'standard', 'emergency'], 
+      required: false
     },
 
     // Sourcing and Buyer Assignment
