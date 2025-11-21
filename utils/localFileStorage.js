@@ -19,7 +19,8 @@ const STORAGE_CATEGORIES = {
   EMPLOYEE_INVOICES: 'employee-invoices',
   SUPPLIER_DOCUMENTS: 'supplier-documents',
   CONTRACTS: 'contracts',
-  SIGNED_DOCUMENTS: 'signed-documents'
+  SIGNED_DOCUMENTS: 'signed-documents',
+  ACTION_ITEMS: 'action-items'
 };
 
 /**
@@ -42,6 +43,9 @@ const initializeStorageDirectories = async () => {
     path.join(BASE_UPLOAD_DIR, STORAGE_CATEGORIES.SIGNED_DOCUMENTS, 'level-1'),
     path.join(BASE_UPLOAD_DIR, STORAGE_CATEGORIES.SIGNED_DOCUMENTS, 'level-2'),
     path.join(BASE_UPLOAD_DIR, STORAGE_CATEGORIES.SIGNED_DOCUMENTS, 'level-3'),
+
+    path.join(BASE_UPLOAD_DIR, STORAGE_CATEGORIES.ACTION_ITEMS, 'completion-docs'),
+    path.join(BASE_UPLOAD_DIR, STORAGE_CATEGORIES.ACTION_ITEMS, 'attachments')
   ];
 
   for (const dir of directories) {

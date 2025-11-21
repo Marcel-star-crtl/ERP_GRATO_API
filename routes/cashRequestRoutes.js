@@ -123,6 +123,126 @@ router.get(
   }
 );
 
+// Delete cash request (only if pending and no approvals)
+router.delete(
+  '/:requestId',
+  authMiddleware,
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+  async (req, res) => {
+    try {
+      const { requestId } = req.params;
+      const request = await CashRequest.findById(requestId)
+        .populate('employee', 'fullName email');
+
+      if (!request) {
+        return res.status(404).json({
+          success: false,
+          message: 'Request not found'
+        });
+      }
+
+      // Only owner can delete
+      if (!request.employee._id.equals(req.user.userId)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Only the request owner can delete it'
+        });
+      }
+
+      // Must be pending_supervisor
+      if (request.status !== 'pending_supervisor') {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot delete request after approval process has started',
+          currentStatus: request.status
+        });
+      }
+
+      // First approver must not have acted
+      const firstStep = request.approvalChain?.[0];
+      if (!firstStep || firstStep.status !== 'pending') {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot delete request - first approver has already taken action'
+        });
+      }
+
+      // Delete associated files
+      if (request.attachments && request.attachments.length > 0) {
+        await deleteFiles(request.attachments);
+      }
+
+      // Delete request
+      await request.deleteOne();
+
+      console.log(`✓ Request ${requestId} deleted by ${request.employee.email}`);
+
+      res.json({
+        success: true,
+        message: 'Request deleted successfully'
+      });
+
+    } catch (error) {
+      console.error('Delete request error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to delete request',
+        error: error.message
+      });
+    }
+  }
+);
+
+
+// Edit cash request
+router.put(
+  '/:requestId/edit',
+  authMiddleware,
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+  upload.array('attachments', 10),
+  handleMulterError,
+  validateFiles,
+  cashRequestController.editCashRequest,
+  cleanupTempFiles
+);
+
+// Get edit history
+router.get(
+  '/:requestId/edit-history',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const { requestId } = req.params;
+      const request = await CashRequest.findById(requestId)
+        .populate('editHistory.editedBy', 'fullName email')
+        .select('editHistory totalEdits isEdited originalValues');
+
+      if (!request) {
+        return res.status(404).json({
+          success: false,
+          message: 'Request not found'
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          isEdited: request.isEdited,
+          totalEdits: request.totalEdits,
+          editHistory: request.editHistory || [],
+          originalValues: request.originalValues
+        }
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch edit history',
+        error: error.message
+      });
+    }
+  }
+);
+
 // ============================================
 // APPROVAL CHAIN PREVIEW (before generic routes)
 // ============================================
@@ -131,6 +251,13 @@ router.post(
   authMiddleware,
   requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   cashRequestController.getApprovalChainPreview
+);
+
+router.get(
+  '/check-pending',
+  authMiddleware,
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+  cashRequestController.checkPendingRequests
 );
 
 // ============================================
@@ -572,6 +699,7 @@ router.get(
   requireRoles('finance', 'admin'),
   cashRequestController.getFinanceReportsData
 );
+
 
 module.exports = router;
 

@@ -4896,6 +4896,382 @@ const getFinanceReportsData = async (req, res) => {
 };
 
 
+const checkPendingRequests = async (req, res) => {
+  try {
+    const pendingRequest = await CashRequest.findOne({
+      employee: req.user.userId,
+      status: { $regex: /^pending_/ }
+    }).select('_id status requestType amountRequested createdAt');
+
+    if (pendingRequest) {
+      return res.json({
+        success: true,
+        hasPending: true,
+        pendingRequest: {
+          id: pendingRequest._id,
+          status: pendingRequest.status,
+          type: pendingRequest.requestType,
+          amount: pendingRequest.amountRequested,
+          createdAt: pendingRequest.createdAt
+        }
+      });
+    }
+
+    res.json({
+      success: true,
+      hasPending: false
+    });
+
+  } catch (error) {
+    console.error('Check pending requests error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to check pending requests',
+      error: error.message
+    });
+  }
+};
+
+
+const editCashRequest = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const {
+      requestType,
+      amountRequested,
+      purpose,
+      businessJustification,
+      urgency,
+      requiredDate,
+      projectId,
+      itemizedBreakdown,
+      editReason // Why user is editing
+    } = req.body;
+
+    console.log('\n=== EDIT CASH REQUEST ===');
+    console.log('Request ID:', requestId);
+    console.log('User:', req.user.userId);
+
+    // Get current request
+    const request = await CashRequest.findById(requestId)
+      .populate('employee', 'fullName email department');
+
+    if (!request) {
+      return res.status(404).json({
+        success: false,
+        message: 'Request not found'
+      });
+    }
+
+    // Verify ownership
+    if (!request.employee._id.equals(req.user.userId)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the request owner can edit it'
+      });
+    }
+
+    // Check if request can be edited
+    const canEdit = canRequestBeEdited(request);
+    if (!canEdit.allowed) {
+      return res.status(400).json({
+        success: false,
+        message: canEdit.reason
+      });
+    }
+
+    // Store original values (first time only)
+    if (!request.originalValues) {
+      request.originalValues = {
+        requestType: request.requestType,
+        amountRequested: request.amountRequested,
+        purpose: request.purpose,
+        businessJustification: request.businessJustification,
+        urgency: request.urgency,
+        requiredDate: request.requiredDate,
+        projectId: request.projectId,
+        itemizedBreakdown: request.itemizedBreakdown,
+        attachments: request.attachments
+      };
+    }
+
+    // Track what changed
+    const changes = {};
+    if (requestType !== request.requestType) changes.requestType = { from: request.requestType, to: requestType };
+    if (parseFloat(amountRequested) !== request.amountRequested) {
+      changes.amountRequested = { from: request.amountRequested, to: parseFloat(amountRequested) };
+    }
+    if (purpose !== request.purpose) changes.purpose = { from: request.purpose, to: purpose };
+    if (businessJustification !== request.businessJustification) {
+      changes.businessJustification = { from: request.businessJustification, to: businessJustification };
+    }
+    if (urgency !== request.urgency) changes.urgency = { from: request.urgency, to: urgency };
+
+    // Parse itemized breakdown
+    let parsedBreakdown = null;
+    if (itemizedBreakdown) {
+      try {
+        parsedBreakdown = typeof itemizedBreakdown === 'string' 
+          ? JSON.parse(itemizedBreakdown) 
+          : itemizedBreakdown;
+
+        if (Array.isArray(parsedBreakdown) && parsedBreakdown.length > 0) {
+          const breakdownTotal = parsedBreakdown.reduce((sum, item) => 
+            sum + parseFloat(item.amount || 0), 0
+          );
+          
+          const discrepancy = Math.abs(breakdownTotal - parseFloat(amountRequested));
+          if (discrepancy > 1) {
+            return res.status(400).json({
+              success: false,
+              message: `Itemized breakdown total must match requested amount`
+            });
+          }
+        }
+      } catch (parseError) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid itemized breakdown format'
+        });
+      }
+    }
+
+    // Handle new attachments
+    let newAttachments = [...request.attachments]; // Keep existing
+    
+    if (req.files && req.files.length > 0) {
+      console.log(`Adding ${req.files.length} new attachment(s)...`);
+      
+      for (let i = 0; i < req.files.length; i++) {
+        const file = req.files[i];
+        
+        try {
+          const fileMetadata = await saveFile(
+            file,
+            STORAGE_CATEGORIES.CASH_REQUESTS,
+            'attachments',
+            null
+          );
+
+          newAttachments.push({
+            name: file.originalname,
+            publicId: fileMetadata.publicId,
+            url: fileMetadata.url,
+            localPath: fileMetadata.localPath,
+            size: file.size,
+            mimetype: file.mimetype,
+            uploadedAt: new Date()
+          });
+
+          console.log(`   ✅ Added: ${fileMetadata.publicId}`);
+        } catch (fileError) {
+          console.error(`   ❌ Error processing ${file.originalname}:`, fileError);
+        }
+      }
+    }
+
+    // Update request fields
+    request.requestType = requestType;
+    request.amountRequested = parseFloat(amountRequested);
+    request.purpose = purpose.trim();
+    request.businessJustification = businessJustification.trim();
+    request.urgency = urgency;
+    request.requiredDate = new Date(requiredDate);
+    request.projectId = projectId || null;
+    request.itemizedBreakdown = parsedBreakdown || [];
+    request.attachments = newAttachments;
+
+    // Regenerate approval chain (fresh start)
+    const employee = await User.findById(req.user.userId);
+    const newApprovalChain = getCashRequestApprovalChain(employee.email);
+    
+    if (!newApprovalChain || newApprovalChain.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unable to regenerate approval chain'
+      });
+    }
+
+    const mappedApprovalChain = mapApprovalChainForCashRequest(newApprovalChain);
+    request.approvalChain = mappedApprovalChain;
+
+    // Reset status to pending_supervisor
+    const previousStatus = request.status;
+    request.status = 'pending_supervisor';
+
+    // Add to edit history
+    request.totalEdits = (request.totalEdits || 0) + 1;
+    request.isEdited = true;
+
+    if (!request.editHistory) {
+      request.editHistory = [];
+    }
+
+    request.editHistory.push({
+      editedAt: new Date(),
+      editedBy: req.user.userId,
+      changes: changes,
+      reason: editReason || 'User edited request',
+      previousStatus: previousStatus,
+      editNumber: request.totalEdits
+    });
+
+    await request.save();
+    await request.populate('employee', 'fullName email department');
+
+    console.log(`✅ Request edited successfully (Edit #${request.totalEdits})`);
+
+    // Send notifications
+    const notifications = [];
+
+    // Notify first approver
+    const firstApprover = newApprovalChain[0];
+    if (firstApprover) {
+      notifications.push(
+        sendEmail({
+          to: firstApprover.approver.email,
+          subject: `📝 Edited Cash Request Requires Your Approval - ${employee.fullName}`,
+          html: `
+            <h3>Edited Cash Request Requires Your Approval</h3>
+            <p>Dear ${firstApprover.approver.name},</p>
+
+            <p><strong>${employee.fullName}</strong> has edited and resubmitted a cash request.</p>
+
+            <div style="background-color: #fff7e6; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #faad14;">
+              <p><strong>📝 This is an EDITED request (Edit #${request.totalEdits})</strong></p>
+              <p><strong>Previous Status:</strong> ${previousStatus.replace(/_/g, ' ').toUpperCase()}</p>
+              ${editReason ? `<p><strong>Edit Reason:</strong> ${editReason}</p>` : ''}
+            </div>
+
+            <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
+              <p><strong>Request Details:</strong></p>
+              <ul>
+                <li><strong>Request ID:</strong> REQ-${requestId.toString().slice(-6).toUpperCase()}</li>
+                <li><strong>Amount:</strong> XAF ${parseFloat(amountRequested).toLocaleString()}</li>
+                <li><strong>Type:</strong> ${requestType.replace(/-/g, ' ')}</li>
+                <li><strong>Purpose:</strong> ${purpose}</li>
+              </ul>
+            </div>
+
+            ${Object.keys(changes).length > 0 ? `
+            <div style="background-color: #e6f7ff; padding: 15px; border-radius: 5px; margin: 15px 0;">
+              <p><strong>📋 Changes Made:</strong></p>
+              <ul>
+                ${Object.entries(changes).map(([field, change]) => `
+                  <li><strong>${field}:</strong> Updated</li>
+                `).join('')}
+              </ul>
+            </div>
+            ` : ''}
+
+            <p>Please review this edited request in the system.</p>
+          `
+        }).catch(error => {
+          console.error('Failed to notify approver:', error);
+          return { error, type: 'approver' };
+        })
+      );
+    }
+
+    // Notify employee
+    notifications.push(
+      sendEmail({
+        to: employee.email,
+        subject: '✅ Request Edited and Resubmitted Successfully',
+        html: `
+          <h3>Your Cash Request Has Been Edited and Resubmitted</h3>
+          <p>Dear ${employee.fullName},</p>
+
+          <p>Your cash request has been successfully updated and resubmitted for approval.</p>
+
+          <div style="background-color: #d1ecf1; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <ul>
+              <li><strong>Request ID:</strong> REQ-${requestId.toString().slice(-6).toUpperCase()}</li>
+              <li><strong>Edit Number:</strong> #${request.totalEdits}</li>
+              <li><strong>Previous Status:</strong> ${previousStatus.replace(/_/g, ' ')}</li>
+              <li><strong>New Status:</strong> Pending Supervisor</li>
+              <li><strong>Changes Made:</strong> ${Object.keys(changes).length} field(s) updated</li>
+            </ul>
+          </div>
+
+          <p>Your request will now go through the approval process again starting from Level 1.</p>
+        `
+      }).catch(error => {
+        console.error('Failed to notify employee:', error);
+        return { error, type: 'employee' };
+      })
+    );
+
+    await Promise.allSettled(notifications);
+
+    res.json({
+      success: true,
+      message: `Request edited successfully (Edit #${request.totalEdits})`,
+      data: request,
+      metadata: {
+        totalEdits: request.totalEdits,
+        changesCount: Object.keys(changes).length,
+        approvalChainReset: true,
+        newAttachmentsAdded: req.files?.length || 0
+      }
+    });
+
+  } catch (error) {
+    console.error('Edit cash request error:', error);
+    
+    // Cleanup uploaded files on error
+    if (req.files && req.files.length > 0) {
+      await Promise.allSettled(
+        req.files.map(file => {
+          if (file.path && fsSync.existsSync(file.path)) {
+            return fs.promises.unlink(file.path).catch(e => 
+              console.error('File cleanup failed:', e)
+            );
+          }
+        })
+      );
+    }
+
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to edit request',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'An error occurred'
+    });
+  }
+};
+
+// Helper function to check if request can be edited
+const canRequestBeEdited = (request) => {
+  // Scenario 1: Pending supervisor + no approvals yet
+  if (request.status === 'pending_supervisor') {
+    const firstStep = request.approvalChain?.[0];
+    if (firstStep && firstStep.status === 'pending') {
+      return { allowed: true, scenario: 'before_approval' };
+    }
+    return { 
+      allowed: false, 
+      reason: 'Cannot edit - first approver has already taken action' 
+    };
+  }
+
+  // Scenario 2: Denied/Rejected
+  if (request.status === 'denied') {
+    return { allowed: true, scenario: 'after_rejection' };
+  }
+
+  // Scenario 3: Justification rejected
+  if (request.status.includes('justification_rejected')) {
+    return { allowed: true, scenario: 'justification_rejected' };
+  }
+
+  // All other statuses cannot be edited
+  return { 
+    allowed: false, 
+    reason: `Cannot edit request with status: ${request.status}` 
+  };
+};
+
+
 module.exports = {
   createRequest,
   processApprovalDecision,   
@@ -4924,7 +5300,10 @@ module.exports = {
   generateCashRequestPDF,
   createReimbursementRequest,
   getReimbursementLimitStatus,
-  getFinanceReportsData
+  getFinanceReportsData,
+  checkPendingRequests,
+  editCashRequest,
+  canRequestBeEdited
 };
 
 

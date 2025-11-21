@@ -6,6 +6,13 @@ const { sendActionItemEmail } = require('../services/emailService');
 const { getTaskSupervisor } = require('../config/actionItemApprovalChain');
 const path = require('path');
 const fs = require('fs');
+const { 
+  saveFile, 
+  deleteFile,
+  deleteFiles,
+  STORAGE_CATEGORIES 
+} = require('../utils/localFileStorage');
+const fsSync = require('fs');
 
 
 // Create task under milestone
@@ -452,7 +459,177 @@ const createPersonalTask = async (req, res) => {
   }
 };
 
-// Submit completion for specific assignee
+// // Submit completion for specific assignee
+// const submitCompletionForAssignee = async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const { completionNotes } = req.body;
+//     const userId = req.user.userId;
+
+//     console.log('=== SUBMIT COMPLETION FOR ASSIGNEE ===');
+//     console.log('Task ID:', id);
+//     console.log('User ID:', userId);
+//     console.log('Files:', req.files?.length || 0);
+
+//     const task = await ActionItem.findById(id)
+//       .populate('assignedTo.user', 'fullName email department')
+//       .populate('createdBy', 'fullName email');
+
+//     if (!task) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Task not found'
+//       });
+//     }
+
+//     // Check if user is an assignee
+//     const assignee = task.assignedTo.find(a => a.user._id.equals(userId));
+//     if (!assignee) {
+//       return res.status(403).json({
+//         success: false,
+//         message: 'You are not assigned to this task'
+//       });
+//     }
+
+//     // Check if task is in valid state
+//     if (task.status === 'Pending Approval') {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Task must be approved by supervisor before you can work on it'
+//       });
+//     }
+
+//     if (assignee.completionStatus === 'approved') {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Your completion has already been approved'
+//       });
+//     }
+
+//     // Process uploaded documents
+//     let documents = [];
+//     if (req.files && req.files.length > 0) {
+//       console.log(`Processing ${req.files.length} completion documents`);
+
+//       const uploadDir = path.join(__dirname, '../uploads/action-items');
+
+//       try {
+//         await fs.promises.mkdir(uploadDir, { recursive: true });
+//       } catch (dirError) {
+//         console.error('Failed to create upload directory:', dirError);
+//         throw new Error('Failed to prepare upload directory');
+//       }
+
+//       for (const file of req.files) {
+//         try {
+//           const timestamp = Date.now();
+//           const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+//           const fileName = `${timestamp}-${sanitizedName}`;
+//           const filePath = path.join(uploadDir, fileName);
+
+//           if (!file.path || !fs.existsSync(file.path)) {
+//             console.error(`Temp file not found: ${file.path}`);
+//             continue;
+//           }
+
+//           await fs.promises.rename(file.path, filePath);
+
+//           documents.push({
+//             name: file.originalname,
+//             url: `/uploads/action-items/${fileName}`,
+//             publicId: fileName,
+//             size: file.size,
+//             mimetype: file.mimetype,
+//             uploadedAt: new Date()
+//           });
+//         } catch (fileError) {
+//           console.error(`Error processing file ${file.originalname}:`, fileError);
+//           if (file.path && fs.existsSync(file.path)) {
+//             try {
+//               await fs.promises.unlink(file.path);
+//             } catch (cleanupError) {
+//               console.error('Failed to clean up temp file:', cleanupError);
+//             }
+//           }
+//           continue;
+//         }
+//       }
+//     }
+
+//     if (documents.length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'At least one document must be uploaded'
+//       });
+//     }
+
+//     // Update assignee's submission
+//     assignee.completionStatus = 'submitted';
+//     assignee.completionDocuments = documents;
+//     assignee.completionNotes = completionNotes || '';
+//     assignee.submittedAt = new Date();
+
+//     // Update task status if this is the first submission
+//     if (task.status === 'Not Started' || task.status === 'In Progress') {
+//       task.status = 'Pending Completion Approval';
+//     }
+
+//     task.logActivity('submitted_for_completion', userId, 
+//       `Completion submitted with ${documents.length} document(s)`);
+
+//     await task.save();
+
+//     // Send notification to supervisor
+//     try {
+//       const user = await User.findById(userId);
+//       await sendActionItemEmail.taskCompletionApproval(
+//         task.supervisor.email,
+//         task.supervisor.name,
+//         user.fullName,
+//         task.title,
+//         task.description,
+//         task._id,
+//         documents.length,
+//         completionNotes
+//       );
+//     } catch (emailError) {
+//       console.error('Failed to send supervisor notification:', emailError);
+//     }
+
+//     console.log('✅ Completion submitted for assignee');
+
+//     res.json({
+//       success: true,
+//       message: 'Completion submitted for supervisor approval',
+//       data: task,
+//       documentsUploaded: documents.length
+//     });
+
+//   } catch (error) {
+//     console.error('Error submitting completion:', error);
+
+//     // Clean up uploaded files if submission failed
+//     if (req.files && req.files.length > 0) {
+//       await Promise.allSettled(
+//         req.files.map(file => {
+//           if (file.path && fs.existsSync(file.path)) {
+//             return fs.promises.unlink(file.path).catch(e => console.error('File cleanup failed:', e));
+//           }
+//         })
+//       );
+//     }
+
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to submit completion',
+//       error: error.message
+//     });
+//   }
+// };
+
+
+
+
 const submitCompletionForAssignee = async (req, res) => {
   try {
     const { id } = req.params;
@@ -499,54 +676,44 @@ const submitCompletionForAssignee = async (req, res) => {
       });
     }
 
-    // Process uploaded documents
+    // ✅ UPDATED: Process uploaded documents using local storage
     let documents = [];
     if (req.files && req.files.length > 0) {
-      console.log(`Processing ${req.files.length} completion documents`);
+      console.log(`📎 Processing ${req.files.length} completion document(s)...`);
 
-      const uploadDir = path.join(__dirname, '../uploads/action-items');
-
-      try {
-        await fs.promises.mkdir(uploadDir, { recursive: true });
-      } catch (dirError) {
-        console.error('Failed to create upload directory:', dirError);
-        throw new Error('Failed to prepare upload directory');
-      }
-
-      for (const file of req.files) {
+      for (let i = 0; i < req.files.length; i++) {
+        const file = req.files[i];
+        
         try {
-          const timestamp = Date.now();
-          const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
-          const fileName = `${timestamp}-${sanitizedName}`;
-          const filePath = path.join(uploadDir, fileName);
-
-          if (!file.path || !fs.existsSync(file.path)) {
-            console.error(`Temp file not found: ${file.path}`);
-            continue;
-          }
-
-          await fs.promises.rename(file.path, filePath);
+          console.log(`   Processing file ${i + 1}/${req.files.length}: ${file.originalname}`);
+          
+          // ✅ Save file using local storage utility
+          const fileMetadata = await saveFile(
+            file,
+            STORAGE_CATEGORIES.ACTION_ITEMS, // You'll need to add this category
+            'completion-docs', // subfolder
+            null // auto-generate filename
+          );
 
           documents.push({
             name: file.originalname,
-            url: `/uploads/action-items/${fileName}`,
-            publicId: fileName,
+            url: fileMetadata.url,
+            publicId: fileMetadata.publicId,
+            localPath: fileMetadata.localPath, // ✅ Store local path
             size: file.size,
             mimetype: file.mimetype,
             uploadedAt: new Date()
           });
+
+          console.log(`   ✅ Saved: ${fileMetadata.publicId}`);
+
         } catch (fileError) {
-          console.error(`Error processing file ${file.originalname}:`, fileError);
-          if (file.path && fs.existsSync(file.path)) {
-            try {
-              await fs.promises.unlink(file.path);
-            } catch (cleanupError) {
-              console.error('Failed to clean up temp file:', cleanupError);
-            }
-          }
+          console.error(`   ❌ Error processing ${file.originalname}:`, fileError);
           continue;
         }
       }
+
+      console.log(`✅ ${documents.length} document(s) processed successfully`);
     }
 
     if (documents.length === 0) {
@@ -601,12 +768,15 @@ const submitCompletionForAssignee = async (req, res) => {
   } catch (error) {
     console.error('Error submitting completion:', error);
 
-    // Clean up uploaded files if submission failed
+    // ✅ UPDATED: Clean up uploaded files if submission failed
     if (req.files && req.files.length > 0) {
+      console.log('Cleaning up uploaded files due to error...');
       await Promise.allSettled(
         req.files.map(file => {
-          if (file.path && fs.existsSync(file.path)) {
-            return fs.promises.unlink(file.path).catch(e => console.error('File cleanup failed:', e));
+          if (file.path && fsSync.existsSync(file.path)) {
+            return fs.promises.unlink(file.path).catch(e => 
+              console.error('File cleanup failed:', e)
+            );
           }
         })
       );

@@ -80,6 +80,7 @@ const ActionItemSchema = new mongoose.Schema({
       name: String,
       url: String,
       publicId: String,
+      localPath: String,
       size: Number,
       mimetype: String,
       uploadedAt: Date

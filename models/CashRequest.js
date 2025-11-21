@@ -424,6 +424,42 @@ const CashRequestSchema = new mongoose.Schema({
     }
   },
 
+  editHistory: [{
+    editedAt: {
+      type: Date,
+      default: Date.now
+    },
+    editedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    changes: {
+      type: mongoose.Schema.Types.Mixed, // Stores what was changed
+      default: {}
+    },
+    reason: {
+      type: String, // Why was it edited
+      default: ''
+    },
+    previousStatus: String, // Status before edit
+    editNumber: Number // 1st edit, 2nd edit, etc.
+  }],
+
+  isEdited: {
+    type: Boolean,
+    default: false
+  },
+
+  totalEdits: {
+    type: Number,
+    default: 0
+  },
+
+  originalValues: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
+
   // Audit trail
   createdAt: {
     type: Date,
