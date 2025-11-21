@@ -149,21 +149,33 @@ router.delete(
         });
       }
 
-      // Must be pending_supervisor
+      // STRICT: Must be pending_supervisor
       if (request.status !== 'pending_supervisor') {
         return res.status(400).json({
           success: false,
-          message: 'Cannot delete request after approval process has started',
+          message: 'Cannot delete request after approval process has started. Only pending_supervisor requests can be deleted.',
           currentStatus: request.status
         });
       }
 
-      // First approver must not have acted
+      // STRICT: First approver must not have acted
       const firstStep = request.approvalChain?.[0];
       if (!firstStep || firstStep.status !== 'pending') {
         return res.status(400).json({
           success: false,
-          message: 'Cannot delete request - first approver has already taken action'
+          message: 'Cannot delete request - approval process has already started. Once any approver takes action, deletion is no longer possible.'
+        });
+      }
+
+      // ADDITIONAL CHECK: Verify no other steps have been touched
+      const anyApprovalTaken = request.approvalChain.some(step => 
+        step.status !== 'pending'
+      );
+
+      if (anyApprovalTaken) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot delete request - approvals have been recorded'
         });
       }
 

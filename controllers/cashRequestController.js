@@ -5242,32 +5242,23 @@ const editCashRequest = async (req, res) => {
 
 // Helper function to check if request can be edited
 const canRequestBeEdited = (request) => {
-  // Scenario 1: Pending supervisor + no approvals yet
-  if (request.status === 'pending_supervisor') {
-    const firstStep = request.approvalChain?.[0];
-    if (firstStep && firstStep.status === 'pending') {
-      return { allowed: true, scenario: 'before_approval' };
-    }
-    return { 
-      allowed: false, 
-      reason: 'Cannot edit - first approver has already taken action' 
-    };
-  }
-
-  // Scenario 2: Denied/Rejected
+  // STRICT: ONLY allow editing after rejection
+  
+  // Scenario 1: Request denied/rejected
   if (request.status === 'denied') {
     return { allowed: true, scenario: 'after_rejection' };
   }
 
-  // Scenario 3: Justification rejected
+  // Scenario 2: Justification rejected (any level)
   if (request.status.includes('justification_rejected')) {
     return { allowed: true, scenario: 'justification_rejected' };
   }
 
+  // REMOVED: No longer allow editing if "pending with no approvals"
   // All other statuses cannot be edited
   return { 
     allowed: false, 
-    reason: `Cannot edit request with status: ${request.status}` 
+    reason: `Cannot edit request with status: ${request.status}. Only rejected requests can be edited.` 
   };
 };
 
