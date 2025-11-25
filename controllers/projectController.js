@@ -411,6 +411,7 @@ const createProject = async (req, res) => {
     }
 };
 
+
 // Get supervisor's assigned milestones
 const getSupervisorMilestones = async (req, res) => {
     try {

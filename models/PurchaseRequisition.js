@@ -23,6 +23,8 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
   itemCategory: {
     type: String,
     enum: [
+      'all',
+      'Trainings and Certifiations',
       'IT Accessories',
       'Office Supplies', 
       'Equipment',
