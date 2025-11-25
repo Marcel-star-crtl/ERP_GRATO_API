@@ -16,6 +16,201 @@ const path = require('path');
 const mongoose = require('mongoose');
 
 
+
+// Helper: Export as CSV
+async function exportAsCSV(res, requests) {
+  const csvRows = [];
+  
+  // Header
+  csvRows.push([
+    'Request ID',
+    'Employee Name',
+    'Department',
+    'Position',
+    'Request Type',
+    'Amount Requested',
+    'Amount Approved',
+    'Total Disbursed',
+    'Remaining Balance',
+    'Disbursement Progress',
+    'Status',
+    'Urgency',
+    'Budget Code',
+    'Project',
+    'Date Submitted',
+    'Date Approved',
+    'Date Fully Disbursed',
+    'Approval Chain',
+    'Number of Disbursements'
+  ].join(','));
+
+  // Data rows
+  requests.forEach(req => {
+    const approvalChainText = (req.approvalChain || [])
+      .map(step => `${step.approver.name} (${step.status})`)
+      .join('; ');
+
+    const dateApproved = req.approvalChain?.find(s => s.status === 'approved')?.actionDate || '';
+    const dateFullyDisbursed = req.status === 'fully_disbursed' ? 
+      (req.disbursements[req.disbursements.length - 1]?.date || '') : '';
+
+    csvRows.push([
+      `REQ-${req._id.toString().slice(-6).toUpperCase()}`,
+      req.employee?.fullName || '',
+      req.employee?.department || '',
+      req.employee?.position || '',
+      req.requestType || '',
+      req.amountRequested || 0,
+      req.amountApproved || req.amountRequested || 0,
+      req.totalDisbursed || 0,
+      req.remainingBalance || 0,
+      `${req.disbursementProgress || 0}%`,
+      req.status || '',
+      req.urgency || '',
+      req.budgetAllocation?.budgetCode || '',
+      req.projectId?.name || '',
+      req.createdAt ? new Date(req.createdAt).toLocaleDateString('en-GB') : '',
+      dateApproved ? new Date(dateApproved).toLocaleDateString('en-GB') : '',
+      dateFullyDisbursed ? new Date(dateFullyDisbursed).toLocaleDateString('en-GB') : '',
+      `"${approvalChainText}"`,
+      req.disbursements?.length || 0
+    ].join(','));
+  });
+
+  const csvContent = csvRows.join('\n');
+  
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="cash_requests_${Date.now()}.csv"`);
+  res.send(csvContent);
+}
+
+// Helper: Export as Excel (using simple method - can enhance with a library)
+async function exportAsExcel(res, requests) {
+  // For now, use CSV format with .xlsx extension
+  // In production, use a library like 'exceljs' for proper formatting
+  
+  const ExcelJS = require('exceljs');
+  const workbook = new ExcelJS.Workbook();
+  
+  // Summary Sheet
+  const summarySheet = workbook.addWorksheet('Summary');
+  summarySheet.columns = [
+    { header: 'Metric', key: 'metric', width: 30 },
+    { header: 'Value', key: 'value', width: 20 }
+  ];
+
+  const totalRequested = requests.reduce((sum, r) => sum + (r.amountRequested || 0), 0);
+  const totalApproved = requests.reduce((sum, r) => sum + (r.amountApproved || r.amountRequested || 0), 0);
+  const totalDisbursed = requests.reduce((sum, r) => sum + (r.totalDisbursed || 0), 0);
+
+  summarySheet.addRows([
+    { metric: 'Total Requests', value: requests.length },
+    { metric: 'Total Amount Requested', value: `XAF ${totalRequested.toLocaleString()}` },
+    { metric: 'Total Amount Approved', value: `XAF ${totalApproved.toLocaleString()}` },
+    { metric: 'Total Disbursed', value: `XAF ${totalDisbursed.toLocaleString()}` },
+    { metric: 'Export Date', value: new Date().toLocaleString('en-GB') }
+  ]);
+
+  // Details Sheet
+  const detailsSheet = workbook.addWorksheet('Cash Requests');
+  detailsSheet.columns = [
+    { header: 'Request ID', key: 'requestId', width: 15 },
+    { header: 'Employee', key: 'employee', width: 25 },
+    { header: 'Department', key: 'department', width: 20 },
+    { header: 'Amount Requested', key: 'amountRequested', width: 18 },
+    { header: 'Amount Approved', key: 'amountApproved', width: 18 },
+    { header: 'Total Disbursed', key: 'totalDisbursed', width: 18 },
+    { header: 'Remaining', key: 'remaining', width: 15 },
+    { header: 'Progress', key: 'progress', width: 12 },
+    { header: 'Status', key: 'status', width: 20 },
+    { header: 'Date Submitted', key: 'dateSubmitted', width: 15 }
+  ];
+
+  requests.forEach(req => {
+    detailsSheet.addRow({
+      requestId: `REQ-${req._id.toString().slice(-6).toUpperCase()}`,
+      employee: req.employee?.fullName || '',
+      department: req.employee?.department || '',
+      amountRequested: req.amountRequested || 0,
+      amountApproved: req.amountApproved || req.amountRequested || 0,
+      totalDisbursed: req.totalDisbursed || 0,
+      remaining: req.remainingBalance || 0,
+      progress: `${req.disbursementProgress || 0}%`,
+      status: req.status || '',
+      dateSubmitted: req.createdAt ? new Date(req.createdAt).toLocaleDateString('en-GB') : ''
+    });
+  });
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="cash_requests_${Date.now()}.xlsx"`);
+  
+  await workbook.xlsx.write(res);
+  res.end();
+}
+
+// Helper: Export as PDF (multi-request report)
+async function exportAsPDF(res, requests) {
+  const PDFDocument = require('pdfkit');
+  const doc = new PDFDocument({ 
+    size: 'A4', 
+    margins: { top: 50, bottom: 50, left: 40, right: 40 }
+  });
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="cash_requests_report_${Date.now()}.pdf"`);
+  
+  doc.pipe(res);
+
+  // Title
+  doc.fontSize(18)
+     .font('Helvetica-Bold')
+     .text('Cash Requests Report', 40, 50);
+
+  doc.fontSize(10)
+     .font('Helvetica')
+     .text(`Generated: ${new Date().toLocaleString('en-GB')}`, 40, 75);
+
+  doc.fontSize(10)
+     .text(`Total Requests: ${requests.length}`, 40, 90);
+
+  let yPos = 120;
+
+  // List each request
+  requests.forEach((req, index) => {
+    if (yPos > 700) {
+      doc.addPage();
+      yPos = 50;
+    }
+
+    doc.fontSize(11)
+       .font('Helvetica-Bold')
+       .text(`${index + 1}. REQ-${req._id.toString().slice(-6).toUpperCase()}`, 40, yPos);
+
+    yPos += 15;
+
+    doc.fontSize(9)
+       .font('Helvetica')
+       .text(`Employee: ${req.employee?.fullName || 'N/A'}`, 50, yPos);
+    
+    yPos += 12;
+
+    doc.text(`Amount: XAF ${(req.amountApproved || req.amountRequested || 0).toLocaleString()}`, 50, yPos);
+    
+    yPos += 12;
+
+    doc.text(`Disbursed: XAF ${(req.totalDisbursed || 0).toLocaleString()} (${req.disbursementProgress || 0}%)`, 50, yPos);
+    
+    yPos += 12;
+
+    doc.text(`Status: ${req.status || 'N/A'}`, 50, yPos);
+
+    yPos += 20;
+  });
+
+  doc.end();
+}
+
+
 /**
  * Maps raw approval chain from getCashRequestApprovalChain() to CashRequest schema format
  * @param {Array} rawApprovalChain - Raw approval chain from config
@@ -5263,6 +5458,308 @@ const canRequestBeEdited = (request) => {
 };
 
 
+/**
+ * Process partial/full disbursement
+ * POST /api/cash-requests/:requestId/disburse
+ */
+const processDisbursement = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { amount, notes } = req.body;
+
+    console.log('=== PROCESS DISBURSEMENT ===');
+    console.log('Request ID:', requestId);
+    console.log('Amount:', amount);
+    console.log('Disbursed by:', req.user.userId);
+
+    // Validate amount
+    const disbursementAmount = parseFloat(amount);
+    if (isNaN(disbursementAmount) || disbursementAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid disbursement amount'
+      });
+    }
+
+    // Get request
+    const request = await CashRequest.findById(requestId)
+      .populate('employee', 'fullName email department')
+      .populate('budgetAllocation.budgetCodeId', 'code name budget remaining');
+
+    if (!request) {
+      return res.status(404).json({
+        success: false,
+        message: 'Request not found'
+      });
+    }
+
+    // Verify request can be disbursed
+    if (!request.canDisburseFurther()) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot disburse. Current status: ${request.status}`
+      });
+    }
+
+    // Verify amount doesn't exceed remaining balance
+    if (disbursementAmount > request.remainingBalance) {
+      return res.status(400).json({
+        success: false,
+        message: `Amount exceeds remaining balance. Available: XAF ${request.remainingBalance.toLocaleString()}`
+      });
+    }
+
+    // ============================================
+    // DEDUCT FROM BUDGET (Immediate)
+    // ============================================
+    if (request.budgetAllocation && request.budgetAllocation.budgetCodeId) {
+      const budgetCode = await BudgetCode.findById(request.budgetAllocation.budgetCodeId);
+      
+      if (budgetCode) {
+        try {
+          console.log(`Deducting XAF ${disbursementAmount.toLocaleString()} from budget ${budgetCode.code}`);
+          await budgetCode.deductBudget(request._id, disbursementAmount);
+          
+          // Update allocation tracking
+          request.budgetAllocation.actualSpent = (request.budgetAllocation.actualSpent || 0) + disbursementAmount;
+          
+          console.log(`✅ Budget deducted successfully`);
+        } catch (budgetError) {
+          console.error('❌ Budget deduction failed:', budgetError);
+          return res.status(500).json({
+            success: false,
+            message: `Budget deduction failed: ${budgetError.message}`
+          });
+        }
+      }
+    }
+
+    // Add disbursement
+    await request.addDisbursement(disbursementAmount, req.user.userId, notes);
+
+    console.log(`✅ Disbursement #${request.disbursements.length} processed`);
+    console.log(`   Amount: XAF ${disbursementAmount.toLocaleString()}`);
+    console.log(`   Total Disbursed: XAF ${request.totalDisbursed.toLocaleString()}`);
+    console.log(`   Remaining: XAF ${request.remainingBalance.toLocaleString()}`);
+    console.log(`   New Status: ${request.status}`);
+
+    // ============================================
+    // SEND NOTIFICATION TO EMPLOYEE
+    // ============================================
+    const user = await User.findById(req.user.userId);
+    
+    const isFullyDisbursed = request.status === 'fully_disbursed';
+    const disbursementNumber = request.disbursements.length;
+
+    await sendEmail({
+      to: request.employee.email,
+      subject: isFullyDisbursed ? 
+        '✅ Cash Request Fully Disbursed' : 
+        `💰 Partial Disbursement #${disbursementNumber} Processed`,
+      html: `
+        <h3>${isFullyDisbursed ? 'Cash Request Fully Disbursed' : `Partial Disbursement Processed`}</h3>
+        <p>Dear ${request.employee.fullName},</p>
+        
+        <p>A disbursement has been processed for your cash request.</p>
+
+        <div style="background-color: ${isFullyDisbursed ? '#d4edda' : '#d1ecf1'}; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid ${isFullyDisbursed ? '#28a745' : '#17a2b8'};">
+          <p><strong>Disbursement Details:</strong></p>
+          <ul>
+            <li><strong>Request ID:</strong> REQ-${requestId.toString().slice(-6).toUpperCase()}</li>
+            <li><strong>Disbursement #:</strong> ${disbursementNumber} of ${isFullyDisbursed ? disbursementNumber : '?'}</li>
+            <li><strong>Amount Disbursed:</strong> XAF ${disbursementAmount.toLocaleString()}</li>
+            <li><strong>Total Disbursed:</strong> XAF ${request.totalDisbursed.toLocaleString()}</li>
+            <li><strong>Remaining Balance:</strong> XAF ${request.remainingBalance.toLocaleString()}</li>
+            <li><strong>Progress:</strong> ${request.disbursementProgress}%</li>
+            <li><strong>Disbursed By:</strong> ${user.fullName} (Finance)</li>
+            ${notes ? `<li><strong>Notes:</strong> ${notes}</li>` : ''}
+          </ul>
+        </div>
+
+        ${isFullyDisbursed ? `
+          <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #ffc107;">
+            <p><strong>⚠️ Next Step: Submit Justification</strong></p>
+            <p>Your request has been fully disbursed. Please submit your justification with receipts within the required timeframe.</p>
+          </div>
+        ` : `
+          <div style="background-color: #e7f3ff; padding: 10px; border-radius: 5px; margin: 10px 0;">
+            <p><em>💡 More disbursements may follow. You will be notified on each payment.</em></p>
+          </div>
+        `}
+
+        <p>Thank you!</p>
+      `
+    }).catch(err => console.error('Failed to send disbursement notification:', err));
+
+    console.log('=== DISBURSEMENT COMPLETED ===\n');
+
+    // Return updated request
+    await request.populate('employee', 'fullName email department');
+
+    res.json({
+      success: true,
+      message: isFullyDisbursed ? 
+        'Request fully disbursed' : 
+        `Partial disbursement #${disbursementNumber} processed successfully`,
+      data: request,
+      disbursement: {
+        number: disbursementNumber,
+        amount: disbursementAmount,
+        totalDisbursed: request.totalDisbursed,
+        remainingBalance: request.remainingBalance,
+        progress: request.disbursementProgress,
+        isFullyDisbursed
+      }
+    });
+
+  } catch (error) {
+    console.error('Process disbursement error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process disbursement',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get disbursement history for a request
+ * GET /api/cash-requests/:requestId/disbursements
+ */
+const getDisbursementHistory = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+
+    const request = await CashRequest.findById(requestId)
+      .populate('employee', 'fullName email department')
+      .populate('disbursements.disbursedBy', 'fullName email');
+
+    if (!request) {
+      return res.status(404).json({
+        success: false,
+        message: 'Request not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        requestId: request._id,
+        employee: request.employee,
+        amountApproved: request.amountApproved || request.amountRequested,
+        totalDisbursed: request.totalDisbursed || 0,
+        remainingBalance: request.remainingBalance || 0,
+        progress: request.disbursementProgress || 0,
+        status: request.status,
+        disbursements: request.disbursements || []
+      }
+    });
+
+  } catch (error) {
+    console.error('Get disbursement history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch disbursement history',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Export cash requests (CSV/Excel/PDF)
+ * GET /api/cash-requests/export?format=csv&startDate=...&endDate=...&department=...&status=...&employee=...
+ */
+const exportCashRequests = async (req, res) => {
+  try {
+    const { 
+      format = 'csv', 
+      startDate, 
+      endDate, 
+      department, 
+      status,
+      employeeId 
+    } = req.query;
+
+    console.log('=== EXPORT CASH REQUESTS ===');
+    console.log('Format:', format);
+    console.log('Filters:', { startDate, endDate, department, status, employeeId });
+
+    // Build query
+    let query = {};
+
+    // Date range filter
+    if (startDate && endDate) {
+      query.createdAt = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate + 'T23:59:59.999Z')
+      };
+    }
+
+    // Department filter
+    if (department && department !== 'all') {
+      const users = await User.find({ department }).select('_id');
+      query.employee = { $in: users.map(u => u._id) };
+    }
+
+    // Status filter
+    if (status && status !== 'all') {
+      if (status === 'disbursed') {
+        // Include both partial and full
+        query.status = { $in: ['partially_disbursed', 'fully_disbursed'] };
+      } else {
+        query.status = status;
+      }
+    }
+
+    // Specific employee filter
+    if (employeeId && employeeId !== 'all') {
+      query.employee = employeeId;
+    }
+
+    console.log('Query:', JSON.stringify(query, null, 2));
+
+    // Fetch data
+    const requests = await CashRequest.find(query)
+      .populate('employee', 'fullName email department position')
+      .populate('approvalChain.decidedBy', 'fullName email')
+      .populate('budgetAllocation.budgetCodeId', 'code name')
+      .populate('projectId', 'name code')
+      .sort({ createdAt: -1 });
+
+    console.log(`Found ${requests.length} requests`);
+
+    if (requests.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No requests found matching the filters'
+      });
+    }
+
+    // Generate export based on format
+    if (format === 'csv') {
+      return await exportAsCSV(res, requests);
+    } else if (format === 'excel') {
+      return await exportAsExcel(res, requests);
+    } else if (format === 'pdf') {
+      return await exportAsPDF(res, requests);
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid format. Use csv, excel, or pdf'
+      });
+    }
+
+  } catch (error) {
+    console.error('Export cash requests error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to export cash requests',
+      error: error.message
+    });
+  }
+};
+
+
 module.exports = {
   createRequest,
   processApprovalDecision,   
@@ -5294,7 +5791,10 @@ module.exports = {
   getFinanceReportsData,
   checkPendingRequests,
   editCashRequest,
-  canRequestBeEdited
+  canRequestBeEdited,
+  processDisbursement,
+  getDisbursementHistory,
+  exportCashRequests
 };
 
 

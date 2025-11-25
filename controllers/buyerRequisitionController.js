@@ -163,154 +163,6 @@ const mapBackendStatusToFrontend = (backendStatus) => {
     
     return statusMapping[backendStatus] || 'pending_sourcing';
 };
-
-/**
- * Get petty cash forms assigned to buyer
- */
-const getPettyCashForms = async (req, res) => {
-  try {
-    const { status, page = 1, limit = 20 } = req.query;
-    
-    console.log('=== BUYER - GET PETTY CASH FORMS ===');
-    console.log('Buyer ID:', req.user.userId);
-    
-    let query = {
-      assignedBuyer: req.user.userId
-    };
-    
-    if (status) {
-      query.status = status;
-    }
-    
-    const forms = await PettyCashForm.find(query)
-      .populate('employee', 'fullName email department')
-      .populate('requisitionId', 'requisitionNumber paymentMethod')
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
-    
-    const total = await PettyCashForm.countDocuments(query);
-    
-    console.log(`Found ${forms.length} petty cash forms`);
-    
-    res.json({
-      success: true,
-      data: forms,
-      pagination: {
-        current: parseInt(page),
-        total: Math.ceil(total / limit),
-        count: forms.length,
-        totalRecords: total
-      }
-    });
-    
-  } catch (error) {
-    console.error('Get petty cash forms error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch petty cash forms'
-    });
-  }
-};
-
-/**
- * Get petty cash form details
- */
-const getPettyCashFormDetails = async (req, res) => {
-  try {
-    const { formId } = req.params;
-    
-    const form = await PettyCashForm.findById(formId)
-      .populate('employee', 'fullName email department')
-      .populate('requisitionId')
-      .populate('assignedBuyer', 'fullName email');
-    
-    if (!form) {
-      return res.status(404).json({
-        success: false,
-        message: 'Petty cash form not found'
-      });
-    }
-    
-    // Verify buyer has access
-    if (form.assignedBuyer._id.toString() !== req.user.userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied'
-      });
-    }
-    
-    res.json({
-      success: true,
-      data: form
-    });
-    
-  } catch (error) {
-    console.error('Get petty cash form details error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch form details'
-    });
-  }
-};
-
-/**
- * Download petty cash form as PDF
- */
-const downloadPettyCashFormPDF = async (req, res) => {
-  try {
-    const { formId } = req.params;
-    
-    const form = await PettyCashForm.findById(formId)
-      .populate('employee', 'fullName email department')
-      .populate('requisitionId')
-      .populate('assignedBuyer', 'fullName email');
-    
-    if (!form) {
-      return res.status(404).json({
-        success: false,
-        message: 'Petty cash form not found'
-      });
-    }
-    
-    // Verify buyer has access
-    if (form.assignedBuyer._id.toString() !== req.user.userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied'
-      });
-    }
-    
-    // ✅ Use existing Cash Request PDF template
-    const pdfResult = await pdfService.generateCashRequestPDF(form);
-    
-    if (!pdfResult.success) {
-      throw new Error('PDF generation failed');
-    }
-    
-    // Track download
-    form.downloads.push({
-      downloadedBy: req.user.userId,
-      downloadDate: new Date()
-    });
-    await form.save();
-    
-    // Send PDF
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${pdfResult.filename}"`);
-    res.setHeader('Content-Length', pdfResult.buffer.length);
-    res.send(pdfResult.buffer);
-    
-    console.log(`✅ Petty cash form downloaded: ${form.formNumber}`);
-    
-  } catch (error) {
-    console.error('Download petty cash form error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to download petty cash form'
-    });
-  }
-};
   
 // Get detailed requisition information
 const getRequisitionDetails = async (req, res) => {
@@ -2645,6 +2497,403 @@ const evaluateQuotes = async (req, res) => {
     }
 };
 
+
+/**
+ * Get petty cash forms assigned to buyer
+ */
+const getPettyCashForms = async (req, res) => {
+  try {
+    const { status, page = 1, limit = 20 } = req.query;
+    
+    console.log('=== BUYER - GET PETTY CASH FORMS ===');
+    console.log('Buyer ID:', req.user.userId);
+    
+    let query = {
+      'supplyChainReview.assignedBuyer': req.user.userId,
+      'paymentMethod': 'cash',
+      'pettyCashForm.generated': true,
+      'status': 'approved' // Only show approved requisitions
+    };
+    
+    if (status) {
+      query['pettyCashForm.status'] = status;
+    }
+    
+    const requisitions = await PurchaseRequisition.find(query)
+      .populate('employee', 'fullName email department phone')
+      .sort({ 'pettyCashForm.generatedDate': -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+    
+    const total = await PurchaseRequisition.countDocuments(query);
+    
+    // Transform to match frontend expectations
+    const pettyCashForms = requisitions.map(req => ({
+      id: req._id,
+      pettyCashFormNumber: req.pettyCashForm.formNumber,
+      requisitionNumber: req.requisitionNumber,
+      title: req.title,
+      employee: {
+        name: req.employee.fullName,
+        email: req.employee.email,
+        department: req.employee.department,
+        phone: req.employee.phone
+      },
+      amountRequested: req.pettyCashForm.amount || req.budgetXAF,
+      generatedDate: req.pettyCashForm.generatedDate,
+      status: req.pettyCashForm.status,
+      urgency: req.urgency,
+      downloadedCount: req.pettyCashForm.downloads?.length || 0,
+      lastDownloadDate: req.pettyCashForm.downloads?.length > 0 ? 
+        req.pettyCashForm.downloads[req.pettyCashForm.downloads.length - 1].downloadDate : null
+    }));
+    
+    console.log(`Found ${pettyCashForms.length} petty cash forms`);
+    
+    res.json({
+      success: true,
+      data: pettyCashForms,
+      pagination: {
+        current: parseInt(page),
+        total: Math.ceil(total / limit),
+        count: pettyCashForms.length,
+        totalRecords: total
+      }
+    });
+    
+  } catch (error) {
+    console.error('Get petty cash forms error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch petty cash forms',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get petty cash form details
+ */
+const getPettyCashFormDetails = async (req, res) => {
+  try {
+    const { formId } = req.params;
+    
+    console.log('=== GET PETTY CASH FORM DETAILS ===');
+    console.log('Form ID:', formId);
+    
+    const requisition = await PurchaseRequisition.findById(formId)
+      .populate('employee', 'fullName email department phone')
+      .populate('supplyChainReview.assignedBuyer', 'fullName email');
+    
+    if (!requisition) {
+      return res.status(404).json({
+        success: false,
+        message: 'Petty cash form not found'
+      });
+    }
+    
+    // Verify buyer has access
+    if (requisition.supplyChainReview?.assignedBuyer?._id.toString() !== req.user.userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied - you are not assigned to this requisition'
+      });
+    }
+    
+    // Verify it's a cash payment with generated form
+    if (requisition.paymentMethod !== 'cash' || !requisition.pettyCashForm?.generated) {
+      return res.status(400).json({
+        success: false,
+        message: 'This requisition does not have a petty cash form'
+      });
+    }
+    
+    // Transform to match frontend expectations
+    const formDetails = {
+      id: requisition._id,
+      pettyCashForm: {
+        formNumber: requisition.pettyCashForm.formNumber,
+        generatedDate: requisition.pettyCashForm.generatedDate,
+        status: requisition.pettyCashForm.status,
+        amount: requisition.pettyCashForm.amount || requisition.budgetXAF,
+        downloadedCount: requisition.pettyCashForm.downloads?.length || 0,
+        downloadHistory: requisition.pettyCashForm.downloads || []
+      },
+      requisition: {
+        id: requisition._id,
+        requisitionNumber: requisition.requisitionNumber,
+        title: requisition.title,
+        itemCategory: requisition.itemCategory,
+        budgetXAF: requisition.budgetXAF,
+        urgency: requisition.urgency,
+        deliveryLocation: requisition.deliveryLocation,
+        justification: requisition.justificationOfPurchase,
+        items: requisition.items.map(item => ({
+          description: item.description,
+          quantity: item.quantity,
+          measuringUnit: item.measuringUnit,
+          estimatedPrice: item.estimatedPrice
+        }))
+      },
+      employee: {
+        name: requisition.employee.fullName,
+        email: requisition.employee.email,
+        department: requisition.employee.department,
+        phone: requisition.employee.phone
+      },
+      approvalChain: requisition.approvalChain.map(step => ({
+        level: step.level,
+        approver: {
+          name: step.approver.name,
+          email: step.approver.email,
+          role: step.approver.role,
+          department: step.approver.department
+        },
+        status: step.status,
+        comments: step.comments,
+        actionDate: step.actionDate,
+        actionTime: step.actionTime
+      }))
+    };
+    
+    res.json({
+      success: true,
+      data: formDetails
+    });
+    
+  } catch (error) {
+    console.error('Get petty cash form details error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch form details',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Download petty cash form as PDF
+ */
+const downloadPettyCashFormPDF = async (req, res) => {
+  try {
+    const { formId } = req.params;
+    
+    console.log('=== DOWNLOAD PETTY CASH FORM PDF ===');
+    console.log('Form ID:', formId);
+    console.log('Buyer ID:', req.user.userId);
+    
+    const requisition = await PurchaseRequisition.findById(formId)
+      .populate('employee', 'fullName email department phone')
+      .populate('supplyChainReview.assignedBuyer', 'fullName email');
+    
+    if (!requisition) {
+      return res.status(404).json({
+        success: false,
+        message: 'Petty cash form not found'
+      });
+    }
+    
+    // Verify buyer has access
+    if (requisition.supplyChainReview?.assignedBuyer?._id.toString() !== req.user.userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+    
+    // Verify it's a cash payment with generated form
+    if (requisition.paymentMethod !== 'cash' || !requisition.pettyCashForm?.generated) {
+      return res.status(400).json({
+        success: false,
+        message: 'No petty cash form available for this requisition'
+      });
+    }
+    
+    // ✅ Import pdfService
+    const pdfService = require('../services/pdfService');
+    
+    // ✅ Prepare data in format expected by pdfService.generateCashRequestPDF
+    const pdfData = {
+      // IDs
+      _id: requisition._id,
+      displayId: requisition.pettyCashForm.formNumber,
+      requisitionNumber: requisition.requisitionNumber,
+      
+      // Employee info
+      employee: {
+        fullName: requisition.employee.fullName,
+        email: requisition.employee.email,
+        department: requisition.employee.department,
+        phone: requisition.employee.phone
+      },
+      
+      // Request details
+      title: requisition.title,
+      purpose: requisition.justificationOfPurchase,
+      businessJustification: `Purchase requisition: ${requisition.title}. Category: ${requisition.itemCategory}`,
+      requestType: 'petty-cash',
+      urgency: requisition.urgency?.toLowerCase() || 'medium',
+      
+      // Financial details
+      amountRequested: requisition.budgetXAF,
+      amountApproved: requisition.pettyCashForm.amount || requisition.budgetXAF,
+      totalDisbursed: 0, // Not yet disbursed
+      remainingBalance: requisition.pettyCashForm.amount || requisition.budgetXAF,
+      
+      // Status
+      status: requisition.pettyCashForm.status,
+      
+      // Dates
+      createdAt: requisition.createdAt,
+      
+      // Disbursement details (if exists)
+      disbursementDetails: requisition.pettyCashForm.disbursementDate ? {
+        date: requisition.pettyCashForm.disbursementDate,
+        amount: requisition.pettyCashForm.amount || requisition.budgetXAF
+      } : null,
+      
+      // Disbursements array (for history)
+      disbursements: requisition.pettyCashForm.disbursementDate ? [{
+        disbursementNumber: 1,
+        date: requisition.pettyCashForm.disbursementDate,
+        amount: requisition.pettyCashForm.amount || requisition.budgetXAF,
+        notes: 'Initial petty cash disbursement'
+      }] : [],
+      
+      // Approval chain
+      approvalChain: requisition.approvalChain.map(step => ({
+        level: step.level,
+        approver: {
+          name: step.approver.name,
+          email: step.approver.email,
+          role: step.approver.role,
+          department: step.approver.department
+        },
+        status: step.status === 'approved' ? 'approved' : 
+                step.status === 'rejected' ? 'rejected' : 'pending',
+        comments: step.comments,
+        actionDate: step.actionDate,
+        actionTime: step.actionTime
+      })),
+      
+      // Budget allocation (if exists)
+      budgetAllocation: requisition.financeVerification?.budgetCode ? {
+        budgetCode: requisition.financeVerification.budgetCode,
+        allocatedAmount: requisition.financeVerification.assignedBudget || requisition.budgetXAF,
+        allocationStatus: 'allocated',
+        budgetCodeId: {
+          name: `Budget Code: ${requisition.financeVerification.budgetCode}`
+        }
+      } : null,
+      
+      // Items (for reference)
+      items: requisition.items.map(item => ({
+        description: item.description,
+        quantity: item.quantity,
+        unit: item.measuringUnit,
+        estimatedPrice: item.estimatedPrice,
+        totalPrice: item.quantity * (item.estimatedPrice || 0)
+      }))
+    };
+    
+    console.log('Generating PDF for form:', requisition.pettyCashForm.formNumber);
+    console.log('PDF Data prepared:', {
+      formNumber: pdfData.displayId,
+      employee: pdfData.employee.fullName,
+      amount: pdfData.amountRequested,
+      status: pdfData.status
+    });
+    
+    // ✅ Generate PDF using existing service
+    const pdfResult = await pdfService.generateCashRequestPDF(pdfData);
+    
+    if (!pdfResult.success) {
+      throw new Error('PDF generation failed');
+    }
+    
+    console.log('✅ PDF generated successfully');
+    
+    // ✅ Track download
+    if (!requisition.pettyCashForm.downloads) {
+      requisition.pettyCashForm.downloads = [];
+    }
+    
+    requisition.pettyCashForm.downloads.push({
+      downloadedBy: req.user.userId,
+      downloadDate: new Date(),
+      ipAddress: req.ip || req.connection.remoteAddress
+    });
+    
+    await requisition.save();
+    
+    console.log('✅ Download tracked. Total downloads:', requisition.pettyCashForm.downloads.length);
+    
+    // ✅ Send PDF to browser
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${pdfResult.filename}"`);
+    res.setHeader('Content-Length', pdfResult.buffer.length);
+    res.send(pdfResult.buffer);
+    
+    console.log('✅ PDF sent to browser successfully');
+    
+  } catch (error) {
+    console.error('Download petty cash form PDF error:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to download petty cash form',
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+};
+
+/**
+ * Get petty cash form statistics for buyer
+ */
+const getPettyCashStats = async (req, res) => {
+  try {
+    console.log('=== GET PETTY CASH STATS ===');
+    console.log('Buyer ID:', req.user.userId);
+    
+    const query = {
+      'supplyChainReview.assignedBuyer': req.user.userId,
+      'paymentMethod': 'cash',
+      'pettyCashForm.generated': true,
+      'status': 'approved'
+    };
+    
+    const forms = await PurchaseRequisition.find(query);
+    
+    // Calculate stats
+    const stats = {
+      total: forms.length,
+      pendingDownload: forms.filter(f => 
+        !f.pettyCashForm.downloads || f.pettyCashForm.downloads.length === 0
+      ).length,
+      downloaded: forms.filter(f => 
+        f.pettyCashForm.downloads && f.pettyCashForm.downloads.length > 0
+      ).length,
+      totalAmount: forms.reduce((sum, f) => sum + (f.pettyCashForm.amount || f.budgetXAF || 0), 0)
+    };
+    
+    console.log('Stats:', stats);
+    
+    res.json({
+      success: true,
+      data: stats
+    });
+    
+  } catch (error) {
+    console.error('Get petty cash stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch statistics',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
     getAssignedRequisitions,
     getRequisitionDetails,
@@ -2661,6 +2910,7 @@ module.exports = {
     getPettyCashForms,
     getPettyCashFormDetails,
     downloadPettyCashFormPDF,
+    getPettyCashStats,
     
     // Placeholder implementations for missing functions
     evaluateQuote: async (req, res) => {
@@ -2979,4 +3229,6 @@ module.exports = {
       }
     }
   };
+
+  
 

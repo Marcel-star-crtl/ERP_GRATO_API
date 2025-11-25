@@ -1,5 +1,62 @@
 const mongoose = require('mongoose');
 
+
+const purchaseOrderApprovalStepSchema = new mongoose.Schema({
+  level: {
+    type: Number,
+    required: true
+  },
+  approver: {
+    name: String,
+    email: String,
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    role: String,
+    department: String
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'pending'
+  },
+  decision: {
+    type: String,
+    enum: ['approved', 'rejected']
+  },
+  comments: {
+    type: String,
+    trim: true
+  },
+  // Document signing tracking
+  signedDocument: {
+    publicId: String,
+    url: String,
+    localPath: String,
+    format: String,
+    resourceType: String,
+    bytes: Number,
+    originalName: String,
+    uploadedAt: Date
+  },
+  documentDownloaded: {
+    type: Boolean,
+    default: false
+  },
+  downloadedAt: Date,
+  actionDate: Date,
+  actionTime: String,
+  activatedDate: Date,
+  notificationSent: {
+    type: Boolean,
+    default: false
+  },
+  notificationSentAt: Date
+}, {
+  timestamps: true
+});
+
 const PurchaseOrderSchema = new mongoose.Schema({
   poNumber: {
     type: String,
@@ -37,7 +94,10 @@ const PurchaseOrderSchema = new mongoose.Schema({
     type: String,
     enum: [
       'draft',
-      'pending_approval',
+      'pending_supply_chain_assignment',  
+      'pending_department_approval',      
+      'pending_head_of_business_approval', 
+      'pending_finance_approval',         
       'approved',
       'sent_to_supplier',
       'acknowledged',
@@ -47,9 +107,44 @@ const PurchaseOrderSchema = new mongoose.Schema({
       'delivered',
       'completed',
       'cancelled',
+      'rejected',
       'on_hold'
     ],
     default: 'draft'
+  },
+
+  // NEW: Supply Chain Review
+  supplyChainReview: {
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    reviewDate: Date,
+    reviewTime: String,
+    action: {
+      type: String,
+      enum: ['assigned', 'rejected']
+    },
+    comments: String,
+    rejectionReason: String,
+    signedDocument: {
+      publicId: String,
+      url: String,
+      localPath: String,
+      format: String,
+      resourceType: String,
+      bytes: Number,
+      originalName: String,
+      uploadedAt: Date
+    }
+  },
+
+  // NEW: 3-level approval chain (Dept Head → Head of Business → Finance)
+  approvalChain: [purchaseOrderApprovalStepSchema],
+
+  currentApprovalLevel: {
+    type: Number,
+    default: 0
   },
 
   // Timeline
@@ -608,6 +703,280 @@ PurchaseOrderSchema.statics.getBuyerStats = async function(buyerId) {
     totalManualItems: 0
   };
 };
+
+
+// Add virtuals
+PurchaseOrderSchema.virtual('currentApprovalStep').get(function() {
+  if (!this.approvalChain || !Array.isArray(this.approvalChain)) return null;
+  return this.approvalChain.find(step => 
+    step.level === this.currentApprovalLevel && step.status === 'pending'
+  );
+});
+
+PurchaseOrderSchema.virtual('approvalProgress').get(function() {
+  if (!this.approvalChain || !Array.isArray(this.approvalChain) || this.approvalChain.length === 0) return 0;
+  const approvedSteps = this.approvalChain.filter(step => step.status === 'approved').length;
+  return Math.round((approvedSteps / this.approvalChain.length) * 100);
+});
+
+// Methods
+
+// Assign by Supply Chain (creates approval chain)
+PurchaseOrderSchema.methods.assignBySupplyChain = function(department, assignedByUserId, comments) {
+  const { getPOApprovalChain } = require('../config/poApprovalChain');
+  
+  if (this.status !== 'pending_supply_chain_assignment') {
+    throw new Error('PO has already been assigned');
+  }
+  
+  console.log(`\n=== ASSIGNING PO BY SUPPLY CHAIN ===`);
+  console.log(`PO: ${this.poNumber}`);
+  console.log(`Department: ${department}`);
+  
+  this.assignedDepartment = department;
+  this.assignedBy = assignedByUserId;
+  this.assignmentDate = new Date();
+  this.assignmentTime = new Date().toTimeString().split(' ')[0];
+  this.status = 'pending_department_approval';
+  
+  // Supply Chain review (auto-approved by assignment)
+  this.supplyChainReview = {
+    reviewedBy: assignedByUserId,
+    reviewDate: new Date(),
+    reviewTime: new Date().toTimeString().split(' ')[0],
+    action: 'assigned',
+    comments: comments || `Assigned to ${department} department`
+  };
+  
+  // Create 3-level approval chain
+  const chain = getPOApprovalChain(department);
+  
+  if (!chain || chain.length !== 3) {
+    throw new Error(`Failed to create complete approval chain for ${department}`);
+  }
+  
+  this.approvalChain = chain.map(step => ({
+    level: step.level,
+    approver: {
+      name: step.approver,
+      email: step.email,
+      role: step.role,
+      department: step.department
+    },
+    status: 'pending',
+    activatedDate: step.level === 1 ? new Date() : null
+  }));
+
+  this.currentApprovalLevel = 1;
+  
+  console.log(`✅ PO ${this.poNumber} assigned to ${department}`);
+  console.log(`First approver: ${this.approvalChain[0]?.approver.name}`);
+};
+
+// Reject by Supply Chain
+PurchaseOrderSchema.methods.rejectBySupplyChain = function(rejectedByUserId, rejectionReason) {
+  if (this.status !== 'pending_supply_chain_assignment') {
+    throw new Error('PO can only be rejected at supply chain assignment stage');
+  }
+  
+  this.status = 'rejected';
+  this.supplyChainReview = {
+    reviewedBy: rejectedByUserId,
+    reviewDate: new Date(),
+    reviewTime: new Date().toTimeString().split(' ')[0],
+    action: 'rejected',
+    rejectionReason: rejectionReason
+  };
+  
+  console.log(`PO ${this.poNumber} rejected by Supply Chain`);
+};
+
+// Process approval step
+PurchaseOrderSchema.methods.processApprovalStep = function(approverEmail, decision, comments, userId) {
+  const currentStep = this.approvalChain.find(step => 
+    step.level === this.currentApprovalLevel && 
+    step.approver.email === approverEmail && 
+    step.status === 'pending'
+  );
+
+  if (!currentStep) {
+    throw new Error(`Not authorized to approve at level ${this.currentApprovalLevel}`);
+  }
+
+  currentStep.status = decision === 'approved' ? 'approved' : 'rejected';
+  currentStep.decision = decision;
+  currentStep.comments = comments;
+  currentStep.actionDate = new Date();
+  currentStep.actionTime = new Date().toTimeString().split(' ')[0];
+  currentStep.approver.userId = userId;
+
+  if (decision === 'rejected') {
+    this.status = 'rejected';
+    this.currentApprovalLevel = 0;
+  } else {
+    const nextLevel = this.currentApprovalLevel + 1;
+    const nextStep = this.approvalChain.find(step => step.level === nextLevel);
+    
+    if (nextStep) {
+      this.currentApprovalLevel = nextLevel;
+      nextStep.activatedDate = new Date();
+      nextStep.notificationSent = false;
+      
+      if (nextLevel === 2) {
+        this.status = 'pending_head_of_business_approval';
+      } else if (nextLevel === 3) {
+        this.status = 'pending_finance_approval';
+      }
+    } else {
+      // All approvals complete
+      this.status = 'approved';
+      this.approvalDate = new Date();
+      this.currentApprovalLevel = 0;
+    }
+  }
+
+  return currentStep;
+};
+
+// Get current approver
+PurchaseOrderSchema.methods.getCurrentApprover = function() {
+  if (this.currentApprovalLevel === 0 || !this.approvalChain) return null;
+  return this.approvalChain.find(step => step.level === this.currentApprovalLevel);
+};
+
+// Check if user can approve
+PurchaseOrderSchema.methods.canUserApprove = function(userEmail) {
+  const currentStep = this.getCurrentApprover();
+  return currentStep && currentStep.approver.email === userEmail;
+};
+
+// Get approval history
+PurchaseOrderSchema.methods.getApprovalHistory = function() {
+  if (!this.approvalChain) return [];
+  return this.approvalChain
+    .filter(step => step.status !== 'pending')
+    .sort((a, b) => a.level - b.level);
+};
+
+// Static methods
+
+// Get POs pending supply chain assignment
+PurchaseOrderSchema.statics.getPendingSupplyChainAssignment = function() {
+  return this.find({
+    status: 'pending_supply_chain_assignment'
+  }).populate('buyerId', 'fullName email')
+    .populate('supplierId', 'name email')
+    .sort({ createdAt: 1 });
+};
+
+// Get pending POs for approver
+PurchaseOrderSchema.statics.getPendingForApprover = function(approverEmail) {
+  return this.find({
+    'approvalChain.approver.email': approverEmail,
+    'approvalChain.status': 'pending',
+    status: { 
+      $in: [
+        'pending_department_approval', 
+        'pending_head_of_business_approval',
+        'pending_finance_approval'
+      ] 
+    },
+    $expr: {
+      $let: {
+        vars: {
+          currentStep: {
+            $arrayElemAt: [
+              {
+                $filter: {
+                  input: '$approvalChain',
+                  cond: { $eq: ['$$this.level', '$currentApprovalLevel'] }
+                }
+              },
+              0
+            ]
+          }
+        },
+        in: { $eq: ['$$currentStep.approver.email', approverEmail] }
+      }
+    }
+  }).populate('buyerId', 'fullName email')
+    .populate('supplierId', 'name email')
+    .sort({ assignmentDate: -1 });
+};
+
+// Send notification to current approver
+PurchaseOrderSchema.methods.notifyCurrentApprover = async function() {
+  const currentStep = this.getCurrentApprover();
+  if (!currentStep || currentStep.notificationSent) return;
+  
+  const { sendEmail } = require('../services/emailService');
+  
+  try {
+    await sendEmail({
+      to: currentStep.approver.email,
+      subject: `Purchase Order Approval Required - ${this.poNumber}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;">
+            <h2>Purchase Order Approval Required</h2>
+            <p>Dear ${currentStep.approver.name},</p>
+            <p>A purchase order requires your approval at Level ${currentStep.level}.</p>
+            
+            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+              <h3>PO Details</h3>
+              <table style="width: 100%;">
+                <tr><td><strong>PO Number:</strong></td><td>${this.poNumber}</td></tr>
+                <tr><td><strong>Supplier:</strong></td><td>${this.supplierDetails?.name || this.supplierName}</td></tr>
+                <tr><td><strong>Amount:</strong></td><td>${this.currency} ${this.totalAmount.toLocaleString()}</td></tr>
+                <tr><td><strong>Department:</strong></td><td>${this.assignedDepartment}</td></tr>
+                <tr><td><strong>Approval Level:</strong></td><td>Level ${currentStep.level}</td></tr>
+              </table>
+            </div>
+            
+            <div style="background-color: #ffe7ba; padding: 15px; border-radius: 5px; margin: 15px 0;">
+              <p><strong>⚠️ Document Signing Required:</strong></p>
+              <ol>
+                <li>Download the PO document</li>
+                <li>Sign manually (print or digital signature)</li>
+                <li>Upload the signed document when approving</li>
+              </ol>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${process.env.CLIENT_URL}/supervisor/po-approvals?approve=${this._id}" 
+                 style="background-color: #28a745; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px;">
+                Review & Sign PO
+              </a>
+            </div>
+          </div>
+        </div>
+      `
+    });
+    
+    currentStep.notificationSent = true;
+    currentStep.notificationSentAt = new Date();
+    await this.save();
+    
+  } catch (error) {
+    console.error('Failed to send PO notification:', error);
+  }
+};
+
+// Post-save middleware
+PurchaseOrderSchema.post('save', async function() {
+  if (['pending_department_approval', 'pending_head_of_business_approval', 'pending_finance_approval'].includes(this.status)) {
+    if (this.currentApprovalLevel > 0 && this.approvalChain.length > 0) {
+      const currentStep = this.getCurrentApprover();
+      if (currentStep && !currentStep.notificationSent) {
+        setTimeout(() => {
+          this.notifyCurrentApprover().catch(err => 
+            console.error('Failed to send PO notification:', err)
+          );
+        }, 1000);
+      }
+    }
+  }
+});
 
 module.exports = mongoose.model('PurchaseOrder', PurchaseOrderSchema);
 

@@ -796,47 +796,6 @@ const updateProjectProgress = async (req, res) => {
     }
 };
 
-// Get project statistics
-const getProjectStats = async (req, res) => {
-    try {
-        const stats = await Project.getStatistics();
-        const activeProjects = stats.planning + stats.approved + stats.inProgress;
-
-        res.status(200).json({
-            success: true,
-            data: {
-                summary: {
-                    total: stats.total,
-                    active: activeProjects,
-                    completed: stats.completed,
-                    overdue: stats.overdue
-                },
-                byStatus: {
-                    planning: stats.planning,
-                    approved: stats.approved,
-                    inProgress: stats.inProgress,
-                    completed: stats.completed,
-                    onHold: stats.onHold,
-                    cancelled: stats.cancelled
-                },
-                metrics: {
-                    completionRate: stats.total > 0 ? ((stats.completed / stats.total) * 100).toFixed(1) : 0,
-                    averageProgress: stats.averageProgress ? stats.averageProgress.toFixed(1) : 0,
-                    overdueRate: stats.total > 0 ? ((stats.overdue / stats.total) * 100).toFixed(1) : 0
-                }
-            }
-        });
-
-    } catch (error) {
-        console.error('Error fetching project statistics:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch project statistics',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-};
-
 // Search projects
 const searchProjects = async (req, res) => {
     try {
@@ -1453,6 +1412,94 @@ const deleteProject = async (req, res) => {
     }
 };
 
+// Get project statistics
+const getProjectStats = async (req, res) => {
+    try {
+        const stats = await Project.getStatistics();
+        const activeProjects = stats.planning + stats.approved + stats.inProgress;
+
+        res.status(200).json({
+            success: true,
+            data: {
+                summary: {
+                    total: stats.total,
+                    active: activeProjects,
+                    completed: stats.completed,
+                    overdue: stats.overdue
+                },
+                byStatus: {
+                    planning: stats.planning,
+                    approved: stats.approved,
+                    inProgress: stats.inProgress,
+                    completed: stats.completed,
+                    onHold: stats.onHold,
+                    cancelled: stats.cancelled
+                },
+                metrics: {
+                    completionRate: stats.total > 0 ? ((stats.completed / stats.total) * 100).toFixed(1) : 0,
+                    averageProgress: stats.averageProgress ? stats.averageProgress.toFixed(1) : 0,
+                    overdueRate: stats.total > 0 ? ((stats.overdue / stats.total) * 100).toFixed(1) : 0
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching project statistics:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch project statistics',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Get dashboard statistics for projects
+const getDashboardStats = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const userRole = req.user.role;
+
+        console.log('=== GET PROJECT DASHBOARD STATS ===');
+        console.log('User:', userId);
+        console.log('Role:', userRole);
+
+        // Get projects based on user role
+        let projectQuery = { isActive: true };
+        
+        // For supervisors and below, only show their projects
+        if (!['admin', 'supply_chain', 'project'].includes(userRole)) {
+            projectQuery.$or = [
+                { projectManager: userId },
+                { 'milestones.assignedSupervisor': userId }
+            ];
+        }
+
+        const projects = await Project.find(projectQuery);
+
+        const stats = {
+            pending: projects.filter(p => p.status === 'Planning').length,
+            inProgress: projects.filter(p => p.status === 'In Progress').length,
+            completed: projects.filter(p => p.status === 'Completed').length,
+            total: projects.length
+        };
+
+        console.log('Project Stats:', stats);
+
+        res.status(200).json({
+            success: true,
+            data: stats
+        });
+
+    } catch (error) {
+        console.error('Error fetching project dashboard stats:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch project dashboard stats',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
 module.exports = {
     createProject,
     getProjects,
@@ -1462,6 +1509,7 @@ module.exports = {
     updateProjectStatus,
     updateProjectProgress,
     getProjectStats,
+    getDashboardStats,
     searchProjects,
     getUserProjects,
     getProjectsByDepartment,

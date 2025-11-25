@@ -3064,6 +3064,84 @@ const findSupervisor = (empName, dept) => {
   };
 };
 
+const getIncidentDashboardStats = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const userRole = req.user.role;
+
+    console.log('=== GET INCIDENT DASHBOARD STATS ===');
+    console.log('User:', userId);
+    console.log('Role:', userRole);
+
+    let query = {};
+
+    // Filter based on user role
+    if (userRole === 'employee') {
+      // Employees see only their own incidents
+      query.employee = userId;
+    } else if (userRole === 'supervisor') {
+      // Supervisors see incidents from their department
+      const user = await User.findById(userId);
+      if (user?.department) {
+        query.department = user.department;
+      }
+    } else if (userRole === 'hse') {
+      // HSE sees all incidents (no filter)
+    } else if (userRole === 'hr') {
+      // HR sees all incidents (no filter)
+    } else if (userRole === 'admin') {
+      // Admin sees all incidents (no filter)
+    }
+
+    // Get statistics
+    const [
+      totalIncidents,
+      pendingIncidents,
+      underReviewIncidents,
+      underInvestigationIncidents,
+      resolvedIncidents
+    ] = await Promise.all([
+      IncidentReport.countDocuments(query),
+      IncidentReport.countDocuments({ 
+        ...query, 
+        status: 'submitted' 
+      }),
+      IncidentReport.countDocuments({ 
+        ...query, 
+        status: 'under_review' 
+      }),
+      IncidentReport.countDocuments({ 
+        ...query, 
+        status: 'under_investigation' 
+      }),
+      IncidentReport.countDocuments({ 
+        ...query, 
+        status: 'resolved' 
+      })
+    ]);
+
+    const stats = {
+      pending: pendingIncidents,
+      total: totalIncidents
+    };
+
+    console.log('Incident Stats:', stats);
+
+    res.status(200).json({
+      success: true,
+      data: stats
+    });
+
+  } catch (error) {
+    console.error('Error fetching incident dashboard stats:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch incident dashboard stats',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   // Core CRUD operations
   createIncidentReport,
@@ -3111,5 +3189,6 @@ module.exports = {
   // View functions
   getIncidentReportsByRole,
   getEmployeeIncidentReports,
-  getIncidentReportDetails
+  getIncidentReportDetails,
+  getIncidentDashboardStats
 };

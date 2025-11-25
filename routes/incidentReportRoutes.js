@@ -28,7 +28,9 @@ const {
   getHSEDashboardStats,
   
   // Role-based view
-  getIncidentReportsByRole
+  getIncidentReportsByRole,
+  getIncidentDashboardStats
+
 } = require('../controllers/incidentReportController');
 
 // ==========================================
@@ -45,6 +47,29 @@ router.post(
   authMiddleware,
   upload.array('attachments', 10),
   createIncidentReport
+);
+
+
+/**
+ * @route   GET /api/incident-reports/role/view
+ * @desc    Get incidents based on user role
+ * @access  Private
+ */
+router.get(
+  '/role/view',
+  authMiddleware,
+  getIncidentReportsByRole
+);
+
+/**
+ * @route   GET /api/incident-reports/dashboard-stats
+ * @desc    Get incident statistics for dashboard
+ * @access  Private (All authenticated users)
+ */
+router.get(
+  '/dashboard-stats',
+  authMiddleware,
+  getIncidentDashboardStats
 );
 
 
@@ -134,14 +159,14 @@ router.get(
 // ==========================================
 
 /**
- * @route   GET /api/incident-reports/role/view
- * @desc    Get incidents based on user role
- * @access  Private
+ * @route   GET /api/incident-reports/dashboard-stats
+ * @desc    Get incident statistics for dashboard
+ * @access  Private (All authenticated users)
  */
 router.get(
-  '/role/view',
+  '/dashboard-stats',
   authMiddleware,
-  getIncidentReportsByRole
+  getIncidentDashboardStats
 );
 
 // ==========================================

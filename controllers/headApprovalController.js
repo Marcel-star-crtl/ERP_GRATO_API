@@ -76,7 +76,7 @@ const getPendingHeadApprovals = async (req, res) => {
       budgetXAF: req.budgetXAF || req.financeVerification?.assignedBudget,
       urgency: req.urgency,
       status: req.status,
-      paymentMethod: req.supplyChainReview?.paymentMethod || 'bank',
+      paymentMethod: req.paymentMethod || 'bank',
       assignedBuyer: req.supplyChainReview?.assignedBuyer ? {
         id: req.supplyChainReview.assignedBuyer._id,
         name: req.supplyChainReview.assignedBuyer.fullName,
@@ -228,7 +228,7 @@ const getRequisitionDetails = async (req, res) => {
       budgetXAF: requisition.budgetXAF || requisition.financeVerification?.assignedBudget,
       urgency: requisition.urgency,
       status: requisition.status,
-      paymentMethod: requisition.supplyChainReview?.paymentMethod || 'bank',
+      paymentMethod: requisition.paymentMethod || 'bank',
       deliveryLocation: requisition.deliveryLocation,
       expectedDeliveryDate: requisition.expectedDate,
       justification: requisition.justificationOfPurchase,
@@ -337,7 +337,7 @@ const processHeadApproval = async (req, res) => {
       requisition.status = 'approved';
       
       // NEW: Auto-generate petty cash form if payment method is cash
-      const paymentMethod = requisition.supplyChainReview?.paymentMethod;
+      const paymentMethod = requisition.paymentMethod;
       
       if (paymentMethod === 'cash') {
         console.log('Payment method is cash - generating petty cash form');
@@ -486,7 +486,7 @@ const processHeadApproval = async (req, res) => {
           generatedDate: requisition.pettyCashForm.generatedDate,
           status: requisition.pettyCashForm.status
         } : null,
-        paymentMethod: requisition.supplyChainReview?.paymentMethod
+        paymentMethod: requisition.paymentMethod
       }
     });
     

@@ -128,6 +128,16 @@ router.post('/:projectId/meetings',
   projectController.logProjectMeeting
 );
 
+router.get('/stats', 
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+  projectController.getProjectStats
+);
+
+router.get('/dashboard-stats', 
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+  projectController.getDashboardStats
+);
+
 router.get(
   '/milestones/:milestoneId/details',
   authMiddleware,

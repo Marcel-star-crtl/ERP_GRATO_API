@@ -26,7 +26,9 @@ const ActionItemSchema = new mongoose.Schema({
       'Pending Approval',
       'Not Started',
       'In Progress',
-      'Pending Completion Approval',
+      'Pending L1 Grading',      
+      'Pending L2 Review', 
+      'Pending L3 Final Approval', 
       'Completed',
       'Rejected',
       'On Hold'
@@ -86,7 +88,38 @@ const ActionItemSchema = new mongoose.Schema({
       uploadedAt: Date
     }],
     completionNotes: String,
-    submittedAt: Date
+    submittedAt: Date,
+
+    // Three-level approval chain
+    completionApprovalChain: [{
+      level: {
+        type: Number,
+        enum: [1, 2, 3],
+        required: true
+      },
+      approver: {
+        userId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User'
+        },
+        name: String,
+        email: String,
+        role: String // 'immediate_supervisor', 'supervisor_supervisor', 'project_creator'
+      },
+      status: {
+        type: String,
+        enum: ['pending', 'approved', 'rejected', 'skipped'],
+        default: 'pending'
+      },
+      grade: {
+        type: Number,
+        min: 1.0,
+        max: 5.0,
+        default: null
+      },
+      comments: String,
+      reviewedAt: Date
+    }]
   }],
   
   createdBy: {
@@ -191,6 +224,9 @@ const ActionItemSchema = new mongoose.Schema({
         'assignee_added',
         'assignee_removed',
         'submitted_for_completion',
+        'l1_graded',              // NEW
+        'l2_reviewed',            // NEW
+        'l3_approved',            // NEW
         'completion_approved',
         'completion_rejected',
         'reassigned'
@@ -223,6 +259,7 @@ ActionItemSchema.index({ dueDate: 1, status: 1 });
 ActionItemSchema.index({ priority: 1, status: 1 });
 ActionItemSchema.index({ status: 1, createdAt: -1 });
 ActionItemSchema.index({ 'linkedKPIs.kpiDocId': 1 });
+ActionItemSchema.index({ 'assignedTo.completionApprovalChain.approver.userId': 1 });
 
 // Virtual for display ID
 ActionItemSchema.virtual('displayId').get(function() {
@@ -378,11 +415,10 @@ ActionItemSchema.methods.updateKPIAchievements = async function(assigneeUserId, 
     const kpi = kpiDoc.kpis[linkedKPI.kpiIndex];
     if (!kpi) continue;
 
-    // ✅ Calculate contribution with decimal precision: (grade/5.0) × (kpiWeight/100) × 100
     const contribution = parseFloat((((grade / 5.0) * (linkedKPI.kpiWeight / 100)) * 100).toFixed(2));
     
     kpi.achievement = (kpi.achievement || 0) + contribution;
-    kpi.achievement = Math.min(100, parseFloat(kpi.achievement.toFixed(2))); // Cap at 100%
+    kpi.achievement = Math.min(100, parseFloat(kpi.achievement.toFixed(2)));
 
     linkedKPI.contributionToKPI = contribution;
 
@@ -404,12 +440,10 @@ ActionItemSchema.methods.updateMilestoneProgress = async function() {
   await project.save();
 };
 
-// Update task progress
 ActionItemSchema.methods.updateProgress = function(progress, userId) {
   const oldProgress = this.progress;
   this.progress = Math.max(0, Math.min(100, progress));
   
-  // Auto-update status based on progress
   if (this.progress === 0 && this.status === 'Not Started') {
     // Keep as Not Started
   } else if (this.progress > 0 && this.progress < 100 && this.status === 'Not Started') {
@@ -420,11 +454,10 @@ ActionItemSchema.methods.updateProgress = function(progress, userId) {
     `Progress updated from ${oldProgress}% to ${this.progress}%`, oldProgress, this.progress);
 };
 
-// NEW: Update task status
+// Update task status
 ActionItemSchema.methods.updateStatus = function(status, userId, notes) {
   const oldStatus = this.status;
   
-  // Validate status transition
   const validStatuses = [
     'Not Started',
     'In Progress',
@@ -438,18 +471,16 @@ ActionItemSchema.methods.updateStatus = function(status, userId, notes) {
   
   this.status = status;
   
-  // Auto-update progress and completion date based on status
   if (status === 'Completed') {
     this.progress = 100;
     this.completedDate = new Date();
     this.completedBy = userId;
   } else if (status === 'In Progress' && this.progress === 0) {
-    this.progress = 10; // Set initial progress
+    this.progress = 10;
   } else if (status === 'Not Started') {
     this.progress = 0;
   }
   
-  // Log the status change
   this.logActivity('status_changed', userId, 
     `Status changed from ${oldStatus} to ${status}${notes ? ': ' + notes : ''}`,
     oldStatus,

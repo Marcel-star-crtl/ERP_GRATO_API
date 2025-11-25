@@ -299,12 +299,6 @@ router.get(
   cashRequestController.getEmployeeRequest
 );
 
-// ============================================
-// SUPERVISOR ROUTES (ALL SPECIFIC PATHS FIRST)
-// ============================================
-
-// CRITICAL: All specific supervisor paths MUST come before /supervisor/:requestId
-
 // Get supervisor justifications
 router.get(
   '/supervisor/justifications',
@@ -409,6 +403,29 @@ router.put(
   authMiddleware,
   requireRoles('finance', 'admin'),
   cashRequestController.processFinanceDecision
+);
+
+// Disbursement routes
+router.post(
+  '/:requestId/disburse',
+  authMiddleware,
+  requireRoles('finance', 'admin'),
+  cashRequestController.processDisbursement
+);
+
+router.get(
+  '/:requestId/disbursements',
+  authMiddleware,
+  requireRoles('finance', 'admin', 'employee'),
+  cashRequestController.getDisbursementHistory
+);
+
+// Export routes
+router.get(
+  '/export',
+  authMiddleware,
+  requireRoles('finance', 'admin'),
+  cashRequestController.exportCashRequests
 );
 
 // ============================================

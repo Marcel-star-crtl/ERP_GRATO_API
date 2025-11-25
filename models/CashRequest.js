@@ -34,6 +34,43 @@ const CashRequestSchema = new mongoose.Schema({
     default: 'advance',
     required: true
   },
+  disbursements: [{
+    amount: {
+      type: Number,
+      required: true,
+      min: 0
+    },
+    date: {
+      type: Date,
+      default: Date.now
+    },
+    disbursedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    notes: {
+      type: String,
+      default: ''
+    },
+    disbursementNumber: {
+      type: Number, 
+      required: true
+    }
+  }],
+
+  totalDisbursed: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+
+  remainingBalance: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+
   amountRequested: {
     type: Number,
     required: true,
@@ -231,8 +268,9 @@ const CashRequestSchema = new mongoose.Schema({
       'pending_head_of_business',     
       'pending_finance',              
       'approved',                     
-      'denied',                       
-      'disbursed',                    
+      'denied',
+      'partially_disbursed',          
+      'fully_disbursed',              
       'justification_pending_supervisor',
       'justification_pending_departmental_head',
       'justification_pending_head_of_business',
@@ -241,7 +279,7 @@ const CashRequestSchema = new mongoose.Schema({
       'justification_rejected_departmental_head',
       'justification_rejected_head_of_business',
       'justification_rejected_finance',
-      'completed'                            
+      'completed'
     ],
     default: 'pending_supervisor'
   },
@@ -626,6 +664,53 @@ CashRequestSchema.statics.checkMonthlyReimbursementLimit = async function(employ
     remaining: Math.max(0, 5 - count),
     canSubmit: count < 5
   };
+};
+
+// ✅ NEW: Virtual for disbursement progress
+CashRequestSchema.virtual('disbursementProgress').get(function() {
+  if (!this.amountApproved || this.amountApproved === 0) return 0;
+  return Math.round((this.totalDisbursed / this.amountApproved) * 100);
+});
+
+// ✅ NEW: Method to check if can justify
+CashRequestSchema.methods.canSubmitJustification = function() {
+  return this.status === 'fully_disbursed';
+};
+
+// ✅ NEW: Method to check if can disburse more
+CashRequestSchema.methods.canDisburseFurther = function() {
+  return ['approved', 'partially_disbursed'].includes(this.status) && 
+         this.remainingBalance > 0;
+};
+
+// ✅ NEW: Method to add disbursement
+CashRequestSchema.methods.addDisbursement = async function(amount, userId, notes = '') {
+  if (amount > this.remainingBalance) {
+    throw new Error(`Cannot disburse XAF ${amount.toLocaleString()}. Remaining balance: XAF ${this.remainingBalance.toLocaleString()}`);
+  }
+
+  const disbursementNumber = (this.disbursements?.length || 0) + 1;
+
+  this.disbursements.push({
+    amount: parseFloat(amount),
+    date: new Date(),
+    disbursedBy: userId,
+    notes: notes || '',
+    disbursementNumber
+  });
+
+  this.totalDisbursed = (this.totalDisbursed || 0) + parseFloat(amount);
+  this.remainingBalance = (this.amountApproved || this.amountRequested) - this.totalDisbursed;
+
+  // Update status
+  if (this.remainingBalance === 0) {
+    this.status = 'fully_disbursed';
+  } else {
+    this.status = 'partially_disbursed';
+  }
+
+  await this.save();
+  return this;
 };
 
 // Pre-update middleware to update timestamps

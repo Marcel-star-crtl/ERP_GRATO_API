@@ -88,6 +88,10 @@ router.post('/purchase-orders/bulk-download',
   buyerPurchaseOrderController.bulkDownloadPurchaseOrders
 );
 
+// router.post('/:poId/send-to-supply-chain', 
+//   buyerPOController.sendPOToSupplyChain
+// );
+
 // Get purchase order details for PDF generation (internal use)
 router.get('/purchase-orders/:poId/pdf-data', 
   authMiddleware, 
@@ -716,16 +720,39 @@ router.param('requisitionId', async (req, res, next, requisitionId) => {
   }
 });
 
+// =============================================
+// PETTY CASH FORM ROUTES
+// =============================================
+
+// ✅ Stats route MUST come before :formId routes
+router.get(
+  '/petty-cash-forms/stats', 
+  authMiddleware,
+  buyerAuthMiddleware,
+  buyerRequisitionController.getPettyCashStats
+);
+
+// Get all petty cash forms for buyer
 router.get(
   '/petty-cash-forms', 
+  authMiddleware,
+  buyerAuthMiddleware,
   buyerRequisitionController.getPettyCashForms
 );
+
+// Get specific petty cash form details
 router.get(
   '/petty-cash-forms/:formId', 
+  authMiddleware,
+  buyerAuthMiddleware,
   buyerRequisitionController.getPettyCashFormDetails
 );
+
+// Download petty cash form PDF
 router.get(
   '/petty-cash-forms/:formId/download', 
+  authMiddleware,
+  buyerAuthMiddleware,
   buyerRequisitionController.downloadPettyCashFormPDF
 );
 

@@ -4,35 +4,48 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const mongoose = require('mongoose');
-
+const {
+  canUserAccessFolder,
+  canUserUploadToFolder,
+  canUserManageFolder,
+  canUserDeleteFolder,
+  isFolderVisibleToUser
+} = require('../utils/sharepointAccessHelpers');
 // ============ HELPER FUNCTIONS ============
 
-const canUserUploadToFolder = (folder, user) => {
-  if (user._id.toString() === folder.createdBy.toString()) return true;
-  if (user.role === 'admin') return true;
-  return folder.accessControl.allowedDepartments.includes(user.department);
-};
+// const canUserUploadToFolder = (folder, user) => {
+//   if (user._id.toString() === folder.createdBy.toString()) return true;
+//   if (user.role === 'admin') return true;
+//   return folder.accessControl.allowedDepartments.includes(user.department);
+// };
 
-const canUserManageFolder = (folder, user) => {
-  return user._id.toString() === folder.createdBy.toString() || user.role === 'admin';
-};
+// const canUserManageFolder = (folder, user) => {
+//   return user._id.toString() === folder.createdBy.toString() || user.role === 'admin';
+// };
 
-const canUserDeleteFolder = (folder, user) => {
-  return user._id.toString() === folder.createdBy.toString() || user.role === 'admin';
-};
+// const canUserDeleteFolder = (folder, user) => {
+//   return user._id.toString() === folder.createdBy.toString() || user.role === 'admin';
+// };
 
 // ============ FOLDER OPERATIONS ============
 
 const createFolder = async (req, res) => {
   try {
-    const { name, description, department, isPublic, allowedDepartments } = req.body;
+    const { name, description, department, privacyLevel, allowedDepartments } = req.body;
     const user = await User.findById(req.user.userId);
 
-    // Validate input
+    // Validation
     if (!name || !description || !department) {
       return res.status(400).json({
         success: false,
         message: 'Missing required fields: name, description, department'
+      });
+    }
+
+    if (!['public', 'department', 'confidential'].includes(privacyLevel)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid privacy level'
       });
     }
 
@@ -49,11 +62,14 @@ const createFolder = async (req, res) => {
       name,
       description,
       department,
-      isPublic,
+      privacyLevel: privacyLevel || 'department',
+      isPublic: privacyLevel === 'public', // For backward compatibility
       createdBy: req.user.userId,
       accessControl: {
         allowedDepartments: allowedDepartments || [department],
-        allowedUsers: [req.user.userId]
+        allowedUsers: [req.user.userId],
+        invitedUsers: [],
+        blockedUsers: []
       }
     });
 
@@ -67,7 +83,7 @@ const createFolder = async (req, res) => {
       folderName: folder.name,
       details: {
         department,
-        isPublic
+        privacyLevel
       }
     }).save();
 
@@ -88,63 +104,121 @@ const createFolder = async (req, res) => {
 };
 
 
+
+// const getFolders = async (req, res) => {
+//   try {
+//     const user = await User.findById(req.user.userId);
+//     const { department, includeAll } = req.query;
+
+//     // For IT department (user.department), fetch IT folders from SharePointFolder.department
+//     let query = {};
+
+//     // Build access filter based on user role and department
+//     if (user.role !== 'admin' && !includeAll) {
+//       query = {
+//         $or: [
+//           { isPublic: true },
+//           // Match user's department with folder's department
+//           { department: user.department },
+//           // Folders that explicitly allow this department
+//           { 'accessControl.allowedDepartments': user.department },
+//           // Folders that explicitly allow this user
+//           { 'accessControl.allowedUsers': req.user.userId },
+//           // Folders created by this user
+//           { createdBy: req.user.userId }
+//         ]
+//       };
+//     }
+
+//     // Additional department filter from query params (for browsing other departments if allowed)
+//     if (department && department !== 'all') {
+//       if (user.role === 'admin' || user.department === department) {
+//         query.department = department;
+//       } else {
+//         // Non-admin users filtering by other departments still need access control
+//         query = {
+//           ...query,
+//           department: department
+//         };
+//       }
+//     }
+
+//     console.log('=== GET FOLDERS DEBUG ===');
+//     console.log('User:', {
+//       id: user._id.toString(),
+//       role: user.role,
+//       department: user.department
+//     });
+//     console.log('Folder Query:', JSON.stringify(query, null, 2));
+
+//     const folders = await SharePointFolder.find(query)
+//       .populate('createdBy', 'fullName email')
+//       .sort({ createdAt: -1 });
+
+//     console.log('Folders found:', folders.length);
+//     folders.forEach(folder => {
+//       console.log(`- ${folder.name} (dept: ${folder.department}, public: ${folder.isPublic})`);
+//     });
+
+//     // Add access info for current user
+//     const foldersWithAccess = folders.map(folder => {
+//       const canUpload = canUserUploadToFolder(folder, user);
+//       const canManage = canUserManageFolder(folder, user);
+//       const canDelete = canUserDeleteFolder(folder, user);
+
+//       return {
+//         ...folder.toObject(),
+//         userAccess: {
+//           canView: true,
+//           canUpload: canUpload,
+//           canManage: canManage,
+//           canDelete: canDelete
+//         }
+//       };
+//     });
+
+//     res.json({
+//       success: true,
+//       data: foldersWithAccess,
+//       count: foldersWithAccess.length,
+//       userDepartment: user.department
+//     });
+
+//   } catch (error) {
+//     console.error('Get folders error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch folders',
+//       error: error.message
+//     });
+//   }
+// };
+
+
 const getFolders = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
     const { department, includeAll } = req.query;
 
-    // For IT department (user.department), fetch IT folders from SharePointFolder.department
-    let query = {};
-
-    // Build access filter based on user role and department
-    if (user.role !== 'admin' && !includeAll) {
-      query = {
-        $or: [
-          { isPublic: true },
-          // Match user's department with folder's department
-          { department: user.department },
-          // Folders that explicitly allow this department
-          { 'accessControl.allowedDepartments': user.department },
-          // Folders that explicitly allow this user
-          { 'accessControl.allowedUsers': req.user.userId },
-          // Folders created by this user
-          { createdBy: req.user.userId }
-        ]
-      };
-    }
-
-    // Additional department filter from query params (for browsing other departments if allowed)
-    if (department && department !== 'all') {
-      if (user.role === 'admin' || user.department === department) {
-        query.department = department;
-      } else {
-        // Non-admin users filtering by other departments still need access control
-        query = {
-          ...query,
-          department: department
-        };
-      }
-    }
-
-    console.log('=== GET FOLDERS DEBUG ===');
-    console.log('User:', {
-      id: user._id.toString(),
-      role: user.role,
-      department: user.department
-    });
-    console.log('Folder Query:', JSON.stringify(query, null, 2));
-
-    const folders = await SharePointFolder.find(query)
+    // Get ALL folders first
+    let allFolders = await SharePointFolder.find({})
       .populate('createdBy', 'fullName email')
       .sort({ createdAt: -1 });
 
-    console.log('Folders found:', folders.length);
-    folders.forEach(folder => {
-      console.log(`- ${folder.name} (dept: ${folder.department}, public: ${folder.isPublic})`);
-    });
+    // Filter folders based on visibility
+    const visibleFolders = allFolders.filter(folder => 
+      isFolderVisibleToUser(folder, user)
+    );
+
+    // Apply department filter if requested
+    let filteredFolders = visibleFolders;
+    if (department && department !== 'all') {
+      filteredFolders = visibleFolders.filter(f => f.department === department);
+    }
 
     // Add access info for current user
-    const foldersWithAccess = folders.map(folder => {
+    const foldersWithAccess = filteredFolders.map(folder => {
+      const access = canUserAccessFolder(folder, user);
       const canUpload = canUserUploadToFolder(folder, user);
       const canManage = canUserManageFolder(folder, user);
       const canDelete = canUserDeleteFolder(folder, user);
@@ -152,13 +226,25 @@ const getFolders = async (req, res) => {
       return {
         ...folder.toObject(),
         userAccess: {
-          canView: true,
+          canView: access.canAccess,
           canUpload: canUpload,
           canManage: canManage,
-          canDelete: canDelete
+          canDelete: canDelete,
+          permission: access.permission,
+          reason: access.reason
         }
       };
     });
+
+    console.log('=== GET FOLDERS DEBUG ===');
+    console.log('User:', {
+      id: user._id.toString(),
+      role: user.role,
+      department: user.department
+    });
+    console.log('Total folders in DB:', allFolders.length);
+    console.log('Visible to user:', visibleFolders.length);
+    console.log('After filters:', foldersWithAccess.length);
 
     res.json({
       success: true,
@@ -352,7 +438,7 @@ const uploadFile = async (req, res) => {
 
     const user = await User.findById(req.user.userId);
 
-    // Check upload permission
+    // Check upload permission using new access control
     if (!canUserUploadToFolder(folder, user)) {
       if (req.file.path && fs.existsSync(req.file.path)) {
         fs.unlinkSync(req.file.path);
@@ -430,13 +516,14 @@ const uploadFile = async (req, res) => {
   }
 };
 
+
 const getFiles = async (req, res) => {
   try {
     const { folderId } = req.params;
     const { search, sortBy, tags } = req.query;
     const user = await User.findById(req.user.userId);
 
-    // First, verify the folder exists and user has access
+    // Verify folder exists
     const folder = await SharePointFolder.findById(folderId);
     if (!folder) {
       return res.status(404).json({
@@ -445,19 +532,12 @@ const getFiles = async (req, res) => {
       });
     }
 
-    // Check if user has access to this folder based on their department
-    const hasAccessToFolder = 
-      folder.isPublic ||
-      folder.department === user.department ||
-      folder.accessControl.allowedDepartments.includes(user.department) ||
-      folder.accessControl.allowedUsers.includes(req.user.userId) ||
-      user.role === 'admin' ||
-      folder.createdBy.toString() === req.user.userId;
-
-    if (!hasAccessToFolder) {
+    // Check if user has access to this folder
+    const access = canUserAccessFolder(folder, user);
+    if (!access.canAccess) {
       return res.status(403).json({
         success: false,
-        message: 'You do not have access to this folder'
+        message: access.reason || 'You do not have access to this folder'
       });
     }
 
@@ -473,19 +553,6 @@ const getFiles = async (req, res) => {
       const tagArray = tags.split(',').map(t => t.trim());
       query.tags = { $in: tagArray };
     }
-
-    console.log('=== GET FILES DEBUG ===');
-    console.log('User:', {
-      id: user._id.toString(),
-      role: user.role,
-      department: user.department
-    });
-    console.log('Folder:', {
-      id: folder._id,
-      name: folder.name,
-      folderDepartment: folder.department
-    });
-    console.log('Query:', JSON.stringify(query, null, 2));
 
     let fileQuery = SharePointFile.find(query)
       .populate('uploadedBy', 'fullName email')
@@ -504,17 +571,27 @@ const getFiles = async (req, res) => {
 
     const files = await fileQuery.exec();
 
-    console.log('Files found:', files.length);
+    // Add user permissions to each file
+    const filesWithPermissions = files.map(file => ({
+      ...file.toObject(),
+      userPermissions: {
+        canDownload: ['download', 'upload', 'manage'].includes(access.permission),
+        canDelete: access.permission === 'manage' || file.uploadedBy._id.toString() === user._id.toString(),
+        canShare: ['upload', 'manage'].includes(access.permission)
+      }
+    }));
 
     res.json({
       success: true,
-      data: files,
-      count: files.length,
+      data: filesWithPermissions,
+      count: filesWithPermissions.length,
       folder: {
         id: folder._id,
         name: folder.name,
-        department: folder.department
-      }
+        department: folder.department,
+        privacyLevel: folder.privacyLevel
+      },
+      userPermission: access.permission
     });
 
   } catch (error) {
@@ -824,7 +901,7 @@ const getUserStats = async (req, res) => {
 const shareFile = async (req, res) => {
   try {
     const { fileId } = req.params;
-    const { shareWith, shareType, type } = req.body;
+    const { shareWith, permission, type } = req.body;
 
     const file = await SharePointFile.findById(fileId);
     if (!file) {
@@ -834,8 +911,15 @@ const shareFile = async (req, res) => {
       });
     }
 
-    // Check permission - only uploader and admins can share
-    if (file.uploadedBy.toString() !== req.user.userId && req.user.role !== 'admin') {
+    const user = await User.findById(req.user.userId);
+    
+    // Check if user can share (uploader, manage permission, or admin)
+    const folder = await SharePointFolder.findById(file.folderId);
+    const access = canUserAccessFolder(folder, user);
+    
+    if (!['upload', 'manage'].includes(access.permission) && 
+        file.uploadedBy.toString() !== req.user.userId && 
+        user.role !== 'admin') {
       return res.status(403).json({
         success: false,
         message: 'You do not have permission to share this file'
@@ -844,21 +928,20 @@ const shareFile = async (req, res) => {
 
     // Handle sharing by user or department
     if (type === 'user') {
-      // Check if shareWith is an email or ObjectId
       let userId = shareWith;
       
-      // If it looks like an email, find the user by email
+      // If it looks like an email, find the user
       if (shareWith.includes('@')) {
-        const user = await User.findOne({ email: shareWith });
-        if (!user) {
+        const targetUser = await User.findOne({ email: shareWith });
+        if (!targetUser) {
           return res.status(404).json({
             success: false,
             message: `User with email ${shareWith} not found`
           });
         }
-        userId = user._id.toString();
+        userId = targetUser._id.toString();
       } else {
-        // Validate it's a valid ObjectId
+        // Validate ObjectId
         if (!mongoose.Types.ObjectId.isValid(shareWith)) {
           return res.status(400).json({
             success: false,
@@ -866,9 +949,8 @@ const shareFile = async (req, res) => {
           });
         }
         
-        // Verify user exists
-        const user = await User.findById(shareWith);
-        if (!user) {
+        const targetUser = await User.findById(shareWith);
+        if (!targetUser) {
           return res.status(404).json({
             success: false,
             message: 'User not found'
@@ -879,35 +961,34 @@ const shareFile = async (req, res) => {
       // Check if already shared
       const existingShare = file.sharedWith.find(s => s.userId?.toString() === userId);
       if (existingShare) {
-        return res.status(400).json({
-          success: false,
-          message: 'File already shared with this user'
+        // Update permission
+        existingShare.permission = permission || 'download';
+        existingShare.type = permission || 'download';
+      } else {
+        // Add new share
+        file.sharedWith.push({
+          userId: userId,
+          permission: permission || 'download',
+          type: permission || 'download',
+          sharedAt: new Date(),
+          sharedBy: req.user.userId
         });
       }
-
-      file.sharedWith.push({
-        userId: userId,
-        type: shareType || 'view',
-        sharedAt: new Date(),
-        sharedBy: req.user.userId
-      });
     } else if (type === 'department') {
-      // Check if already shared with this department
+      // Check if already shared with department
       const existingDeptShare = file.sharedWith.find(s => s.department === shareWith);
       if (existingDeptShare) {
-        return res.status(400).json({
-          success: false,
-          message: 'File already shared with this department'
+        existingDeptShare.permission = permission || 'download';
+        existingDeptShare.type = permission || 'download';
+      } else {
+        file.sharedWith.push({
+          department: shareWith,
+          permission: permission || 'download',
+          type: permission || 'download',
+          sharedAt: new Date(),
+          sharedBy: req.user.userId
         });
       }
-
-      // Mark as shared with department
-      file.sharedWith.push({
-        department: shareWith,
-        type: shareType || 'view',
-        sharedAt: new Date(),
-        sharedBy: req.user.userId
-      });
     } else {
       return res.status(400).json({
         success: false,
@@ -923,7 +1004,7 @@ const shareFile = async (req, res) => {
       userId: req.user.userId,
       fileId,
       fileName: file.name,
-      details: { sharedWith, shareType, type }
+      details: { shareWith, permission, type }
     }).save();
 
     res.json({
@@ -1606,7 +1687,153 @@ const restoreFileVersion = async (req, res) => {
   }
 };
 
-// ============ EXPORTS ============
+// Get SharePoint dashboard statistics (for dashboard card)
+const getSharePointDashboardStats = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const user = await User.findById(userId);
+
+    console.log('=== GET SHAREPOINT DASHBOARD STATS ===');
+    console.log('User:', userId);
+    console.log('Role:', user.role);
+    console.log('Department:', user.department);
+
+    // Get folders accessible to user
+    const accessibleFolders = await SharePointFolder.find({
+      $or: [
+        { isPublic: true },
+        { department: user.department },
+        { 'accessControl.allowedDepartments': user.department },
+        { 'accessControl.allowedUsers': userId },
+        { createdBy: userId },
+        ...(user.role === 'admin' ? [{}] : [])
+      ]
+    });
+
+    const accessibleFolderIds = accessibleFolders.map(f => f._id);
+
+    // Get file statistics
+    const [
+      totalFiles,
+      userUploadedFiles,
+      recentFiles
+    ] = await Promise.all([
+      SharePointFile.countDocuments({
+        folderId: { $in: accessibleFolderIds },
+        isDeleted: false
+      }),
+      SharePointFile.countDocuments({
+        uploadedBy: userId,
+        isDeleted: false
+      }),
+      SharePointFile.countDocuments({
+        folderId: { $in: accessibleFolderIds },
+        isDeleted: false,
+        uploadedAt: {
+          $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) // Last 7 days
+        }
+      })
+    ]);
+
+    const stats = {
+      pending: 0, // SharePoint doesn't have pending concept, but keeping for consistency
+      total: totalFiles,
+      userUploaded: userUploadedFiles,
+      recent: recentFiles,
+      accessibleFolders: accessibleFolders.length
+    };
+
+    console.log('SharePoint Stats:', stats);
+
+    res.status(200).json({
+      success: true,
+      data: stats
+    });
+
+  } catch (error) {
+    console.error('Error fetching SharePoint dashboard stats:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch SharePoint dashboard stats',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+
+// // Get SharePoint dashboard statistics (for dashboard card)
+// const getSharePointDashboardStats = async (req, res) => {
+//   try {
+//     const userId = req.user.userId;
+//     const user = await User.findById(userId);
+
+//     console.log('=== GET SHAREPOINT DASHBOARD STATS ===');
+//     console.log('User:', userId);
+//     console.log('Role:', user.role);
+//     console.log('Department:', user.department);
+
+//     // Get folders accessible to user
+//     const accessibleFolders = await SharePointFolder.find({
+//       $or: [
+//         { isPublic: true },
+//         { department: user.department },
+//         { 'accessControl.allowedDepartments': user.department },
+//         { 'accessControl.allowedUsers': userId },
+//         { createdBy: userId },
+//         ...(user.role === 'admin' ? [{}] : [])
+//       ]
+//     });
+
+//     const accessibleFolderIds = accessibleFolders.map(f => f._id);
+
+//     // Get file statistics
+//     const [
+//       totalFiles,
+//       userUploadedFiles,
+//       recentFiles
+//     ] = await Promise.all([
+//       SharePointFile.countDocuments({
+//         folderId: { $in: accessibleFolderIds },
+//         isDeleted: false
+//       }),
+//       SharePointFile.countDocuments({
+//         uploadedBy: userId,
+//         isDeleted: false
+//       }),
+//       SharePointFile.countDocuments({
+//         folderId: { $in: accessibleFolderIds },
+//         isDeleted: false,
+//         uploadedAt: {
+//           $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) // Last 7 days
+//         }
+//       })
+//     ]);
+
+//     const stats = {
+//       pending: 0, // SharePoint doesn't have pending concept, but keeping for consistency
+//       total: totalFiles,
+//       userUploaded: userUploadedFiles,
+//       recent: recentFiles,
+//       accessibleFolders: accessibleFolders.length
+//     };
+
+//     console.log('SharePoint Stats:', stats);
+
+//     res.status(200).json({
+//       success: true,
+//       data: stats
+//     });
+
+//   } catch (error) {
+//     console.error('Error fetching SharePoint dashboard stats:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch SharePoint dashboard stats',
+//       error: process.env.NODE_ENV === 'development' ? error.message : undefined
+//     });
+//   }
+// };
+
 
 module.exports = {
   // Folder operations
@@ -1647,6 +1874,10 @@ module.exports = {
   // Version control
   createFileVersion,
   getFileVersions,
-  restoreFileVersion
+  restoreFileVersion,
+
+  // Dashboard stats
+  getSharePointDashboardStats
+  
 }
 

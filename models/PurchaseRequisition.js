@@ -188,20 +188,57 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
     }
   },
 
-  // Reference to generated petty cash form
+  // // Reference to generated petty cash form
+  // pettyCashForm: {
+  //   formId: {
+  //     type: mongoose.Schema.Types.ObjectId,
+  //     ref: 'PettyCashForm'
+  //   },
+  //   generated: {
+  //     type: Boolean,
+  //     default: false
+  //   },
+  //   generatedDate: Date,
+  //   generatedBy: {
+  //     type: mongoose.Schema.Types.ObjectId,
+  //     ref: 'User'
+  //   }
+  // },
+
+
+  // In your PurchaseRequisition schema
   pettyCashForm: {
-    formId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'PettyCashForm'
-    },
     generated: {
       type: Boolean,
       default: false
     },
+    formNumber: String,
     generatedDate: Date,
     generatedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User'
+    },
+    status: {
+      type: String,
+      enum: ['pending_disbursement', 'disbursed', 'reconciled', 'cancelled'],
+      default: 'pending_disbursement'
+    },
+    amount: Number,
+    paymentMethod: String,
+    disbursementDate: Date,
+    disbursedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    receipts: [{
+      description: String,
+      amount: Number,
+      receiptNumber: String,
+      attachmentUrl: String
+    }],
+    changeReturned: {
+      type: Number,
+      default: 0
     }
   },
 
@@ -372,6 +409,64 @@ PurchaseRequisitionSchema.methods.getCurrentStage = function() {
   };
 
   return stageMap[this.status] || 'Unknown Status';
+};
+
+// Add to PurchaseRequisitionSchema methods
+// PurchaseRequisitionSchema.methods.generatePettyCashFormNumber = async function() {
+//   const year = new Date().getFullYear();
+//   const month = String(new Date().getMonth() + 1).padStart(2, '0');
+  
+//   // Count existing petty cash forms this month
+//   const count = await this.constructor.countDocuments({
+//     'pettyCashForm.generated': true,
+//     'pettyCashForm.generatedDate': {
+//       $gte: new Date(year, new Date().getMonth(), 1),
+//       $lt: new Date(year, new Date().getMonth() + 1, 1)
+//     }
+//   });
+  
+//   const formNumber = `PCF-${year}${month}-${String(count + 1).padStart(4, '0')}`;
+  
+//   this.pettyCashForm = {
+//     generated: true,
+//     formNumber: formNumber,
+//     generatedDate: new Date(),
+//     generatedBy: this.headApproval?.decidedBy,
+//     status: 'pending_disbursement',
+//     amount: this.supplyChainReview?.estimatedCost || this.budgetXAF,
+//     paymentMethod: 'cash'
+//   };
+  
+//   return formNumber;
+// };
+
+
+PurchaseRequisitionSchema.methods.generatePettyCashFormNumber = async function() {
+  const year = new Date().getFullYear();
+  const month = String(new Date().getMonth() + 1).padStart(2, '0');
+  
+  // Count existing petty cash forms this month
+  const count = await this.constructor.countDocuments({
+    'pettyCashForm.generated': true,
+    'pettyCashForm.generatedDate': {
+      $gte: new Date(year, new Date().getMonth(), 1),
+      $lt: new Date(year, new Date().getMonth() + 1, 1)
+    }
+  });
+  
+  const formNumber = `PCF-${year}${month}-${String(count + 1).padStart(4, '0')}`;
+  
+  this.pettyCashForm = {
+    generated: true,
+    formNumber: formNumber,
+    generatedDate: new Date(),
+    generatedBy: this.headApproval?.decidedBy,
+    status: 'pending_disbursement',
+    amount: this.supplyChainReview?.estimatedCost || this.budgetXAF,
+    paymentMethod: 'cash'
+  };
+  
+  return formNumber;
 };
 
 // Method to check if finance can verify
