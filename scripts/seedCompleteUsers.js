@@ -1,4 +1,3 @@
-// scripts/seedCompleteUsers.js - Create all users with proper hierarchy
 require('dotenv').config();
 const mongoose = require('mongoose');
 const User = require('../models/User');

@@ -5,7 +5,197 @@ const ActionItem = require('../models/ActionItem');
 const mongoose = require('mongoose');
 
 
-// Create new project with milestone assignments
+// // Create new project with milestone assignments
+// const createProject = async (req, res) => {
+//     try {
+//         const {
+//             name,
+//             description,
+//             projectType,
+//             priority,
+//             department,
+//             projectManager,
+//             timeline,
+//             budgetCodeId,
+//             milestones = []
+//         } = req.body;
+
+//         console.log('=== CREATE PROJECT ===');
+//         console.log('Project:', name);
+//         console.log('Milestones:', milestones.length);
+
+//         // Validate required fields
+//         if (!name || !description || !projectType || !priority || !department || !projectManager || !timeline) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: 'All required fields must be provided'
+//             });
+//         }
+
+//         // Validate timeline
+//         if (!timeline.startDate || !timeline.endDate) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: 'Both start date and end date are required'
+//             });
+//         }
+
+//         // Validate milestones
+//         if (!milestones || milestones.length === 0) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: 'At least one milestone is required'
+//             });
+//         }
+
+//         // Validate milestone weights sum to 100%
+//         const totalWeight = milestones.reduce((sum, m) => sum + (m.weight || 0), 0);
+//         if (totalWeight !== 100) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: `Milestone weights must sum to 100%. Current total: ${totalWeight}%`
+//             });
+//         }
+
+//         // Validate each milestone has assigned supervisor
+//         for (const milestone of milestones) {
+//             if (!milestone.assignedSupervisor) {
+//                 return res.status(400).json({
+//                     success: false,
+//                     message: `Milestone "${milestone.title}" must have an assigned supervisor`
+//                 });
+//             }
+
+//             // Verify supervisor exists
+//             const supervisor = await User.findById(milestone.assignedSupervisor);
+//             if (!supervisor) {
+//                 return res.status(400).json({
+//                     success: false,
+//                     message: `Supervisor not found for milestone "${milestone.title}"`
+//                 });
+//             }
+//         }
+
+//         // Validate project manager exists
+//         let manager;
+//         let actualManagerId;
+
+//         if (typeof projectManager === 'string' && projectManager.startsWith('emp_')) {
+//             const emailMatch = projectManager.match(/emp_\d+_(.+)/);
+//             if (emailMatch && emailMatch[1]) {
+//                 const email = emailMatch[1];
+//                 manager = await User.findOne({ email: email.toLowerCase(), isActive: true });
+//                 if (manager) {
+//                     actualManagerId = manager._id;
+//                 } else {
+//                     return res.status(400).json({
+//                         success: false,
+//                         message: `Project manager "${email}" is not registered in the system.`
+//                     });
+//                 }
+//             }
+//         } else {
+//             try {
+//                 manager = await User.findById(projectManager);
+//                 actualManagerId = projectManager;
+//             } catch (error) {
+//                 manager = await User.findOne({ email: projectManager.toLowerCase(), isActive: true });
+//                 if (manager) {
+//                     actualManagerId = manager._id;
+//                 }
+//             }
+//         }
+
+//         if (!manager) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: 'Selected project manager does not exist'
+//             });
+//         }
+
+//         // Validate budget code if provided
+//         if (budgetCodeId) {
+//             const budgetCode = await BudgetCode.findById(budgetCodeId);
+//             if (!budgetCode) {
+//                 return res.status(400).json({
+//                     success: false,
+//                     message: 'Selected budget code does not exist'
+//                 });
+//             }
+//         }
+
+//         // Check for duplicate project name
+//         const existingProject = await Project.findOne({ 
+//             name: { $regex: new RegExp(`^${name}$`, 'i') },
+//             isActive: true 
+//         });
+
+//         if (existingProject) {
+//             return res.status(400).json({
+//                 success: false,
+//                 message: 'A project with this name already exists'
+//             });
+//         }
+
+//         // Process milestones
+//         const processedMilestones = milestones.map(milestone => ({
+//             title: milestone.title,
+//             description: milestone.description || '',
+//             dueDate: milestone.dueDate ? new Date(milestone.dueDate) : null,
+//             assignedSupervisor: milestone.assignedSupervisor,
+//             weight: milestone.weight || 0,
+//             status: 'Not Started',
+//             progress: 0,
+//             totalTaskWeightAssigned: 0,
+//             manuallyCompleted: false
+//         }));
+
+//         // Create the project
+//         const project = new Project({
+//             name,
+//             description,
+//             projectType,
+//             priority,
+//             department,
+//             projectManager: actualManagerId,
+//             timeline: {
+//                 startDate: new Date(timeline.startDate),
+//                 endDate: new Date(timeline.endDate)
+//             },
+//             budgetCodeId: budgetCodeId || null,
+//             milestones: processedMilestones,
+//             createdBy: req.user.userId
+//         });
+
+//         await project.save();
+
+//         // Populate the created project
+//         const populatedProject = await Project.findById(project._id)
+//             .populate('projectManager', 'fullName email role department')
+//             .populate('budgetCodeId', 'code name totalBudget available')
+//             .populate('createdBy', 'fullName email')
+//             .populate('milestones.assignedSupervisor', 'fullName email department');
+
+//         console.log('✅ Project created with milestones assigned to supervisors');
+//         console.log('Project Code:', populatedProject.code);
+
+//         res.status(201).json({
+//             success: true,
+//             message: 'Project created successfully with milestone assignments',
+//             data: populatedProject
+//         });
+
+//     } catch (error) {
+//         console.error('Error creating project:', error);
+//         res.status(500).json({
+//             success: false,
+//             message: 'Failed to create project',
+//             error: process.env.NODE_ENV === 'development' ? error.message : undefined
+//         });
+//     }
+// };
+
+
 const createProject = async (req, res) => {
     try {
         const {
@@ -57,7 +247,67 @@ const createProject = async (req, res) => {
             });
         }
 
-        // Validate each milestone has assigned supervisor
+        // Helper function to resolve user ID from various formats
+        const resolveUserId = async (identifier, fieldName) => {
+            if (!identifier) {
+                throw new Error(`${fieldName} is required`);
+            }
+
+            let user;
+            let userId;
+
+            // Check if it's an employee format: emp_NUMBER_email@domain.com
+            if (typeof identifier === 'string' && identifier.startsWith('emp_')) {
+                const emailMatch = identifier.match(/emp_\d+_(.+)/);
+                if (emailMatch && emailMatch[1]) {
+                    const email = emailMatch[1];
+                    console.log(`Looking up user by email: ${email}`);
+                    user = await User.findOne({ email: email.toLowerCase(), isActive: true });
+                    if (user) {
+                        userId = user._id;
+                    } else {
+                        throw new Error(`${fieldName} "${email}" is not registered in the system`);
+                    }
+                } else {
+                    throw new Error(`Invalid ${fieldName} format: ${identifier}`);
+                }
+            } 
+            // Check if it's a valid ObjectId
+            else if (mongoose.Types.ObjectId.isValid(identifier)) {
+                try {
+                    user = await User.findById(identifier);
+                    if (user && user.isActive) {
+                        userId = identifier;
+                    } else {
+                        throw new Error(`${fieldName} not found or inactive`);
+                    }
+                } catch (error) {
+                    throw new Error(`Invalid ${fieldName}: ${identifier}`);
+                }
+            }
+            // Try as email
+            else if (typeof identifier === 'string' && identifier.includes('@')) {
+                console.log(`Looking up user by email: ${identifier}`);
+                user = await User.findOne({ email: identifier.toLowerCase(), isActive: true });
+                if (user) {
+                    userId = user._id;
+                } else {
+                    throw new Error(`${fieldName} "${identifier}" is not registered in the system`);
+                }
+            }
+            else {
+                throw new Error(`Invalid ${fieldName} format: ${identifier}`);
+            }
+
+            return { user, userId };
+        };
+
+        // Validate and resolve project manager
+        console.log('Resolving project manager:', projectManager);
+        const { user: manager, userId: actualManagerId } = await resolveUserId(projectManager, 'Project manager');
+
+        // Validate and resolve supervisors for each milestone
+        const processedMilestones = [];
         for (const milestone of milestones) {
             if (!milestone.assignedSupervisor) {
                 return res.status(400).json({
@@ -66,51 +316,30 @@ const createProject = async (req, res) => {
                 });
             }
 
-            // Verify supervisor exists
-            const supervisor = await User.findById(milestone.assignedSupervisor);
-            if (!supervisor) {
+            console.log(`Resolving supervisor for milestone "${milestone.title}":`, milestone.assignedSupervisor);
+            try {
+                const { userId: supervisorId } = await resolveUserId(
+                    milestone.assignedSupervisor, 
+                    `Supervisor for milestone "${milestone.title}"`
+                );
+
+                processedMilestones.push({
+                    title: milestone.title,
+                    description: milestone.description || '',
+                    dueDate: milestone.dueDate ? new Date(milestone.dueDate) : null,
+                    assignedSupervisor: supervisorId,
+                    weight: milestone.weight || 0,
+                    status: 'Not Started',
+                    progress: 0,
+                    totalTaskWeightAssigned: 0,
+                    manuallyCompleted: false
+                });
+            } catch (error) {
                 return res.status(400).json({
                     success: false,
-                    message: `Supervisor not found for milestone "${milestone.title}"`
+                    message: error.message
                 });
             }
-        }
-
-        // Validate project manager exists
-        let manager;
-        let actualManagerId;
-
-        if (typeof projectManager === 'string' && projectManager.startsWith('emp_')) {
-            const emailMatch = projectManager.match(/emp_\d+_(.+)/);
-            if (emailMatch && emailMatch[1]) {
-                const email = emailMatch[1];
-                manager = await User.findOne({ email: email.toLowerCase(), isActive: true });
-                if (manager) {
-                    actualManagerId = manager._id;
-                } else {
-                    return res.status(400).json({
-                        success: false,
-                        message: `Project manager "${email}" is not registered in the system.`
-                    });
-                }
-            }
-        } else {
-            try {
-                manager = await User.findById(projectManager);
-                actualManagerId = projectManager;
-            } catch (error) {
-                manager = await User.findOne({ email: projectManager.toLowerCase(), isActive: true });
-                if (manager) {
-                    actualManagerId = manager._id;
-                }
-            }
-        }
-
-        if (!manager) {
-            return res.status(400).json({
-                success: false,
-                message: 'Selected project manager does not exist'
-            });
         }
 
         // Validate budget code if provided
@@ -136,19 +365,6 @@ const createProject = async (req, res) => {
                 message: 'A project with this name already exists'
             });
         }
-
-        // Process milestones
-        const processedMilestones = milestones.map(milestone => ({
-            title: milestone.title,
-            description: milestone.description || '',
-            dueDate: milestone.dueDate ? new Date(milestone.dueDate) : null,
-            assignedSupervisor: milestone.assignedSupervisor,
-            weight: milestone.weight || 0,
-            status: 'Not Started',
-            progress: 0,
-            totalTaskWeightAssigned: 0,
-            manuallyCompleted: false
-        }));
 
         // Create the project
         const project = new Project({
