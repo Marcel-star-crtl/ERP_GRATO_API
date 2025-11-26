@@ -4,31 +4,25 @@ const ITSupportRequestSchema = new mongoose.Schema({
   employee: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
   },
   ticketNumber: {
     type: String,
     unique: true,
-    required: true
   },
   requestType: {
     type: String,
     enum: ['material_request', 'technical_issue'],
-    required: true
   },
   title: {
     type: String,
-    required: true,
     minlength: 5
   },
   description: {
     type: String,
-    required: true,
     minlength: 10
   },
   department: {
     type: String,
-    required: true
   },
   category: {
     type: String,
@@ -41,35 +35,29 @@ const ITSupportRequestSchema = new mongoose.Schema({
       'accessories',
       'other'
     ],
-    required: true
   },
   subcategory: {
     type: String,
-    required: true
   },
   priority: {
     type: String,
     enum: ['low', 'medium', 'high', 'critical'],
-    required: true
   },
   urgency: {
     type: String,
     enum: ['low', 'normal', 'high', 'urgent'],
-    required: true
   },
   
   // Material Request specific fields
   requestedItems: [{
     item: {
       type: String,
-      required: true
     },
     brand: String,
     model: String,
     specifications: String,
     quantity: {
       type: Number,
-      required: true,
       min: 1
     },
     estimatedCost: {
