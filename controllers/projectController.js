@@ -1503,8 +1503,236 @@ const getDashboardStats = async (req, res) => {
     }
 };
 
+// Create or save project as draft
+const createOrSaveProject = async (req, res) => {
+    try {
+        const {
+            name,
+            description,
+            projectType,
+            priority,
+            department,
+            projectManager,
+            timeline,
+            budgetCodeId,
+            milestones = [],
+            saveAsDraft = false // NEW: flag to save as draft
+        } = req.body;
+
+        const userId = req.user.userId;
+
+        console.log('=== CREATE/SAVE PROJECT ===');
+        console.log('User:', userId);
+        console.log('Save as draft:', saveAsDraft);
+
+        // If saving as draft, skip most validations
+        if (saveAsDraft) {
+            // Minimal validation for draft
+            if (!name || name.trim().length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Project name is required even for drafts'
+                });
+            }
+
+            const project = new Project({
+                name,
+                description: description || '',
+                projectType,
+                priority,
+                department,
+                projectManager,
+                timeline,
+                budgetCodeId,
+                milestones: milestones.map(m => ({
+                    ...m,
+                    dueDate: m.dueDate ? new Date(m.dueDate) : null
+                })),
+                approvalStatus: 'draft',
+                createdBy: userId,
+                updatedBy: userId
+            });
+
+            await project.save();
+
+            const populatedProject = await Project.findById(project._id)
+                .populate('projectManager', 'fullName email role department')
+                .populate('budgetCodeId', 'code name totalBudget available')
+                .populate('createdBy', 'fullName email')
+                .populate('milestones.assignedSupervisor', 'fullName email department');
+
+            return res.status(201).json({
+                success: true,
+                message: 'Project saved as draft successfully',
+                data: populatedProject
+            });
+        }
+
+        // Full validation for non-draft projects
+        if (!name || !description || !projectType || !priority || !department || !projectManager || !timeline) {
+            return res.status(400).json({
+                success: false,
+                message: 'All required fields must be provided'
+            });
+        }
+
+        if (!timeline.startDate || !timeline.endDate) {
+            return res.status(400).json({
+                success: false,
+                message: 'Both start date and end date are required'
+            });
+        }
+
+        if (!milestones || milestones.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'At least one milestone is required'
+            });
+        }
+
+        const totalWeight = milestones.reduce((sum, m) => sum + (m.weight || 0), 0);
+        if (totalWeight !== 100) {
+            return res.status(400).json({
+                success: false,
+                message: `Milestone weights must sum to 100%. Current total: ${totalWeight}%`
+            });
+        }
+
+        for (const milestone of milestones) {
+            if (!milestone.assignedSupervisor) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Milestone "${milestone.title}" must have an assigned supervisor`
+                });
+            }
+
+            const supervisor = await User.findById(milestone.assignedSupervisor);
+            if (!supervisor) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Supervisor not found for milestone "${milestone.title}"`
+                });
+            }
+        }
+
+        // Validate project manager
+        let manager;
+        let actualManagerId;
+
+        if (typeof projectManager === 'string' && projectManager.startsWith('emp_')) {
+            const emailMatch = projectManager.match(/emp_\d+_(.+)/);
+            if (emailMatch && emailMatch[1]) {
+                const email = emailMatch[1];
+                manager = await User.findOne({ email: email.toLowerCase(), isActive: true });
+                if (manager) {
+                    actualManagerId = manager._id;
+                } else {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Project manager "${email}" is not registered in the system.`
+                    });
+                }
+            }
+        } else {
+            try {
+                manager = await User.findById(projectManager);
+                actualManagerId = projectManager;
+            } catch (error) {
+                manager = await User.findOne({ email: projectManager.toLowerCase(), isActive: true });
+                if (manager) {
+                    actualManagerId = manager._id;
+                }
+            }
+        }
+
+        if (!manager) {
+            return res.status(400).json({
+                success: false,
+                message: 'Selected project manager does not exist'
+            });
+        }
+
+        if (budgetCodeId) {
+            const budgetCode = await BudgetCode.findById(budgetCodeId);
+            if (!budgetCode) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Selected budget code does not exist'
+                });
+            }
+        }
+
+        const existingProject = await Project.findOne({ 
+            name: { $regex: new RegExp(`^${name}$`, 'i') },
+            isActive: true 
+        });
+
+        if (existingProject) {
+            return res.status(400).json({
+                success: false,
+                message: 'A project with this name already exists'
+            });
+        }
+
+        const processedMilestones = milestones.map(milestone => ({
+            title: milestone.title,
+            description: milestone.description || '',
+            dueDate: milestone.dueDate ? new Date(milestone.dueDate) : null,
+            assignedSupervisor: milestone.assignedSupervisor,
+            weight: milestone.weight || 0,
+            status: 'Not Started',
+            progress: 0,
+            totalTaskWeightAssigned: 0,
+            manuallyCompleted: false
+        }));
+
+        const project = new Project({
+            name,
+            description,
+            projectType,
+            priority,
+            department,
+            projectManager: actualManagerId,
+            timeline: {
+                startDate: new Date(timeline.startDate),
+                endDate: new Date(timeline.endDate)
+            },
+            budgetCodeId: budgetCodeId || null,
+            milestones: processedMilestones,
+            approvalStatus: 'draft', // Start as draft
+            createdBy: userId,
+            updatedBy: userId
+        });
+
+        await project.save();
+
+        const populatedProject = await Project.findById(project._id)
+            .populate('projectManager', 'fullName email role department')
+            .populate('budgetCodeId', 'code name totalBudget available')
+            .populate('createdBy', 'fullName email')
+            .populate('milestones.assignedSupervisor', 'fullName email department');
+
+        console.log('✅ Project created as draft');
+
+        res.status(201).json({
+            success: true,
+            message: 'Project created successfully. Submit for approval to activate.',
+            data: populatedProject
+        });
+
+    } catch (error) {
+        console.error('Error creating/saving project:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to create/save project',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
 module.exports = {
     createProject,
+    createOrSaveProject,
     updateProject,
     getProjects,
     getActiveProjects,
