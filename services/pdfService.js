@@ -150,7 +150,7 @@ class PDFService {
        .text('Douala', 40, yPos + 41)
        .text('Cameroon', 40, yPos + 54);
 
-    doc.text('680726107/653738918', 40, yPos + 67);
+    doc.text('682952153', 40, yPos + 67);
 
     // Right column: Supplier information (dynamic based on PO data)
     const supplier = poData.supplierDetails || {};
@@ -664,7 +664,7 @@ class PDFService {
        .font(this.defaultFont)
        .text('Bonaberi', 110, yPos + 15)
        .text('Douala Cameroon', 110, yPos + 28)
-       .text('680726107/653738918', 110, yPos + 41);
+       .text('682952153', 110, yPos + 41);
   }
 
   drawCashRequestTitleBar(doc, yPos, data) {
