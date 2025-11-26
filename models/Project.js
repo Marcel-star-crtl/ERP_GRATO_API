@@ -811,6 +811,97 @@ projectSchema.statics.searchProjects = function(searchQuery, filters = {}) {
     .sort({ createdAt: -1 });
 };
 
+// Add method to calculate health score
+projectSchema.methods.calculateHealthScore = function() {
+  let scheduleScore = 100;
+  let budgetScore = 100;
+  let scopeScore = 100;
+  let qualityScore = 100;
+  let teamScore = 100;
+
+  // Schedule health
+  if (this.timeline && this.timeline.endDate) {
+    const daysRemaining = Math.ceil((this.timeline.endDate - new Date()) / (1000 * 60 * 60 * 24));
+    const totalDays = Math.ceil((this.timeline.endDate - this.timeline.startDate) / (1000 * 60 * 60 * 24));
+    const expectedProgress = ((totalDays - daysRemaining) / totalDays) * 100;
+    const deviation = this.progress - expectedProgress;
+    
+    if (deviation < -20) scheduleScore = 50;
+    else if (deviation < -10) scheduleScore = 70;
+    else if (deviation < 0) scheduleScore = 85;
+  }
+
+  // Budget health
+  if (this.resources && this.resources.budget) {
+    const budgetUtilization = (this.resources.budget.spent / this.resources.budget.allocated) * 100;
+    const scheduleUtilization = this.progress;
+    const budgetDeviation = budgetUtilization - scheduleUtilization;
+    
+    if (budgetDeviation > 20) budgetScore = 50;
+    else if (budgetDeviation > 10) budgetScore = 70;
+    else if (budgetDeviation > 5) budgetScore = 85;
+  }
+
+  // Scope health (based on change requests)
+  const pendingChanges = this.changeRequests.filter(cr => cr.status === 'Pending').length;
+  if (pendingChanges > 5) scopeScore = 60;
+  else if (pendingChanges > 3) scopeScore = 75;
+  else if (pendingChanges > 1) scopeScore = 90;
+
+  // Quality health (based on issues and quality metrics)
+  const criticalIssues = this.issues.filter(i => i.severity === 'Critical' && i.status === 'Open').length;
+  if (criticalIssues > 3) qualityScore = 50;
+  else if (criticalIssues > 1) qualityScore = 70;
+  else if (criticalIssues > 0) qualityScore = 85;
+
+  // Team health (based on milestones and risks)
+  const overdueMilestones = this.milestones.filter(m => 
+    m.status !== 'Completed' && m.dueDate && new Date(m.dueDate) < new Date()
+  ).length;
+  if (overdueMilestones > 3) teamScore = 60;
+  else if (overdueMilestones > 1) teamScore = 75;
+  else if (overdueMilestones > 0) teamScore = 90;
+
+  // Calculate overall
+  const overall = Math.round(
+    (scheduleScore + budgetScore + scopeScore + qualityScore + teamScore) / 5
+  );
+
+  this.healthScore = {
+    overall,
+    schedule: scheduleScore,
+    budget: budgetScore,
+    scope: scopeScore,
+    quality: qualityScore,
+    team: teamScore,
+    lastUpdated: new Date()
+  };
+
+  return this.healthScore;
+};
+
+// Add method for timeline analysis
+projectSchema.methods.getTimelineAnalysis = function() {
+  const now = new Date();
+  const totalDuration = this.timeline.endDate - this.timeline.startDate;
+  const elapsed = now - this.timeline.startDate;
+  const remaining = this.timeline.endDate - now;
+  
+  const percentTimeElapsed = (elapsed / totalDuration) * 100;
+  const percentComplete = this.progress;
+  
+  return {
+    percentTimeElapsed: Math.round(percentTimeElapsed),
+    percentComplete,
+    schedulePerformanceIndex: percentComplete / percentTimeElapsed,
+    daysElapsed: Math.ceil(elapsed / (1000 * 60 * 60 * 24)),
+    daysRemaining: Math.ceil(remaining / (1000 * 60 * 60 * 24)),
+    isAheadOfSchedule: percentComplete > percentTimeElapsed,
+    isOnTrack: Math.abs(percentComplete - percentTimeElapsed) <= 5,
+    isBehindSchedule: percentComplete < percentTimeElapsed - 5
+  };
+};
+
 // Static method to get projects by department
 projectSchema.statics.getByDepartment = function(department, options = {}) {
   const query = {
