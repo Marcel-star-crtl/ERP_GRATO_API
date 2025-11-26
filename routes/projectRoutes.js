@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const projectController = require('../controllers/projectController');
+const subMilestoneController = require('../controllers/subMilestoneController');
 const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware');
 
 // Apply authentication middleware to all routes
@@ -90,6 +91,50 @@ router.get(
   '/:projectId/milestones/:milestoneId',
   authMiddleware,
   projectController.getMilestoneDetails
+);
+
+// ========== SUB-MILESTONE MANAGEMENT ==========
+
+// Get milestone hierarchy (with all sub-milestones)
+router.get(
+  '/:projectId/milestones/:milestoneId/hierarchy',
+  authMiddleware,
+  subMilestoneController.getMilestoneHierarchy
+);
+
+// Create sub-milestone under milestone or another sub-milestone
+router.post(
+  '/:projectId/milestones/:milestoneId/sub-milestones',
+  authMiddleware,
+  subMilestoneController.createSubMilestone
+);
+
+// Update sub-milestone
+router.put(
+  '/:projectId/milestones/:milestoneId/sub-milestones/:subMilestoneId',
+  authMiddleware,
+  subMilestoneController.updateSubMilestone
+);
+
+// Delete sub-milestone
+router.delete(
+  '/:projectId/milestones/:milestoneId/sub-milestones/:subMilestoneId',
+  authMiddleware,
+  subMilestoneController.deleteSubMilestone
+);
+
+// Update sub-milestone progress (recalculate from tasks)
+router.patch(
+  '/:projectId/milestones/:milestoneId/sub-milestones/:subMilestoneId/progress',
+  authMiddleware,
+  subMilestoneController.updateSubMilestoneProgress
+);
+
+// Complete sub-milestone
+router.post(
+  '/:projectId/milestones/:milestoneId/sub-milestones/:subMilestoneId/complete',
+  authMiddleware,
+  subMilestoneController.completeSubMilestone
 );
 
 // Complete milestone
