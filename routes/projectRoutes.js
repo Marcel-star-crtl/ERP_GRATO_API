@@ -12,14 +12,63 @@ router.post('/',
     projectController.createProject
 );
 
-router.get('/', 
-    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-    projectController.getProjects
+// Get my projects (including drafts)
+router.get(
+  '/my-projects',
+  authMiddleware,
+  projectController.getMyProjects
 );
 
-router.get('/active', 
-    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-    projectController.getActiveProjects
+// Get pending approvals (for authorized roles only)
+router.get(
+  '/pending-approvals',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'project', 'manager'),
+  projectController.getPendingApprovals
+);
+
+// Create or save project (can be draft)
+router.post(
+  '/',
+  authMiddleware,
+  projectController.createOrSaveProject
+);
+
+// Submit project for approval
+router.post(
+  '/:projectId/submit',
+  authMiddleware,
+  projectController.submitProjectForApproval
+);
+
+// Approve/Reject project
+router.post(
+  '/:projectId/approve',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'project', 'manager'),
+  projectController.processProjectApproval
+);
+
+// Update project (only draft or rejected)
+router.put(
+  '/:projectId',
+  authMiddleware,
+  projectController.updateProject
+);
+
+
+// Get active projects only
+router.get(
+  '/active',
+  authMiddleware,
+  projectController.getActiveProjects
+);
+
+// Get all projects (with filters)
+router.get(
+  '/',
+  authMiddleware,
+  projectController.getProjects
 );
 
 router.get('/stats', 
@@ -27,25 +76,33 @@ router.get('/stats',
     projectController.getProjectStats
 );
 
-// Supervisor milestone routes
-router.get('/my-milestones',
-    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-    projectController.getSupervisorMilestones
+// ========== MILESTONE MANAGEMENT (SUPERVISORS) ==========
+
+// Get supervisor's assigned milestones
+router.get(
+  '/my-milestones',
+  authMiddleware,
+  projectController.getSupervisorMilestones
 );
 
-router.get('/:projectId/milestones/:milestoneId',
-    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-    projectController.getMilestoneDetails
+// Get milestone details with tasks
+router.get(
+  '/:projectId/milestones/:milestoneId',
+  authMiddleware,
+  projectController.getMilestoneDetails
 );
 
-router.post('/:projectId/milestones/:milestoneId/complete',
-    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-    projectController.completeMilestone
+// Complete milestone
+router.post(
+  '/:projectId/milestones/:milestoneId/complete',
+  authMiddleware,
+  projectController.completeMilestone
 );
 
-router.get('/search', 
-    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-    projectController.searchProjects
+router.get(
+  '/search',
+  authMiddleware,
+  projectController.searchProjects
 );
 
 router.get('/my-projects', 
@@ -53,83 +110,105 @@ router.get('/my-projects',
     projectController.getUserProjects
 );
 
-router.get('/department/:department', 
-    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-    projectController.getProjectsByDepartment
+router.get(
+  '/department/:department',
+  authMiddleware,
+  projectController.getProjectsByDepartment
 );
 
-router.get('/:projectId', 
-    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-    projectController.getProjectById
+// Get project by ID
+router.get(
+  '/:projectId',
+  authMiddleware,
+  projectController.getProjectById
 );
 
-router.put('/:projectId', 
-    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-    projectController.updateProject
-);
+// router.put('/:projectId', 
+//     requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+//     projectController.updateProject
+// );
 
 router.patch('/:projectId/status', 
+    authMiddleware,
     requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
     projectController.updateProjectStatus
 );
 
-router.patch('/:projectId/progress', 
-    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-    projectController.updateProjectProgress
+router.patch(
+  '/:projectId/progress',
+  authMiddleware,
+  projectController.updateProjectProgress
 );
 
-router.delete('/:projectId', 
-    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-    projectController.deleteProject
+router.delete(
+  '/:projectId',
+  authMiddleware,
+  projectController.deleteProject
 );
 
-// Analytics
-router.get('/:projectId/analytics', 
-  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+// router.delete('/:projectId', 
+//     requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+//     projectController.deleteProject
+// );
+
+// Get project analytics
+router.get(
+  '/:projectId/analytics',
+  authMiddleware,
   projectController.getProjectAnalytics
 );
 
-// Risk Management
-router.post('/:projectId/risks',
-  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+// Add risk to project
+router.post(
+  '/:projectId/risks',
+  authMiddleware,
   projectController.addProjectRisk
 );
 
-router.patch('/:projectId/risks/:riskId/status',
-  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+// Update risk status
+router.patch(
+  '/:projectId/risks/:riskId/status',
+  authMiddleware,
   projectController.updateRiskStatus
 );
 
-// Issue Management
-router.post('/:projectId/issues',
-  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+// Add issue to project
+router.post(
+  '/:projectId/issues',
+  authMiddleware,
   projectController.addProjectIssue
 );
 
-router.patch('/:projectId/issues/:issueId/resolve',
-  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+router.patch(
+  '/:projectId/issues/:issueId/resolve',
+  authMiddleware,
   projectController.resolveIssue
 );
 
-// Change Management
-router.post('/:projectId/change-requests',
-  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+router.post(
+  '/:projectId/change-requests',
+  authMiddleware,
   projectController.addChangeRequest
 );
 
-router.post('/:projectId/change-requests/:changeRequestId/process',
-  requireRoles('admin', 'supply_chain', 'project'),
+// Process change request
+router.post(
+  '/:projectId/change-requests/:changeRequestId/process',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'project', 'manager'),
   projectController.processChangeRequest
 );
 
-// Meeting Management
-router.post('/:projectId/meetings',
-  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+// Log meeting
+router.post(
+  '/:projectId/meetings',
+  authMiddleware,
   projectController.logProjectMeeting
 );
 
-router.get('/stats', 
-  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+router.get(
+  '/stats',
+  authMiddleware,
   projectController.getProjectStats
 );
 

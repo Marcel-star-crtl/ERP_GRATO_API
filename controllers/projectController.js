@@ -5,197 +5,6 @@ const ActionItem = require('../models/ActionItem');
 const mongoose = require('mongoose');
 
 
-// // Create new project with milestone assignments
-// const createProject = async (req, res) => {
-//     try {
-//         const {
-//             name,
-//             description,
-//             projectType,
-//             priority,
-//             department,
-//             projectManager,
-//             timeline,
-//             budgetCodeId,
-//             milestones = []
-//         } = req.body;
-
-//         console.log('=== CREATE PROJECT ===');
-//         console.log('Project:', name);
-//         console.log('Milestones:', milestones.length);
-
-//         // Validate required fields
-//         if (!name || !description || !projectType || !priority || !department || !projectManager || !timeline) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: 'All required fields must be provided'
-//             });
-//         }
-
-//         // Validate timeline
-//         if (!timeline.startDate || !timeline.endDate) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: 'Both start date and end date are required'
-//             });
-//         }
-
-//         // Validate milestones
-//         if (!milestones || milestones.length === 0) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: 'At least one milestone is required'
-//             });
-//         }
-
-//         // Validate milestone weights sum to 100%
-//         const totalWeight = milestones.reduce((sum, m) => sum + (m.weight || 0), 0);
-//         if (totalWeight !== 100) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: `Milestone weights must sum to 100%. Current total: ${totalWeight}%`
-//             });
-//         }
-
-//         // Validate each milestone has assigned supervisor
-//         for (const milestone of milestones) {
-//             if (!milestone.assignedSupervisor) {
-//                 return res.status(400).json({
-//                     success: false,
-//                     message: `Milestone "${milestone.title}" must have an assigned supervisor`
-//                 });
-//             }
-
-//             // Verify supervisor exists
-//             const supervisor = await User.findById(milestone.assignedSupervisor);
-//             if (!supervisor) {
-//                 return res.status(400).json({
-//                     success: false,
-//                     message: `Supervisor not found for milestone "${milestone.title}"`
-//                 });
-//             }
-//         }
-
-//         // Validate project manager exists
-//         let manager;
-//         let actualManagerId;
-
-//         if (typeof projectManager === 'string' && projectManager.startsWith('emp_')) {
-//             const emailMatch = projectManager.match(/emp_\d+_(.+)/);
-//             if (emailMatch && emailMatch[1]) {
-//                 const email = emailMatch[1];
-//                 manager = await User.findOne({ email: email.toLowerCase(), isActive: true });
-//                 if (manager) {
-//                     actualManagerId = manager._id;
-//                 } else {
-//                     return res.status(400).json({
-//                         success: false,
-//                         message: `Project manager "${email}" is not registered in the system.`
-//                     });
-//                 }
-//             }
-//         } else {
-//             try {
-//                 manager = await User.findById(projectManager);
-//                 actualManagerId = projectManager;
-//             } catch (error) {
-//                 manager = await User.findOne({ email: projectManager.toLowerCase(), isActive: true });
-//                 if (manager) {
-//                     actualManagerId = manager._id;
-//                 }
-//             }
-//         }
-
-//         if (!manager) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: 'Selected project manager does not exist'
-//             });
-//         }
-
-//         // Validate budget code if provided
-//         if (budgetCodeId) {
-//             const budgetCode = await BudgetCode.findById(budgetCodeId);
-//             if (!budgetCode) {
-//                 return res.status(400).json({
-//                     success: false,
-//                     message: 'Selected budget code does not exist'
-//                 });
-//             }
-//         }
-
-//         // Check for duplicate project name
-//         const existingProject = await Project.findOne({ 
-//             name: { $regex: new RegExp(`^${name}$`, 'i') },
-//             isActive: true 
-//         });
-
-//         if (existingProject) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: 'A project with this name already exists'
-//             });
-//         }
-
-//         // Process milestones
-//         const processedMilestones = milestones.map(milestone => ({
-//             title: milestone.title,
-//             description: milestone.description || '',
-//             dueDate: milestone.dueDate ? new Date(milestone.dueDate) : null,
-//             assignedSupervisor: milestone.assignedSupervisor,
-//             weight: milestone.weight || 0,
-//             status: 'Not Started',
-//             progress: 0,
-//             totalTaskWeightAssigned: 0,
-//             manuallyCompleted: false
-//         }));
-
-//         // Create the project
-//         const project = new Project({
-//             name,
-//             description,
-//             projectType,
-//             priority,
-//             department,
-//             projectManager: actualManagerId,
-//             timeline: {
-//                 startDate: new Date(timeline.startDate),
-//                 endDate: new Date(timeline.endDate)
-//             },
-//             budgetCodeId: budgetCodeId || null,
-//             milestones: processedMilestones,
-//             createdBy: req.user.userId
-//         });
-
-//         await project.save();
-
-//         // Populate the created project
-//         const populatedProject = await Project.findById(project._id)
-//             .populate('projectManager', 'fullName email role department')
-//             .populate('budgetCodeId', 'code name totalBudget available')
-//             .populate('createdBy', 'fullName email')
-//             .populate('milestones.assignedSupervisor', 'fullName email department');
-
-//         console.log('✅ Project created with milestones assigned to supervisors');
-//         console.log('Project Code:', populatedProject.code);
-
-//         res.status(201).json({
-//             success: true,
-//             message: 'Project created successfully with milestone assignments',
-//             data: populatedProject
-//         });
-
-//     } catch (error) {
-//         console.error('Error creating project:', error);
-//         res.status(500).json({
-//             success: false,
-//             message: 'Failed to create project',
-//             error: process.env.NODE_ENV === 'development' ? error.message : undefined
-//         });
-//     }
-// };
-
-
 const createProject = async (req, res) => {
     try {
         const {
@@ -410,6 +219,305 @@ const createProject = async (req, res) => {
         });
     }
 };
+
+
+// Create or save project as draft
+const createOrSaveProject = async (req, res) => {
+    try {
+        const {
+            name,
+            description,
+            projectType,
+            priority,
+            department,
+            projectManager,
+            timeline,
+            budgetCodeId,
+            milestones = [],
+            saveAsDraft = false // NEW: flag to save as draft
+        } = req.body;
+
+        const userId = req.user.userId;
+
+        console.log('=== CREATE/SAVE PROJECT ===');
+        console.log('User:', userId);
+        console.log('Save as draft:', saveAsDraft);
+
+        // If saving as draft, skip most validations
+        if (saveAsDraft) {
+            // Minimal validation for draft
+            if (!name || name.trim().length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Project name is required even for drafts'
+                });
+            }
+
+            const project = new Project({
+                name,
+                description: description || '',
+                projectType,
+                priority,
+                department,
+                projectManager,
+                timeline,
+                budgetCodeId,
+                milestones: milestones.map(m => ({
+                    ...m,
+                    dueDate: m.dueDate ? new Date(m.dueDate) : null
+                })),
+                approvalStatus: 'draft',
+                createdBy: userId,
+                updatedBy: userId
+            });
+
+            await project.save();
+
+            const populatedProject = await Project.findById(project._id)
+                .populate('projectManager', 'fullName email role department')
+                .populate('budgetCodeId', 'code name totalBudget available')
+                .populate('createdBy', 'fullName email')
+                .populate('milestones.assignedSupervisor', 'fullName email department');
+
+            return res.status(201).json({
+                success: true,
+                message: 'Project saved as draft successfully',
+                data: populatedProject
+            });
+        }
+
+        // Full validation for non-draft projects
+        if (!name || !description || !projectType || !priority || !department || !projectManager || !timeline) {
+            return res.status(400).json({
+                success: false,
+                message: 'All required fields must be provided'
+            });
+        }
+
+        if (!timeline.startDate || !timeline.endDate) {
+            return res.status(400).json({
+                success: false,
+                message: 'Both start date and end date are required'
+            });
+        }
+
+        if (!milestones || milestones.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'At least one milestone is required'
+            });
+        }
+
+        const totalWeight = milestones.reduce((sum, m) => sum + (m.weight || 0), 0);
+        if (totalWeight !== 100) {
+            return res.status(400).json({
+                success: false,
+                message: `Milestone weights must sum to 100%. Current total: ${totalWeight}%`
+            });
+        }
+
+        for (const milestone of milestones) {
+            if (!milestone.assignedSupervisor) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Milestone "${milestone.title}" must have an assigned supervisor`
+                });
+            }
+
+            const supervisor = await User.findById(milestone.assignedSupervisor);
+            if (!supervisor) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Supervisor not found for milestone "${milestone.title}"`
+                });
+            }
+        }
+
+        // Validate project manager
+        let manager;
+        let actualManagerId;
+
+        if (typeof projectManager === 'string' && projectManager.startsWith('emp_')) {
+            const emailMatch = projectManager.match(/emp_\d+_(.+)/);
+            if (emailMatch && emailMatch[1]) {
+                const email = emailMatch[1];
+                manager = await User.findOne({ email: email.toLowerCase(), isActive: true });
+                if (manager) {
+                    actualManagerId = manager._id;
+                } else {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Project manager "${email}" is not registered in the system.`
+                    });
+                }
+            }
+        } else {
+            try {
+                manager = await User.findById(projectManager);
+                actualManagerId = projectManager;
+            } catch (error) {
+                manager = await User.findOne({ email: projectManager.toLowerCase(), isActive: true });
+                if (manager) {
+                    actualManagerId = manager._id;
+                }
+            }
+        }
+
+        if (!manager) {
+            return res.status(400).json({
+                success: false,
+                message: 'Selected project manager does not exist'
+            });
+        }
+
+        if (budgetCodeId) {
+            const budgetCode = await BudgetCode.findById(budgetCodeId);
+            if (!budgetCode) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Selected budget code does not exist'
+                });
+            }
+        }
+
+        const existingProject = await Project.findOne({ 
+            name: { $regex: new RegExp(`^${name}$`, 'i') },
+            isActive: true 
+        });
+
+        if (existingProject) {
+            return res.status(400).json({
+                success: false,
+                message: 'A project with this name already exists'
+            });
+        }
+
+        const processedMilestones = milestones.map(milestone => ({
+            title: milestone.title,
+            description: milestone.description || '',
+            dueDate: milestone.dueDate ? new Date(milestone.dueDate) : null,
+            assignedSupervisor: milestone.assignedSupervisor,
+            weight: milestone.weight || 0,
+            status: 'Not Started',
+            progress: 0,
+            totalTaskWeightAssigned: 0,
+            manuallyCompleted: false
+        }));
+
+        const project = new Project({
+            name,
+            description,
+            projectType,
+            priority,
+            department,
+            projectManager: actualManagerId,
+            timeline: {
+                startDate: new Date(timeline.startDate),
+                endDate: new Date(timeline.endDate)
+            },
+            budgetCodeId: budgetCodeId || null,
+            milestones: processedMilestones,
+            approvalStatus: 'draft', // Start as draft
+            createdBy: userId,
+            updatedBy: userId
+        });
+
+        await project.save();
+
+        const populatedProject = await Project.findById(project._id)
+            .populate('projectManager', 'fullName email role department')
+            .populate('budgetCodeId', 'code name totalBudget available')
+            .populate('createdBy', 'fullName email')
+            .populate('milestones.assignedSupervisor', 'fullName email department');
+
+        console.log('✅ Project created as draft');
+
+        res.status(201).json({
+            success: true,
+            message: 'Project created successfully. Submit for approval to activate.',
+            data: populatedProject
+        });
+
+    } catch (error) {
+        console.error('Error creating/saving project:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to create/save project',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Submit project for approval
+const submitProjectForApproval = async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const userId = req.user.userId;
+
+        if (!mongoose.Types.ObjectId.isValid(projectId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid project ID'
+            });
+        }
+
+        const project = await Project.findOne({
+            _id: projectId,
+            createdBy: userId,
+            isActive: true
+        }).populate('projectManager', 'fullName email');
+
+        if (!project) {
+            return res.status(404).json({
+                success: false,
+                message: 'Project not found'
+            });
+        }
+
+        if (project.approvalStatus === 'approved') {
+            return res.status(400).json({
+                success: false,
+                message: 'Project is already approved'
+            });
+        }
+
+        if (project.approvalStatus === 'pending') {
+            return res.status(400).json({
+                success: false,
+                message: 'Project is already pending approval'
+            });
+        }
+
+        try {
+            project.submitForApproval();
+            project.submittedBy = userId;
+            await project.save();
+
+            // TODO: Send email notification to approvers (admin/supply_chain roles)
+            
+            res.status(200).json({
+                success: true,
+                message: 'Project submitted for approval successfully',
+                data: project
+            });
+
+        } catch (validationError) {
+            return res.status(400).json({
+                success: false,
+                message: validationError.message
+            });
+        }
+
+    } catch (error) {
+        console.error('Error submitting project for approval:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to submit project for approval',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
 
 
 // Get supervisor's assigned milestones
@@ -651,15 +759,246 @@ const completeMilestone = async (req, res) => {
 };
 
 
-// Get all projects with filtering
+// Get pending project approvals (for authorized roles)
+const getPendingApprovals = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const userRole = req.user.role;
+
+        console.log('=== GET PENDING PROJECT APPROVALS ===');
+        console.log('User:', userId);
+        console.log('Role:', userRole);
+
+        // Only certain roles can approve projects
+        const authorizedRoles = ['admin', 'supply_chain', 'project', 'manager'];
+        if (!authorizedRoles.includes(userRole)) {
+            return res.status(403).json({
+                success: false,
+                message: 'You do not have permission to view pending project approvals'
+            });
+        }
+
+        const pendingProjects = await Project.find({
+            approvalStatus: 'pending',
+            isActive: true
+        })
+        .populate('createdBy', 'fullName email department position')
+        .populate('submittedBy', 'fullName email')
+        .populate('projectManager', 'fullName email department')
+        .populate('milestones.assignedSupervisor', 'fullName email department')
+        .sort({ submittedAt: 1 });
+
+        res.status(200).json({
+            success: true,
+            data: pendingProjects,
+            count: pendingProjects.length
+        });
+
+    } catch (error) {
+        console.error('Error fetching pending approvals:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch pending approvals',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Approve/Reject project
+const processProjectApproval = async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const { decision, comments } = req.body;
+        const userId = req.user.userId;
+        const userRole = req.user.role;
+
+        console.log('=== PROCESS PROJECT APPROVAL ===');
+        console.log('Project:', projectId);
+        console.log('Decision:', decision);
+        console.log('User:', userId);
+
+        if (!['approve', 'reject'].includes(decision)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid decision. Must be "approve" or "reject"'
+            });
+        }
+
+        const authorizedRoles = ['admin', 'supply_chain', 'project', 'manager'];
+        if (!authorizedRoles.includes(userRole)) {
+            return res.status(403).json({
+                success: false,
+                message: 'You do not have permission to approve projects'
+            });
+        }
+
+        const project = await Project.findById(projectId)
+            .populate('createdBy', 'fullName email')
+            .populate('projectManager', 'fullName email');
+
+        if (!project || !project.isActive) {
+            return res.status(404).json({
+                success: false,
+                message: 'Project not found'
+            });
+        }
+
+        if (project.approvalStatus !== 'pending') {
+            return res.status(400).json({
+                success: false,
+                message: 'Project is not pending approval'
+            });
+        }
+
+        if (decision === 'approve') {
+            project.approve(userId);
+            console.log('✅ Project APPROVED');
+
+            // TODO: Send approval email to project creator
+
+        } else {
+            if (!comments) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Rejection reason is required'
+                });
+            }
+
+            project.reject(userId, comments);
+            console.log('❌ Project REJECTED');
+
+            // TODO: Send rejection email to project creator
+        }
+
+        await project.save();
+
+        res.status(200).json({
+            success: true,
+            message: `Project ${decision}d successfully`,
+            data: project
+        });
+
+    } catch (error) {
+        console.error('Error processing project approval:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to process project approval',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Get user's projects (including drafts)
+const getMyProjects = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { approvalStatus } = req.query;
+
+        const filter = {
+            createdBy: userId,
+            isActive: true
+        };
+
+        if (approvalStatus) {
+            filter.approvalStatus = approvalStatus;
+        }
+
+        const projects = await Project.find(filter)
+            .populate('projectManager', 'fullName email role department')
+            .populate('budgetCodeId', 'code name totalBudget available')
+            .populate('milestones.assignedSupervisor', 'fullName email department')
+            .sort({ createdAt: -1 });
+
+        res.status(200).json({
+            success: true,
+            data: projects
+        });
+
+    } catch (error) {
+        console.error('Error fetching user projects:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch your projects',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Delete project (only if draft or rejected)
+const deleteProject = async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const userId = req.user.userId;
+
+        if (!mongoose.Types.ObjectId.isValid(projectId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid project ID'
+            });
+        }
+
+        const project = await Project.findById(projectId);
+        if (!project || !project.isActive) {
+            return res.status(404).json({
+                success: false,
+                message: 'Project not found'
+            });
+        }
+
+        // Check if user can delete this project
+        if (!project.createdBy.equals(userId)) {
+            return res.status(403).json({
+                success: false,
+                message: 'You can only delete projects you created'
+            });
+        }
+
+        // Can only delete draft or rejected projects
+        if (project.approvalStatus === 'approved') {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot delete approved projects'
+            });
+        }
+
+        if (project.approvalStatus === 'pending') {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot delete projects pending approval. Wait for review or contact administrator.'
+            });
+        }
+
+        project.isActive = false;
+        project.updatedBy = userId;
+        await project.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Project deleted successfully'
+        });
+
+    } catch (error) {
+        console.error('Error deleting project:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to delete project',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Get all projects with filtering (only approved projects for regular users)
 const getProjects = async (req, res) => {
     try {
+        const userId = req.user.userId;
+        const userRole = req.user.role;
         const {
             status,
             department,
             priority,
             projectType,
             projectManager,
+            approvalStatus,
             page = 1,
             limit = 10,
             sort = 'createdAt',
@@ -667,6 +1006,16 @@ const getProjects = async (req, res) => {
         } = req.query;
 
         const filter = { isActive: true };
+
+        // Regular users only see approved projects
+        if (!['admin', 'supply_chain', 'project', 'manager'].includes(userRole)) {
+            filter.approvalStatus = 'approved';
+        } else if (approvalStatus) {
+            filter.approvalStatus = approvalStatus;
+        } else {
+            // Admins see approved projects by default unless specified
+            filter.approvalStatus = 'approved';
+        }
 
         if (status) filter.status = status;
         if (department) filter.department = department;
@@ -799,11 +1148,12 @@ const getProjectById = async (req, res) => {
     }
 };
 
-// Update project
+// Update project (only if draft or rejected)
 const updateProject = async (req, res) => {
     try {
         const { projectId } = req.params;
         const updateData = req.body;
+        const userId = req.user.userId;
 
         if (!mongoose.Types.ObjectId.isValid(projectId)) {
             return res.status(400).json({
@@ -812,10 +1162,41 @@ const updateProject = async (req, res) => {
             });
         }
 
+        const project = await Project.findById(projectId);
+        if (!project || !project.isActive) {
+            return res.status(404).json({
+                success: false,
+                message: 'Project not found'
+            });
+        }
+
+        // Check if user can edit this project
+        if (!project.createdBy.equals(userId)) {
+            return res.status(403).json({
+                success: false,
+                message: 'You can only edit projects you created'
+            });
+        }
+
+        // Can only edit draft or rejected projects
+        if (project.approvalStatus === 'approved') {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot modify approved projects'
+            });
+        }
+
+        if (project.approvalStatus === 'pending') {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot modify projects pending approval. Wait for review or withdraw the submission.'
+            });
+        }
+
         // Validate milestone weights if updating milestones
         if (updateData.milestones && updateData.milestones.length > 0) {
             const totalWeight = updateData.milestones.reduce((sum, m) => sum + (m.weight || 0), 0);
-            if (totalWeight !== 100) {
+            if (totalWeight !== 100 && !updateData.saveAsDraft) {
                 return res.status(400).json({
                     success: false,
                     message: `Milestone weights must sum to 100%. Current total: ${totalWeight}%`
@@ -872,9 +1253,17 @@ const updateProject = async (req, res) => {
             }));
         }
 
-        updateData.updatedBy = req.user.userId;
+        // Reset approval status if was rejected
+        if (project.approvalStatus === 'rejected') {
+            updateData.approvalStatus = 'draft';
+            updateData.rejectionReason = undefined;
+            updateData.approvedBy = undefined;
+            updateData.approvedAt = undefined;
+        }
 
-        const project = await Project.findByIdAndUpdate(
+        updateData.updatedBy = userId;
+
+        const updatedProject = await Project.findByIdAndUpdate(
             projectId,
             { $set: updateData },
             { new: true, runValidators: true }
@@ -884,17 +1273,10 @@ const updateProject = async (req, res) => {
         .populate('updatedBy', 'fullName email')
         .populate('milestones.assignedSupervisor', 'fullName email department');
 
-        if (!project) {
-            return res.status(404).json({
-                success: false,
-                message: 'Project not found'
-            });
-        }
-
         res.status(200).json({
             success: true,
             message: 'Project updated successfully',
-            data: project
+            data: updatedProject
         });
 
     } catch (error) {
@@ -906,6 +1288,7 @@ const updateProject = async (req, res) => {
         });
     }
 };
+
 
 // Update project status
 const updateProjectStatus = async (req, res) => {
@@ -1583,51 +1966,6 @@ const logProjectMeeting = async (req, res) => {
 };
 
 
-// Delete project (soft delete)
-const deleteProject = async (req, res) => {
-    try {
-        const { projectId } = req.params;
-
-        if (!mongoose.Types.ObjectId.isValid(projectId)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid project ID'
-            });
-        }
-
-        const project = await Project.findByIdAndUpdate(
-            projectId,
-            { 
-                $set: { 
-                    isActive: false,
-                    updatedBy: req.user.userId,
-                    status: 'Cancelled'
-                } 
-            },
-            { new: true }
-        );
-
-        if (!project) {
-            return res.status(404).json({
-                success: false,
-                message: 'Project not found'
-            });
-        }
-
-        res.status(200).json({
-            success: true,
-            message: 'Project deleted successfully'
-        });
-
-    } catch (error) {
-        console.error('Error deleting project:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to delete project',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-};
 
 // Get project statistics
 const getProjectStats = async (req, res) => {
@@ -1719,6 +2057,14 @@ const getDashboardStats = async (req, res) => {
 
 module.exports = {
     createProject,
+    createOrSaveProject,
+    updateProject,
+    submitProjectForApproval,
+    getPendingApprovals,
+    processProjectApproval,
+    getMyProjects,
+    deleteProject,
+    getProjects,
     getProjects,
     getActiveProjects,
     getProjectById,

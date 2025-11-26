@@ -41,6 +41,16 @@ const UserSchema = new mongoose.Schema({
         required: true,
         default: 'employee'
     },
+
+    signature: {
+        url: String,       
+        localPath: String,  
+        filename: String,      
+        originalName: String,  
+        format: String,       
+        size: Number,          
+        uploadedAt: Date
+    },
     
     isActive: {
         type: Boolean,

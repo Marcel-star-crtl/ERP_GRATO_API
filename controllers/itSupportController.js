@@ -3,7 +3,14 @@ const User = require('../models/User');
 const { getApprovalChain } = require('../config/departmentStructure');
 const { sendITSupportEmail, sendEmail } = require('../services/emailService');
 const { getITSupportApprovalChain } = require('../config/itSupportApprovalChain');
-const fs = require('fs');
+const { 
+  saveFile, 
+  deleteFile,
+  deleteFiles,
+  STORAGE_CATEGORIES 
+} = require('../utils/localFileStorage');
+const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
 
 
@@ -65,6 +72,384 @@ const mapApprovalChainForITRequest = (rawApprovalChain) => {
     };
   });
 };
+
+
+// // Create new IT support request
+// const createITRequest = async (req, res) => {
+//   try {
+//     console.log('=== CREATE IT SUPPORT REQUEST STARTED ===');
+//     console.log('Request body:', JSON.stringify(req.body, null, 2));
+
+//     const {
+//       ticketNumber,
+//       requestType,
+//       title,
+//       description,
+//       category,
+//       subcategory,
+//       priority,
+//       urgency,
+//       businessJustification,
+//       businessImpact,
+//       location,
+//       contactInfo,
+//       preferredContactMethod,
+//       requestedItems,
+//       deviceDetails,
+//       issueDetails,
+//       troubleshootingAttempted,
+//       troubleshootingSteps
+//     } = req.body;
+
+//     // Validate required fields
+//     if (!ticketNumber) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Ticket number is required'
+//       });
+//     }
+
+//     if (!title || title.length < 5) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Title must be at least 5 characters long'
+//       });
+//     }
+
+//     // Enhanced description validation and generation
+//     let finalDescription = description;
+    
+//     if (!finalDescription || finalDescription.length < 10) {
+//       // Try to create a meaningful description from available data
+//       if (businessJustification && businessJustification.length >= 10) {
+//         finalDescription = businessJustification;
+//       } else {
+//         // Parse requested items if available
+//         let parsedRequestedItems = [];
+//         try {
+//           if (requestedItems) {
+//             parsedRequestedItems = typeof requestedItems === 'string' ? JSON.parse(requestedItems) : requestedItems;
+//           }
+//         } catch (e) {
+//           // Continue with empty array
+//         }
+        
+//         if (parsedRequestedItems && parsedRequestedItems.length > 0) {
+//           const itemNames = parsedRequestedItems
+//             .filter(item => item.item)
+//             .map(item => item.item)
+//             .join(', ');
+          
+//           finalDescription = `${requestType === 'material_request' ? 'Material request' : 'Technical support'} for: ${itemNames}`;
+          
+//           if (businessJustification) {
+//             finalDescription += `. ${businessJustification}`;
+//           }
+//         } else {
+//           finalDescription = requestType === 'material_request' 
+//             ? 'Material request for IT equipment and supplies'
+//             : 'Technical support request for IT assistance';
+          
+//           if (title && title.length >= 5) {
+//             finalDescription = `${finalDescription}: ${title}`;
+//           }
+//         }
+//       }
+//     }
+
+//     // Final check - ensure we have at least 10 characters
+//     if (!finalDescription || finalDescription.length < 10) {
+//       finalDescription = `IT ${requestType === 'material_request' ? 'Material' : 'Support'} Request - ${new Date().toLocaleDateString()}`;
+//     }
+
+//     // FIXED: Validate and set proper category
+//     let validCategory = category;
+//     if (!validCategory || validCategory === 'undefined') {
+//       // Set default category based on request type
+//       validCategory = requestType === 'material_request' ? 'hardware' : 'other';
+//     }
+
+//     // Validate category against enum values
+//     const validCategories = ['hardware', 'software', 'network', 'mobile', 'security', 'accessories', 'other'];
+//     if (!validCategories.includes(validCategory)) {
+//       validCategory = 'other'; // Default fallback
+//     }
+
+//     // FIXED: Validate and set proper subcategory
+//     let validSubcategory = subcategory;
+//     if (!validSubcategory || validSubcategory === 'undefined') {
+//       // Set default subcategory based on category
+//       const defaultSubcategories = {
+//         'hardware': 'computer',
+//         'software': 'application',
+//         'network': 'connectivity',
+//         'mobile': 'device',
+//         'security': 'access',
+//         'accessories': 'peripheral',
+//         'other': 'general'
+//       };
+//       validSubcategory = defaultSubcategories[validCategory] || 'general';
+//     }
+
+//     console.log('Final description:', finalDescription);
+//     console.log('Valid category:', validCategory);
+//     console.log('Valid subcategory:', validSubcategory);
+
+//     // Get user details
+//     const employee = await User.findById(req.user.userId);
+//     if (!employee) {
+//       return res.status(404).json({ 
+//         success: false, 
+//         message: 'Employee not found' 
+//       });
+//     }
+
+//     console.log('Employee details:', {
+//       fullName: employee.fullName,
+//       department: employee.department,
+//       email: employee.email
+//     });
+
+//     // Parse complex fields if they're strings
+//     let parsedRequestedItems = [];
+//     let parsedDeviceDetails = {};
+//     let parsedIssueDetails = {};
+//     let parsedContactInfo = {};
+//     let parsedTroubleshootingSteps = [];
+
+//     try {
+//       if (requestedItems) {
+//         parsedRequestedItems = typeof requestedItems === 'string' ? JSON.parse(requestedItems) : requestedItems;
+//       }
+//       if (deviceDetails) {
+//         parsedDeviceDetails = typeof deviceDetails === 'string' ? JSON.parse(deviceDetails) : deviceDetails;
+//       }
+//       if (issueDetails) {
+//         parsedIssueDetails = typeof issueDetails === 'string' ? JSON.parse(issueDetails) : issueDetails;
+//       }
+//       if (contactInfo) {
+//         parsedContactInfo = typeof contactInfo === 'string' ? JSON.parse(contactInfo) : contactInfo;
+//       }
+//       if (troubleshootingSteps) {
+//         parsedTroubleshootingSteps = typeof troubleshootingSteps === 'string' ? JSON.parse(troubleshootingSteps) : troubleshootingSteps;
+//       }
+//     } catch (error) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid data format in request fields'
+//       });
+//     }
+
+//     // Validate request type specific fields
+//     if (requestType === 'material_request') {
+//       if (!parsedRequestedItems || !Array.isArray(parsedRequestedItems) || parsedRequestedItems.length === 0) {
+//         return res.status(400).json({
+//           success: false,
+//           message: 'At least one item must be specified for material requests'
+//         });
+//       }
+//     }
+
+//     // ===== FIXED: Generate approval chain using employee EMAIL (not name) =====
+//     console.log('Generating approval chain...');
+//     const rawApprovalChain = getITSupportApprovalChain(employee.email);
+
+//     if (!rawApprovalChain || rawApprovalChain.length === 0) {
+//       console.error('❌ Failed to generate approval chain');
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Unable to determine approval chain. Please contact HR for assistance.'
+//       });
+//     }
+
+//     console.log(`✓ Raw approval chain generated with ${rawApprovalChain.length} levels`);
+    
+//     // ===== FIXED: Map approval chain properly =====
+//     let mappedApprovalChain;
+//     try {
+//       mappedApprovalChain = mapApprovalChainForITRequest(rawApprovalChain);
+//       console.log('✓ Approval chain mapped successfully');
+//       console.log('Final mapped chain:', JSON.stringify(mappedApprovalChain, null, 2));
+//     } catch (mappingError) {
+//       console.error('❌ Approval chain mapping failed:', mappingError);
+//       return res.status(500).json({
+//         success: false,
+//         message: 'System error: Failed to map approval chain',
+//         error: mappingError.message
+//       });
+//     }
+
+//     // Process attachments if any
+//     let attachments = [];
+//     if (req.files && req.files.length > 0) {
+//       for (const file of req.files) {
+//         try {
+//           const fileName = `${Date.now()}-${file.originalname}`;
+//           const uploadDir = path.join(__dirname, '../uploads/it-support');
+//           const filePath = path.join(uploadDir, fileName);
+
+//           // Ensure directory exists
+//           await fs.promises.mkdir(uploadDir, { recursive: true });
+
+//           // Move file to permanent location
+//           if (file.path) {
+//             await fs.promises.rename(file.path, filePath);
+//           }
+
+//           attachments.push({
+//             name: file.originalname,
+//             url: `/uploads/it-support/${fileName}`,
+//             publicId: fileName,
+//             size: file.size,
+//             mimetype: file.mimetype
+//           });
+//         } catch (fileError) {
+//           console.error('Error processing file:', file.originalname, fileError);
+//         }
+//       }
+//     }
+
+//     // Calculate total estimated cost for material requests
+//     let totalEstimatedCost = 0;
+//     if (requestType === 'material_request' && parsedRequestedItems.length > 0) {
+//       totalEstimatedCost = parsedRequestedItems.reduce((total, item) => {
+//         return total + ((item.estimatedCost || 0) * (item.quantity || 1));
+//       }, 0);
+//     }
+
+//     // ===== FIXED: Create the IT support request with properly mapped approval chain =====
+//     const request = new ITSupportRequest({
+//       ticketNumber,
+//       employee: req.user.userId,
+//       requestType,
+//       title,
+//       description: finalDescription,
+//       department: employee.department,
+//       category: validCategory, 
+//       subcategory: validSubcategory, 
+//       priority: priority || 'medium',
+//       urgency: urgency || 'normal',
+//       businessJustification: businessJustification || '',
+//       businessImpact: businessImpact || '',
+//       location: location || 'Office',
+//       contactInfo: {
+//         phone: parsedContactInfo.phone || employee.phone || '',
+//         email: employee.email,
+//         alternateContact: parsedContactInfo.alternateContact || ''
+//       },
+//       preferredContactMethod: preferredContactMethod || 'email',
+//       requestedItems: parsedRequestedItems,
+//       totalEstimatedCost,
+//       deviceDetails: parsedDeviceDetails,
+//       issueDetails: parsedIssueDetails,
+//       troubleshootingAttempted: troubleshootingAttempted === 'true' || troubleshootingAttempted === true,
+//       troubleshootingSteps: parsedTroubleshootingSteps,
+//       attachments,
+//       status: 'pending_supervisor',
+//       submittedBy: employee.email,
+//       submittedAt: new Date(),
+//       // ✅ Use properly mapped approval chain
+//       approvalChain: mappedApprovalChain,
+//       slaMetrics: {
+//         submittedDate: new Date(),
+//         targetResponseTime: priority === 'critical' ? 4 : priority === 'high' ? 8 : 24, 
+//         targetResolutionTime: priority === 'critical' ? 24 : priority === 'high' ? 48 : 120, 
+//         slaBreached: false
+//       }
+//     });
+
+//     await request.save();
+
+//     console.log('IT support request created successfully:', {
+//       id: request._id,
+//       ticketNumber: request.ticketNumber,
+//       status: request.status,
+//       description: finalDescription,
+//       approvalChainLevels: mappedApprovalChain.length
+//     });
+
+//     // Send notifications
+//     const notifications = [];
+
+//     // Notify first approver in chain
+//     if (mappedApprovalChain.length > 0) {
+//       const firstApprover = mappedApprovalChain[0];
+      
+//       notifications.push(
+//         sendITSupportEmail.newRequestToSupervisor(
+//           firstApprover.approver.email,
+//           employee.fullName,
+//           requestType,
+//           title,
+//           request.ticketNumber,
+//           priority || 'medium',
+//           totalEstimatedCost || null,
+//           urgency || 'normal'
+//         ).catch(error => {
+//           console.error('Failed to send supervisor notification:', error);
+//           return { error, type: 'supervisor' };
+//         })
+//       );
+//     }
+
+//     // Notify employee of submission
+//     notifications.push(
+//       sendITSupportEmail.statusUpdateToEmployee(
+//         employee.email,
+//         request.ticketNumber,
+//         'pending_supervisor',
+//         'Your IT support request has been successfully submitted and is now awaiting supervisor approval.',
+//         'System',
+//         'You will receive email notifications as your request progresses through the approval process.'
+//       ).catch(error => {
+//         console.error('Failed to send employee notification:', error);
+//         return { error, type: 'employee' };
+//       })
+//     );
+
+//     // Wait for all notifications to complete
+//     const notificationResults = await Promise.allSettled(notifications);
+
+//     // Populate the request for response
+//     await request.populate('employee', 'fullName email department');
+
+//     console.log('=== IT REQUEST CREATED SUCCESSFULLY ===\n');
+    
+//     res.json({
+//       success: true,
+//       message: 'IT support request submitted successfully',
+//       data: request,
+//       notifications: {
+//         sent: notificationResults.filter(r => r.status === 'fulfilled').length,
+//         failed: notificationResults.filter(r => r.status === 'rejected').length
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('Create IT request error:', error);
+//     console.error('Error stack:', error.stack);
+    
+//     // Clean up uploaded files on error
+//     if (req.files && req.files.length > 0) {
+//       await Promise.allSettled(
+//         req.files.map(file => {
+//           if (file.path && fs.existsSync(file.path)) {
+//             return fs.promises.unlink(file.path).catch(e => 
+//               console.error('File cleanup failed:', e)
+//             );
+//           }
+//         })
+//       );
+//     }
+    
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to create IT support request',
+//       error: error.message
+//     });
+//   }
+// };
+
 
 
 // Create new IT support request
@@ -155,23 +540,21 @@ const createITRequest = async (req, res) => {
       finalDescription = `IT ${requestType === 'material_request' ? 'Material' : 'Support'} Request - ${new Date().toLocaleDateString()}`;
     }
 
-    // FIXED: Validate and set proper category
+    // Validate and set proper category
     let validCategory = category;
     if (!validCategory || validCategory === 'undefined') {
-      // Set default category based on request type
       validCategory = requestType === 'material_request' ? 'hardware' : 'other';
     }
 
     // Validate category against enum values
     const validCategories = ['hardware', 'software', 'network', 'mobile', 'security', 'accessories', 'other'];
     if (!validCategories.includes(validCategory)) {
-      validCategory = 'other'; // Default fallback
+      validCategory = 'other';
     }
 
-    // FIXED: Validate and set proper subcategory
+    // Validate and set proper subcategory
     let validSubcategory = subcategory;
     if (!validSubcategory || validSubcategory === 'undefined') {
-      // Set default subcategory based on category
       const defaultSubcategories = {
         'hardware': 'computer',
         'software': 'application',
@@ -243,7 +626,7 @@ const createITRequest = async (req, res) => {
       }
     }
 
-    // ===== FIXED: Generate approval chain using employee EMAIL (not name) =====
+    // Generate approval chain using employee EMAIL
     console.log('Generating approval chain...');
     const rawApprovalChain = getITSupportApprovalChain(employee.email);
 
@@ -257,7 +640,7 @@ const createITRequest = async (req, res) => {
 
     console.log(`✓ Raw approval chain generated with ${rawApprovalChain.length} levels`);
     
-    // ===== FIXED: Map approval chain properly =====
+    // Map approval chain properly
     let mappedApprovalChain;
     try {
       mappedApprovalChain = mapApprovalChainForITRequest(rawApprovalChain);
@@ -272,34 +655,38 @@ const createITRequest = async (req, res) => {
       });
     }
 
-    // Process attachments if any
+    // ===== FIXED: Process attachments using new local file storage =====
     let attachments = [];
     if (req.files && req.files.length > 0) {
+      console.log(`📎 Processing ${req.files.length} attachments...`);
+      
       for (const file of req.files) {
         try {
-          const fileName = `${Date.now()}-${file.originalname}`;
-          const uploadDir = path.join(__dirname, '../uploads/it-support');
-          const filePath = path.join(uploadDir, fileName);
-
-          // Ensure directory exists
-          await fs.promises.mkdir(uploadDir, { recursive: true });
-
-          // Move file to permanent location
-          if (file.path) {
-            await fs.promises.rename(file.path, filePath);
-          }
-
+          // Use local file storage service
+          const fileMetadata = await saveFile(
+            file,
+            'it-support',     // category
+            'attachments',    // subfolder
+            null              // let it generate unique filename
+          );
+          
           attachments.push({
             name: file.originalname,
-            url: `/uploads/it-support/${fileName}`,
-            publicId: fileName,
-            size: file.size,
+            url: fileMetadata.url,
+            publicId: fileMetadata.publicId,
+            localPath: fileMetadata.localPath, // Store local path for deletion
+            size: fileMetadata.bytes,
             mimetype: file.mimetype
           });
+          
+          console.log(`   ✓ Saved: ${file.originalname} (${(fileMetadata.bytes / 1024).toFixed(2)} KB)`);
         } catch (fileError) {
-          console.error('Error processing file:', file.originalname, fileError);
+          console.error('❌ Error processing file:', file.originalname, fileError);
+          // Continue with other files even if one fails
         }
       }
+      
+      console.log(`✓ Successfully processed ${attachments.length}/${req.files.length} attachments`);
     }
 
     // Calculate total estimated cost for material requests
@@ -310,7 +697,7 @@ const createITRequest = async (req, res) => {
       }, 0);
     }
 
-    // ===== FIXED: Create the IT support request with properly mapped approval chain =====
+    // Create the IT support request with properly mapped approval chain
     const request = new ITSupportRequest({
       ticketNumber,
       employee: req.user.userId,
@@ -337,11 +724,10 @@ const createITRequest = async (req, res) => {
       issueDetails: parsedIssueDetails,
       troubleshootingAttempted: troubleshootingAttempted === 'true' || troubleshootingAttempted === true,
       troubleshootingSteps: parsedTroubleshootingSteps,
-      attachments,
+      attachments, // Uses new local storage format with localPath
       status: 'pending_supervisor',
       submittedBy: employee.email,
       submittedAt: new Date(),
-      // ✅ Use properly mapped approval chain
       approvalChain: mappedApprovalChain,
       slaMetrics: {
         submittedDate: new Date(),
@@ -358,7 +744,8 @@ const createITRequest = async (req, res) => {
       ticketNumber: request.ticketNumber,
       status: request.status,
       description: finalDescription,
-      approvalChainLevels: mappedApprovalChain.length
+      approvalChainLevels: mappedApprovalChain.length,
+      attachmentsCount: attachments.length
     });
 
     // Send notifications
@@ -422,12 +809,13 @@ const createITRequest = async (req, res) => {
     console.error('Create IT request error:', error);
     console.error('Error stack:', error.stack);
     
-    // Clean up uploaded files on error
+    // ===== FIXED: Clean up temp files on error =====
     if (req.files && req.files.length > 0) {
+      console.log(`🧹 Cleaning up ${req.files.length} temp files after error...`);
       await Promise.allSettled(
         req.files.map(file => {
-          if (file.path && fs.existsSync(file.path)) {
-            return fs.promises.unlink(file.path).catch(e => 
+          if (file.path && fsSync.existsSync(file.path)) {
+            return fs.unlink(file.path).catch(e => 
               console.error('File cleanup failed:', e)
             );
           }
@@ -2384,65 +2772,125 @@ const getApprovalChainPreview = async (req, res) => {
   }
 };
 
+// const deleteITRequest = async (req, res) => {
+//     try {
+//       const { requestId } = req.params;
+  
+//       const request = await ITSupportRequest.findById(requestId);
+  
+//       if (!request) {
+//         return res.status(404).json({
+//           success: false,
+//           message: 'Request not found'
+//         });
+//       }
+  
+//       // Check permissions
+//       const user = await User.findById(req.user.userId);
+//       const canDelete = 
+//         request.employee.equals(req.user.userId) || 
+//         user.role === 'admin'; 
+  
+//       if (!canDelete) {
+//         return res.status(403).json({
+//           success: false,
+//           message: 'Access denied'
+//         });
+//       }
+  
+//       // Only allow deletion of draft requests
+//       if (request.status !== 'draft') {
+//         return res.status(400).json({
+//           success: false,
+//           message: 'Can only delete draft requests'
+//         });
+//       }
+  
+//       // Clean up attachments if any
+//       if (request.attachments && request.attachments.length > 0) {
+//         await Promise.allSettled(
+//           request.attachments.map(attachment => {
+//             const filePath = path.join(__dirname, '../uploads/it-support', attachment.publicId);
+//             return fs.promises.unlink(filePath).catch(e => console.error('File cleanup failed:', e));
+//           })
+//         );
+//       }
+  
+//       await ITSupportRequest.findByIdAndDelete(requestId);
+  
+//       res.json({
+//         success: true,
+//         message: 'Draft IT request deleted successfully'
+//       });
+  
+//     } catch (error) {
+//       console.error('Delete IT request error:', error);
+//       res.status(500).json({
+//         success: false,
+//         message: 'Failed to delete IT request',
+//         error: error.message
+//       });
+//     }
+// };
+
+
+// Add new function for deleting IT request with file cleanup:
 const deleteITRequest = async (req, res) => {
-    try {
-      const { requestId } = req.params;
-  
-      const request = await ITSupportRequest.findById(requestId);
-  
-      if (!request) {
-        return res.status(404).json({
-          success: false,
-          message: 'Request not found'
-        });
-      }
-  
-      // Check permissions
-      const user = await User.findById(req.user.userId);
-      const canDelete = 
-        request.employee.equals(req.user.userId) || 
-        user.role === 'admin'; 
-  
-      if (!canDelete) {
-        return res.status(403).json({
-          success: false,
-          message: 'Access denied'
-        });
-      }
-  
-      // Only allow deletion of draft requests
-      if (request.status !== 'draft') {
-        return res.status(400).json({
-          success: false,
-          message: 'Can only delete draft requests'
-        });
-      }
-  
-      // Clean up attachments if any
-      if (request.attachments && request.attachments.length > 0) {
-        await Promise.allSettled(
-          request.attachments.map(attachment => {
-            const filePath = path.join(__dirname, '../uploads/it-support', attachment.publicId);
-            return fs.promises.unlink(filePath).catch(e => console.error('File cleanup failed:', e));
-          })
-        );
-      }
-  
-      await ITSupportRequest.findByIdAndDelete(requestId);
-  
-      res.json({
-        success: true,
-        message: 'Draft IT request deleted successfully'
-      });
-  
-    } catch (error) {
-      console.error('Delete IT request error:', error);
-      res.status(500).json({
+  try {
+    const { requestId } = req.params;
+
+    const request = await ITSupportRequest.findById(requestId);
+
+    if (!request) {
+      return res.status(404).json({
         success: false,
-        message: 'Failed to delete IT request',
-        error: error.message
+        message: 'Request not found'
       });
     }
+
+    // Check permissions
+    const user = await User.findById(req.user.userId);
+    const canDelete = 
+      request.employee.equals(req.user.userId) || 
+      user.role === 'admin'; 
+
+    if (!canDelete) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    // Only allow deletion of draft requests
+    if (request.status !== 'draft') {
+      return res.status(400).json({
+        success: false,
+        message: 'Can only delete draft requests'
+      });
+    }
+
+    // Clean up attachments using new storage service
+    if (request.attachments && request.attachments.length > 0) {
+      console.log(`🗑️  Deleting ${request.attachments.length} attachments...`);
+      const deleteResult = await deleteFiles(request.attachments);
+      console.log(`   ✓ Cleanup result:`, deleteResult);
+    }
+
+    await ITSupportRequest.findByIdAndDelete(requestId);
+
+    res.json({
+      success: true,
+      message: 'Draft IT request deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete IT request error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete IT request',
+      error: error.message
+    });
+  }
 };
 
 // Export all functions

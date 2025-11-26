@@ -1,78 +1,74 @@
 const mongoose = require('mongoose');
 
-const ActionItemSchema = new mongoose.Schema({
+const actionItemSchema = new mongoose.Schema({
   title: {
     type: String,
-    required: [true, 'Task title is required'],
+    required: true,
     trim: true,
-    minlength: [3, 'Title must be at least 3 characters'],
-    maxlength: [200, 'Title cannot exceed 200 characters']
+    maxlength: 200
   },
   description: {
     type: String,
-    required: [true, 'Task description is required'],
-    trim: true,
-    minlength: [10, 'Description must be at least 10 characters']
+    required: true,
+    trim: true
   },
   priority: {
     type: String,
     enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'],
-    required: [true, 'Priority is required'],
-    default: 'MEDIUM'
+    default: 'MEDIUM',
+    required: true
   },
   status: {
     type: String,
     enum: [
-      'Pending Approval',
-      'Not Started',
-      'In Progress',
-      'Pending L1 Grading',      
-      'Pending L2 Review', 
-      'Pending L3 Final Approval', 
-      'Completed',
-      'Rejected',
-      'On Hold'
+      'Not Started', 
+      'Pending Approval', 
+      'In Progress', 
+      'Pending L1 Grading',          // NEW: Level 1 approval
+      'Pending L2 Review',            // NEW: Level 2 approval
+      'Pending L3 Final Approval',    // NEW: Level 3 approval
+      'Pending Completion Approval',  // KEEP: For backward compatibility
+      'Completed', 
+      'On Hold', 
+      'Rejected'
     ],
-    default: 'Pending Approval'
+    default: 'Not Started'
   },
-  progress: {
+  dueDate: {
+    type: Date,
+    required: true
+  },
+  
+  // Can be linked to either milestone or sub-milestone
+  projectId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Project',
+    default: null
+  },
+  milestoneId: {
+    type: mongoose.Schema.Types.ObjectId,
+    default: null
+  },
+  subMilestoneId: {
+    type: mongoose.Schema.Types.ObjectId,
+    default: null
+  },
+  
+  // Task weight (for milestone/sub-milestone contribution)
+  taskWeight: {
     type: Number,
     min: 0,
     max: 100,
     default: 0
   },
-  dueDate: {
-    type: Date,
-    required: [true, 'Due date is required']
-  },
   
-  // Assignment - Support multiple assignees
+  // Multi-assignee support with three-level approval chain
   assignedTo: [{
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true
     },
-    // Individual grading per assignee
-    completionGrade: {
-      score: {
-        type: Number,
-        min: 1.0,  // Changed from 1
-        max: 5.0,  // Changed from 5
-        default: null
-      },
-      effectiveScore: {
-        type: Number,
-        default: null
-      },
-      qualityNotes: String,
-      gradedBy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
-      },
-      gradedAt: Date
-    },
-    // Individual completion tracking
     completionStatus: {
       type: String,
       enum: ['pending', 'submitted', 'approved', 'rejected'],
@@ -89,8 +85,30 @@ const ActionItemSchema = new mongoose.Schema({
     }],
     completionNotes: String,
     submittedAt: Date,
-
-    // Three-level approval chain
+    approvedAt: Date,
+    rejectedAt: Date,
+    rejectionReason: String,
+    
+    // Individual grading per assignee
+    completionGrade: {
+      score: {
+        type: Number,
+        min: 1.0,
+        max: 5.0
+      },
+      effectiveScore: {
+        type: Number,
+        default: null
+      },
+      qualityNotes: String,
+      gradedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      gradedAt: Date
+    },
+    
+    // NEW: Three-level approval chain per assignee
     completionApprovalChain: [{
       level: {
         type: Number,
@@ -128,14 +146,14 @@ const ActionItemSchema = new mongoose.Schema({
     required: true
   },
   
-  // Immediate supervisor
+  // Supervisor who will approve/grade the task
   supervisor: {
     name: String,
     email: String,
     department: String
   },
   
-  // Creation approval
+  // Creation approval workflow
   creationApproval: {
     status: {
       type: String,
@@ -146,36 +164,15 @@ const ActionItemSchema = new mongoose.Schema({
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User'
     },
+    rejectedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
     approvalDate: Date,
     comments: String
   },
   
-  // Milestone relationship
-  milestoneId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Project.milestones',
-    default: null
-  },
-  
-  // Task weight (percentage of milestone)
-  taskWeight: {
-    type: Number,
-    min: 0,
-    max: 100,
-    default: 0,
-    required: function() {
-      return this.milestoneId != null;
-    }
-  },
-  
-  // Project Association
-  projectId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Project',
-    default: null
-  },
-  
-  // Link to multiple KPIs
+  // KPI Linking
   linkedKPIs: [{
     kpiDocId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -188,29 +185,52 @@ const ActionItemSchema = new mongoose.Schema({
     },
     kpiTitle: String,
     kpiWeight: Number,
-    // Track contribution to this specific KPI
     contributionToKPI: {
       type: Number,
+      min: 0,
+      max: 100,
       default: 0
     }
   }],
   
+  // Overall task completion grade
+  completionGrade: {
+    score: {
+      type: Number,
+      min: 1.0,
+      max: 5.0
+    },
+    qualityNotes: String,
+    gradedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    gradedAt: Date
+  },
+  
+  progress: {
+    type: Number,
+    min: 0,
+    max: 100,
+    default: 0
+  },
+  
+  completedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  completedAt: Date,
+  
   notes: {
     type: String,
-    default: ''
+    trim: true
   },
   tags: [{
     type: String,
     trim: true
   }],
   
-  completedDate: Date,
-  completedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-  
-  // Activity log
+  // Activity log with new actions
   activityLog: [{
     action: {
       type: String,
@@ -229,7 +249,9 @@ const ActionItemSchema = new mongoose.Schema({
         'l3_approved',            // NEW
         'completion_approved',
         'completion_rejected',
-        'reassigned'
+        'assignee_approved',
+        'reassigned',
+        'completed'
       ]
     },
     performedBy: {
@@ -251,161 +273,31 @@ const ActionItemSchema = new mongoose.Schema({
 });
 
 // Indexes
-ActionItemSchema.index({ 'assignedTo.user': 1, status: 1 });
-ActionItemSchema.index({ 'supervisor.email': 1, status: 1 });
-ActionItemSchema.index({ projectId: 1, status: 1 });
-ActionItemSchema.index({ milestoneId: 1, status: 1 });
-ActionItemSchema.index({ dueDate: 1, status: 1 });
-ActionItemSchema.index({ priority: 1, status: 1 });
-ActionItemSchema.index({ status: 1, createdAt: -1 });
-ActionItemSchema.index({ 'linkedKPIs.kpiDocId': 1 });
-ActionItemSchema.index({ 'assignedTo.completionApprovalChain.approver.userId': 1 });
+actionItemSchema.index({ status: 1 });
+actionItemSchema.index({ priority: 1 });
+actionItemSchema.index({ dueDate: 1 });
+actionItemSchema.index({ 'assignedTo.user': 1 });
+actionItemSchema.index({ createdBy: 1 });
+actionItemSchema.index({ projectId: 1 });
+actionItemSchema.index({ milestoneId: 1 });
+actionItemSchema.index({ subMilestoneId: 1 });
+actionItemSchema.index({ 'supervisor.email': 1 });
+actionItemSchema.index({ createdAt: -1 });
+actionItemSchema.index({ 'assignedTo.completionApprovalChain.approver.userId': 1 }); // NEW
+
+// Virtual for checking if overdue
+actionItemSchema.virtual('isOverdue').get(function() {
+  if (this.status === 'Completed') return false;
+  return new Date() > this.dueDate;
+});
 
 // Virtual for display ID
-ActionItemSchema.virtual('displayId').get(function() {
+actionItemSchema.virtual('displayId').get(function() {
   return `TASK-${this._id.toString().slice(-6).toUpperCase()}`;
 });
 
-// Virtual for overdue status
-ActionItemSchema.virtual('isOverdue').get(function() {
-  if (['Completed'].includes(this.status)) return false;
-  return this.dueDate && new Date(this.dueDate) < new Date();
-});
-
-// Virtual for overall completion status
-ActionItemSchema.virtual('overallCompletionStatus').get(function() {
-  if (this.assignedTo.length === 0) return 'pending';
-  
-  const allApproved = this.assignedTo.every(a => a.completionStatus === 'approved');
-  const anyRejected = this.assignedTo.some(a => a.completionStatus === 'rejected');
-  const anySubmitted = this.assignedTo.some(a => a.completionStatus === 'submitted');
-  
-  if (allApproved) return 'approved';
-  if (anyRejected) return 'rejected';
-  if (anySubmitted) return 'submitted';
-  return 'pending';
-});
-
-// Methods
-ActionItemSchema.methods.logActivity = function(action, performedBy, details, oldValue = null, newValue = null) {
-  this.activityLog.push({
-    action,
-    performedBy,
-    timestamp: new Date(),
-    details,
-    oldValue,
-    newValue
-  });
-};
-
-ActionItemSchema.methods.approveCreation = function(userId, comments) {
-  const oldStatus = this.status;
-  this.status = 'Not Started';
-  this.creationApproval.status = 'approved';
-  this.creationApproval.approvedBy = userId;
-  this.creationApproval.approvalDate = new Date();
-  this.creationApproval.comments = comments || '';
-  
-  this.logActivity('creation_approved', userId, 
-    `Task creation approved${comments ? ': ' + comments : ''}`, oldStatus, this.status);
-};
-
-ActionItemSchema.methods.rejectCreation = function(userId, comments) {
-  const oldStatus = this.status;
-  this.status = 'Rejected';
-  this.creationApproval.status = 'rejected';
-  this.creationApproval.approvedBy = userId;
-  this.creationApproval.approvalDate = new Date();
-  this.creationApproval.comments = comments || 'Task creation rejected';
-  
-  this.logActivity('creation_rejected', userId, 
-    `Task creation rejected: ${comments}`, oldStatus, this.status);
-};
-
-// Submit completion for specific assignee
-ActionItemSchema.methods.submitCompletionForAssignee = function(userId, assigneeUserId, documents, notes) {
-  const assignee = this.assignedTo.find(a => a.user.equals(assigneeUserId));
-  if (!assignee) {
-    throw new Error('Assignee not found');
-  }
-
-  assignee.completionStatus = 'submitted';
-  assignee.completionDocuments = documents || [];
-  assignee.completionNotes = notes || '';
-  assignee.submittedAt = new Date();
-
-  // Update task status if this is the first submission
-  if (this.status !== 'Pending Completion Approval') {
-    this.status = 'Pending Completion Approval';
-  }
-
-  this.logActivity('submitted_for_completion', userId, 
-    `Completion submitted by assignee ${assigneeUserId}`);
-};
-
-// Approve completion for specific assignee
-ActionItemSchema.methods.approveCompletionForAssignee = async function(userId, assigneeUserId, grade, qualityNotes, comments) {
-  const assignee = this.assignedTo.find(a => a.user.equals(assigneeUserId));
-  if (!assignee) {
-    throw new Error('Assignee not found');
-  }
-
-  // ✅ Calculate effective score with decimal precision
-  const effectiveScore = parseFloat(((grade / 5.0) * this.taskWeight).toFixed(2));
-
-  assignee.completionStatus = 'approved';
-  assignee.completionGrade = {
-    score: parseFloat(grade.toFixed(1)), // Store with 1 decimal place
-    effectiveScore: effectiveScore,
-    qualityNotes: qualityNotes || '',
-    gradedBy: userId,
-    gradedAt: new Date()
-  };
-
-  this.logActivity('completion_approved', userId, 
-    `Completion approved for assignee with grade ${grade.toFixed(1)}/5.0 (Effective: ${effectiveScore}%)`);
-
-  // Check if all assignees are approved
-  const allApproved = this.assignedTo.every(a => a.completionStatus === 'approved');
-  if (allApproved) {
-    this.status = 'Completed';
-    this.completedDate = new Date();
-    this.completedBy = userId;
-    this.progress = 100;
-  }
-
-  // Update KPI achievements for this assignee
-  await this.updateKPIAchievements(assigneeUserId, grade);
-
-  // Update milestone and project progress
-  if (this.milestoneId) {
-    await this.updateMilestoneProgress();
-  }
-};
-
-// Reject completion for specific assignee
-ActionItemSchema.methods.rejectCompletionForAssignee = function(userId, assigneeUserId, comments) {
-  const assignee = this.assignedTo.find(a => a.user.equals(assigneeUserId));
-  if (!assignee) {
-    throw new Error('Assignee not found');
-  }
-
-  assignee.completionStatus = 'rejected';
-  assignee.completionGrade = {
-    qualityNotes: comments || 'Needs revision',
-    gradedBy: userId,
-    gradedAt: new Date()
-  };
-
-  // Set status back to In Progress
-  this.status = 'In Progress';
-
-  this.logActivity('completion_rejected', userId, 
-    `Completion rejected for assignee: ${comments}`);
-};
-
-// Update KPI achievements - with decimal support
-ActionItemSchema.methods.updateKPIAchievements = async function(assigneeUserId, grade) {
+// NEW: Method to update KPI achievements with decimal support
+actionItemSchema.methods.updateKPIAchievements = async function(assigneeUserId, grade) {
   const QuarterlyKPI = mongoose.model('QuarterlyKPI');
 
   for (const linkedKPI of this.linkedKPIs) {
@@ -415,6 +307,7 @@ ActionItemSchema.methods.updateKPIAchievements = async function(assigneeUserId, 
     const kpi = kpiDoc.kpis[linkedKPI.kpiIndex];
     if (!kpi) continue;
 
+    // Calculate contribution: (grade/5.0) × (kpiWeight/100) × 100
     const contribution = parseFloat((((grade / 5.0) * (linkedKPI.kpiWeight / 100)) * 100).toFixed(2));
     
     kpi.achievement = (kpi.achievement || 0) + contribution;
@@ -426,9 +319,8 @@ ActionItemSchema.methods.updateKPIAchievements = async function(assigneeUserId, 
   }
 };
 
-
-// Update milestone progress
-ActionItemSchema.methods.updateMilestoneProgress = async function() {
+// NEW: Method to update milestone progress
+actionItemSchema.methods.updateMilestoneProgress = async function() {
   if (!this.milestoneId) return;
 
   const Project = mongoose.model('Project');
@@ -440,53 +332,1061 @@ ActionItemSchema.methods.updateMilestoneProgress = async function() {
   await project.save();
 };
 
-ActionItemSchema.methods.updateProgress = function(progress, userId) {
-  const oldProgress = this.progress;
-  this.progress = Math.max(0, Math.min(100, progress));
-  
-  if (this.progress === 0 && this.status === 'Not Started') {
-    // Keep as Not Started
-  } else if (this.progress > 0 && this.progress < 100 && this.status === 'Not Started') {
-    this.status = 'In Progress';
+// UPDATED: Method for three-level approval - Level 1 grading
+actionItemSchema.methods.approveCompletionForAssignee = async function(userId, assigneeId, grade, qualityNotes, comments) {
+  const assignee = this.assignedTo.find(a => a.user.equals(assigneeId));
+  if (!assignee) {
+    throw new Error('Assignee not found');
   }
+
+  // Calculate effective score with decimal precision
+  const effectiveScore = parseFloat(((grade / 5.0) * this.taskWeight).toFixed(2));
+
+  assignee.completionStatus = 'approved';
+  assignee.approvedAt = new Date();
+  assignee.completionGrade = {
+    score: parseFloat(grade.toFixed(1)),
+    effectiveScore: effectiveScore,
+    qualityNotes: qualityNotes || '',
+    gradedBy: userId,
+    gradedAt: new Date()
+  };
+
+  // Update Level 1 in approval chain
+  if (assignee.completionApprovalChain && assignee.completionApprovalChain.length > 0) {
+    const l1 = assignee.completionApprovalChain.find(a => a.level === 1);
+    if (l1) {
+      l1.status = 'approved';
+      l1.grade = parseFloat(grade.toFixed(1));
+      l1.comments = qualityNotes || comments;
+      l1.reviewedAt = new Date();
+    }
+  }
+
+  this.logActivity('l1_graded', userId, 
+    `L1 graded with ${grade.toFixed(1)}/5.0 (Effective: ${effectiveScore}%)`);
+
+  // Check if all assignees have been approved
+  const allApproved = this.assignedTo.every(a => a.completionStatus === 'approved');
   
-  this.logActivity('progress_updated', userId, 
-    `Progress updated from ${oldProgress}% to ${this.progress}%`, oldProgress, this.progress);
+  if (allApproved) {
+    this.status = 'Completed';
+    this.completedBy = userId;
+    this.completedAt = new Date();
+    this.progress = 100;
+
+    // Calculate overall grade (average of all assignees)
+    const totalGrade = this.assignedTo.reduce((sum, a) => sum + (a.completionGrade?.score || 0), 0);
+    const avgGrade = totalGrade / this.assignedTo.length;
+
+    this.completionGrade = {
+      score: parseFloat(avgGrade.toFixed(1)),
+      qualityNotes: qualityNotes || '',
+      gradedBy: userId,
+      gradedAt: new Date()
+    };
+
+    this.logActivity('completed', userId, 
+      `All assignees approved with average grade ${avgGrade.toFixed(1)}/5.0`);
+
+    // Update KPIs and milestone
+    await this.updateKPIAchievements(assigneeId, grade);
+    if (this.milestoneId) {
+      await this.updateMilestoneProgress();
+    }
+  } else {
+    // Check next approval level
+    const nextApprover = this.getNextPendingApprover(assignee.completionApprovalChain);
+    if (nextApprover) {
+      if (nextApprover.level === 2) {
+        this.status = 'Pending L2 Review';
+      } else if (nextApprover.level === 3) {
+        this.status = 'Pending L3 Final Approval';
+      }
+    }
+  }
 };
 
-// Update task status
-ActionItemSchema.methods.updateStatus = function(status, userId, notes) {
+// UPDATED: Rejection method
+actionItemSchema.methods.rejectCompletionForAssignee = function(userId, assigneeId, comments) {
+  const assignee = this.assignedTo.find(a => a.user.equals(assigneeId));
+  if (!assignee) {
+    throw new Error('Assignee not found');
+  }
+
+  assignee.completionStatus = 'rejected';
+  assignee.rejectedAt = new Date();
+  assignee.rejectionReason = comments;
+  
+  // Clear previous submission
+  assignee.completionDocuments = [];
+  assignee.completionNotes = '';
+  assignee.submittedAt = null;
+
+  // Reset approval chain
+  if (assignee.completionApprovalChain) {
+    assignee.completionApprovalChain.forEach(approval => {
+      if (approval.status === 'pending' || approval.status === 'approved') {
+        approval.status = 'pending';
+        approval.comments = null;
+        approval.reviewedAt = null;
+      }
+    });
+  }
+
+  this.status = 'In Progress';
+  
+  this.logActivity('completion_rejected', userId, 
+    `Completion rejected for assignee: ${comments}`);
+};
+
+// NEW: Helper method to get next pending approver
+actionItemSchema.methods.getNextPendingApprover = function(approvalChain) {
+  if (!approvalChain || approvalChain.length === 0) return null;
+  
+  for (const approval of approvalChain) {
+    if (approval.status === 'pending') {
+      return approval;
+    }
+  }
+  
+  return null;
+};
+
+// Method to log activity
+actionItemSchema.methods.logActivity = function(action, userId, details, oldValue = null, newValue = null) {
+  this.activityLog.push({
+    action,
+    performedBy: userId,
+    timestamp: new Date(),
+    details,
+    oldValue,
+    newValue
+  });
+};
+
+// Method to update status
+actionItemSchema.methods.updateStatus = function(newStatus, userId, notes = '') {
   const oldStatus = this.status;
   
-  const validStatuses = [
-    'Not Started',
-    'In Progress',
-    'Completed',
-    'On Hold'
-  ];
+  if (oldStatus === newStatus) return;
   
-  if (!validStatuses.includes(status)) {
-    throw new Error(`Invalid status: ${status}`);
-  }
+  this.status = newStatus;
   
-  this.status = status;
+  const statusMessage = `Status changed from "${oldStatus}" to "${newStatus}"${notes ? ': ' + notes : ''}`;
+  this.logActivity('status_changed', userId, statusMessage, oldStatus, newStatus);
   
-  if (status === 'Completed') {
+  if (newStatus === 'Completed') {
     this.progress = 100;
-    this.completedDate = new Date();
+    this.completedAt = new Date();
     this.completedBy = userId;
-  } else if (status === 'In Progress' && this.progress === 0) {
-    this.progress = 10;
-  } else if (status === 'Not Started') {
-    this.progress = 0;
+  } else if (newStatus === 'In Progress' && oldStatus === 'Not Started') {
+    if (this.progress === 0) {
+      this.progress = 10;
+    }
   }
-  
-  this.logActivity('status_changed', userId, 
-    `Status changed from ${oldStatus} to ${status}${notes ? ': ' + notes : ''}`,
-    oldStatus,
-    status
-  );
 };
 
-module.exports = mongoose.model('ActionItem', ActionItemSchema);
+// Method to update progress
+actionItemSchema.methods.updateProgress = function(newProgress, userId) {
+  const oldProgress = this.progress;
+  this.progress = newProgress;
+  
+  if (newProgress !== oldProgress) {
+    this.logActivity('progress_updated', userId, 
+      `Progress updated from ${oldProgress}% to ${newProgress}%`,
+      oldProgress, newProgress);
+  }
+  
+  // Auto-update status based on progress
+  if (newProgress === 0 && this.status !== 'Not Started' && this.status !== 'Pending Approval') {
+    this.status = 'Not Started';
+  } else if (newProgress > 0 && newProgress < 100 && this.status === 'Not Started') {
+    this.status = 'In Progress';
+  } else if (newProgress === 100 && !['Completed', 'Pending L1 Grading', 'Pending L2 Review', 'Pending L3 Final Approval'].includes(this.status)) {
+    this.status = 'Pending L1 Grading';
+  }
+};
+
+// Static method to get tasks by sub-milestone
+actionItemSchema.statics.getBySubMilestone = function(subMilestoneId) {
+  return this.find({ subMilestoneId })
+    .populate('assignedTo.user', 'fullName email department')
+    .populate('createdBy', 'fullName email')
+    .populate('linkedKPIs.kpiDocId')
+    .sort({ dueDate: 1, priority: -1 });
+};
+
+const ActionItem = mongoose.model('ActionItem', actionItemSchema);
+
+module.exports = ActionItem;
+
+
+
+
+
+
+
+
+
+
+
+// const mongoose = require('mongoose');
+
+// const actionItemSchema = new mongoose.Schema({
+//   title: {
+//     type: String,
+//     required: true,
+//     trim: true,
+//     maxlength: 200
+//   },
+//   description: {
+//     type: String,
+//     required: true,
+//     trim: true
+//   },
+//   priority: {
+//     type: String,
+//     enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'],
+//     default: 'MEDIUM',
+//     required: true
+//   },
+//   status: {
+//     type: String,
+//     enum: ['Not Started', 'Pending Approval', 'In Progress', 'Pending Completion Approval', 'Completed', 'On Hold', 'Rejected'],
+//     default: 'Not Started'
+//   },
+//   dueDate: {
+//     type: Date,
+//     required: true
+//   },
+  
+//   // NEW: Can be linked to either milestone or sub-milestone
+//   projectId: {
+//     type: mongoose.Schema.Types.ObjectId,
+//     ref: 'Project',
+//     default: null
+//   },
+//   milestoneId: {
+//     type: mongoose.Schema.Types.ObjectId,
+//     default: null // References project.milestones._id
+//   },
+//   subMilestoneId: {
+//     type: mongoose.Schema.Types.ObjectId,
+//     default: null // NEW: References sub-milestone._id at any level
+//   },
+  
+//   // Task weight (for milestone/sub-milestone contribution)
+//   taskWeight: {
+//     type: Number,
+//     min: 0,
+//     max: 100,
+//     default: 0
+//   },
+  
+//   // Multi-assignee support
+//   assignedTo: [{
+//     user: {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: 'User',
+//       required: true
+//     },
+//     completionStatus: {
+//       type: String,
+//       enum: ['pending', 'submitted', 'approved', 'rejected'],
+//       default: 'pending'
+//     },
+//     completionDocuments: [{
+//       name: String,
+//       url: String,
+//       publicId: String,
+//       localPath: String, // For local storage
+//       size: Number,
+//       mimetype: String,
+//       uploadedAt: Date
+//     }],
+//     completionNotes: String,
+//     submittedAt: Date,
+//     approvedAt: Date,
+//     rejectedAt: Date,
+//     rejectionReason: String,
+//     completionGrade: {
+//       score: {
+//         type: Number,
+//         min: 1.0,
+//         max: 5.0
+//       },
+//       qualityNotes: String,
+//       gradedBy: {
+//         type: mongoose.Schema.Types.ObjectId,
+//         ref: 'User'
+//       },
+//       gradedAt: Date
+//     }
+//   }],
+  
+//   createdBy: {
+//     type: mongoose.Schema.Types.ObjectId,
+//     ref: 'User',
+//     required: true
+//   },
+  
+//   // Supervisor who will approve/grade the task
+//   supervisor: {
+//     name: String,
+//     email: String,
+//     department: String
+//   },
+  
+//   // Creation approval workflow
+//   creationApproval: {
+//     status: {
+//       type: String,
+//       enum: ['pending', 'approved', 'rejected'],
+//       default: 'pending'
+//     },
+//     approvedBy: {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: 'User'
+//     },
+//     rejectedBy: {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: 'User'
+//     },
+//     approvalDate: Date,
+//     comments: String
+//   },
+  
+//   // KPI Linking
+//   linkedKPIs: [{
+//     kpiDocId: {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: 'QuarterlyKPI',
+//       required: true
+//     },
+//     kpiIndex: {
+//       type: Number,
+//       required: true
+//     },
+//     kpiTitle: String,
+//     kpiWeight: Number,
+//     contributionToKPI: {
+//       type: Number,
+//       min: 0,
+//       max: 100,
+//       default: 0
+//     }
+//   }],
+  
+//   // Completion grade (overall task grade)
+//   completionGrade: {
+//     score: {
+//       type: Number,
+//       min: 1.0,
+//       max: 5.0
+//     },
+//     qualityNotes: String,
+//     gradedBy: {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: 'User'
+//     },
+//     gradedAt: Date
+//   },
+  
+//   progress: {
+//     type: Number,
+//     min: 0,
+//     max: 100,
+//     default: 0
+//   },
+  
+//   completedBy: {
+//     type: mongoose.Schema.Types.ObjectId,
+//     ref: 'User'
+//   },
+//   completedAt: Date,
+  
+//   notes: {
+//     type: String,
+//     trim: true
+//   },
+//   tags: [{
+//     type: String,
+//     trim: true
+//   }],
+  
+//   // Activity log
+//   activityLog: [{
+//     action: String,
+//     performedBy: {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: 'User'
+//     },
+//     timestamp: {
+//       type: Date,
+//       default: Date.now
+//     },
+//     details: String,
+//     oldValue: mongoose.Schema.Types.Mixed,
+//     newValue: mongoose.Schema.Types.Mixed
+//   }]
+// }, {
+//   timestamps: true,
+//   toJSON: { virtuals: true },
+//   toObject: { virtuals: true }
+// });
+
+// // Indexes
+// actionItemSchema.index({ status: 1 });
+// actionItemSchema.index({ priority: 1 });
+// actionItemSchema.index({ dueDate: 1 });
+// actionItemSchema.index({ 'assignedTo.user': 1 });
+// actionItemSchema.index({ createdBy: 1 });
+// actionItemSchema.index({ projectId: 1 });
+// actionItemSchema.index({ milestoneId: 1 });
+// actionItemSchema.index({ subMilestoneId: 1 }); // NEW
+// actionItemSchema.index({ 'supervisor.email': 1 });
+// actionItemSchema.index({ createdAt: -1 });
+
+// // Virtual for checking if overdue
+// actionItemSchema.virtual('isOverdue').get(function() {
+//   if (this.status === 'Completed') return false;
+//   return new Date() > this.dueDate;
+// });
+
+// // Methods for multi-assignee workflow
+// actionItemSchema.methods.approveCompletionForAssignee = function(userId, assigneeId, grade, qualityNotes, comments) {
+//   const assignee = this.assignedTo.find(a => a.user.equals(assigneeId));
+//   if (!assignee) {
+//     throw new Error('Assignee not found');
+//   }
+
+//   assignee.completionStatus = 'approved';
+//   assignee.approvedAt = new Date();
+//   assignee.completionGrade = {
+//     score: grade,
+//     qualityNotes: qualityNotes || '',
+//     gradedBy: userId,
+//     gradedAt: new Date()
+//   };
+
+//   // Check if all assignees have been approved
+//   const allApproved = this.assignedTo.every(a => a.completionStatus === 'approved');
+  
+//   if (allApproved) {
+//     this.status = 'Completed';
+//     this.completedBy = userId;
+//     this.completedAt = new Date();
+//     this.progress = 100;
+
+//     // Calculate overall grade (average of all assignees)
+//     const totalGrade = this.assignedTo.reduce((sum, a) => sum + (a.completionGrade?.score || 0), 0);
+//     const avgGrade = totalGrade / this.assignedTo.length;
+
+//     this.completionGrade = {
+//       score: Math.round(avgGrade * 10) / 10, // Round to 1 decimal
+//       qualityNotes: qualityNotes || '',
+//       gradedBy: userId,
+//       gradedAt: new Date()
+//     };
+
+//     this.logActivity('completed', userId, 
+//       `All assignees approved with average grade ${avgGrade.toFixed(1)}/5.0`);
+//   } else {
+//     this.status = 'Pending Completion Approval';
+//     this.logActivity('assignee_approved', userId, 
+//       `Completion approved for one assignee with grade ${grade}/5.0${comments ? ': ' + comments : ''}`);
+//   }
+// };
+
+// actionItemSchema.methods.rejectCompletionForAssignee = function(userId, assigneeId, comments) {
+//   const assignee = this.assignedTo.find(a => a.user.equals(assigneeId));
+//   if (!assignee) {
+//     throw new Error('Assignee not found');
+//   }
+
+//   assignee.completionStatus = 'rejected';
+//   assignee.rejectedAt = new Date();
+//   assignee.rejectionReason = comments;
+  
+//   // Clear previous submission
+//   assignee.completionDocuments = [];
+//   assignee.completionNotes = '';
+//   assignee.submittedAt = null;
+
+//   this.status = 'In Progress';
+  
+//   this.logActivity('completion_rejected', userId, 
+//     `Completion rejected for assignee: ${comments}`);
+// };
+
+// // Method to log activity
+// actionItemSchema.methods.logActivity = function(action, userId, details, oldValue = null, newValue = null) {
+//   this.activityLog.push({
+//     action,
+//     performedBy: userId,
+//     timestamp: new Date(),
+//     details,
+//     oldValue,
+//     newValue
+//   });
+// };
+
+// // Method to update status
+// actionItemSchema.methods.updateStatus = function(newStatus, userId, notes = '') {
+//   const oldStatus = this.status;
+  
+//   if (oldStatus === newStatus) return;
+  
+//   this.status = newStatus;
+  
+//   const statusMessage = `Status changed from "${oldStatus}" to "${newStatus}"${notes ? ': ' + notes : ''}`;
+//   this.logActivity('status_changed', userId, statusMessage, oldStatus, newStatus);
+  
+//   if (newStatus === 'Completed') {
+//     this.progress = 100;
+//     this.completedAt = new Date();
+//     this.completedBy = userId;
+//   } else if (newStatus === 'In Progress' && oldStatus === 'Not Started') {
+//     if (this.progress === 0) {
+//       this.progress = 10;
+//     }
+//   }
+// };
+
+// // Method to update progress
+// actionItemSchema.methods.updateProgress = function(newProgress, userId) {
+//   const oldProgress = this.progress;
+//   this.progress = newProgress;
+  
+//   if (newProgress !== oldProgress) {
+//     this.logActivity('progress_updated', userId, 
+//       `Progress updated from ${oldProgress}% to ${newProgress}%`,
+//       oldProgress, newProgress);
+//   }
+  
+//   // Auto-update status based on progress
+//   if (newProgress === 0 && this.status !== 'Not Started' && this.status !== 'Pending Approval') {
+//     this.status = 'Not Started';
+//   } else if (newProgress > 0 && newProgress < 100 && this.status === 'Not Started') {
+//     this.status = 'In Progress';
+//   } else if (newProgress === 100 && this.status !== 'Completed') {
+//     this.status = 'Pending Completion Approval';
+//   }
+// };
+
+// // Static method to get tasks by sub-milestone
+// actionItemSchema.statics.getBySubMilestone = function(subMilestoneId) {
+//   return this.find({ subMilestoneId })
+//     .populate('assignedTo.user', 'fullName email department')
+//     .populate('createdBy', 'fullName email')
+//     .populate('linkedKPIs.kpiDocId')
+//     .sort({ dueDate: 1, priority: -1 });
+// };
+
+// const ActionItem = mongoose.model('ActionItem', actionItemSchema);
+
+// module.exports = ActionItem;
+
+
+
+
+
+
+
+
+
+
+
+// const mongoose = require('mongoose');
+
+// const ActionItemSchema = new mongoose.Schema({
+//   title: {
+//     type: String,
+//     required: [true, 'Task title is required'],
+//     trim: true,
+//     minlength: [3, 'Title must be at least 3 characters'],
+//     maxlength: [200, 'Title cannot exceed 200 characters']
+//   },
+//   description: {
+//     type: String,
+//     required: [true, 'Task description is required'],
+//     trim: true,
+//     minlength: [10, 'Description must be at least 10 characters']
+//   },
+//   priority: {
+//     type: String,
+//     enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'],
+//     required: [true, 'Priority is required'],
+//     default: 'MEDIUM'
+//   },
+//   status: {
+//     type: String,
+//     enum: [
+//       'Pending Approval',
+//       'Not Started',
+//       'In Progress',
+//       'Pending L1 Grading',      
+//       'Pending L2 Review', 
+//       'Pending L3 Final Approval', 
+//       'Completed',
+//       'Rejected',
+//       'On Hold'
+//     ],
+//     default: 'Pending Approval'
+//   },
+//   progress: {
+//     type: Number,
+//     min: 0,
+//     max: 100,
+//     default: 0
+//   },
+//   dueDate: {
+//     type: Date,
+//     required: [true, 'Due date is required']
+//   },
+  
+//   // Assignment - Support multiple assignees
+//   assignedTo: [{
+//     user: {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: 'User',
+//       required: true
+//     },
+//     // Individual grading per assignee
+//     completionGrade: {
+//       score: {
+//         type: Number,
+//         min: 1.0,  // Changed from 1
+//         max: 5.0,  // Changed from 5
+//         default: null
+//       },
+//       effectiveScore: {
+//         type: Number,
+//         default: null
+//       },
+//       qualityNotes: String,
+//       gradedBy: {
+//         type: mongoose.Schema.Types.ObjectId,
+//         ref: 'User'
+//       },
+//       gradedAt: Date
+//     },
+//     // Individual completion tracking
+//     completionStatus: {
+//       type: String,
+//       enum: ['pending', 'submitted', 'approved', 'rejected'],
+//       default: 'pending'
+//     },
+//     completionDocuments: [{
+//       name: String,
+//       url: String,
+//       publicId: String,
+//       localPath: String,
+//       size: Number,
+//       mimetype: String,
+//       uploadedAt: Date
+//     }],
+//     completionNotes: String,
+//     submittedAt: Date,
+
+//     // Three-level approval chain
+//     completionApprovalChain: [{
+//       level: {
+//         type: Number,
+//         enum: [1, 2, 3],
+//         required: true
+//       },
+//       approver: {
+//         userId: {
+//           type: mongoose.Schema.Types.ObjectId,
+//           ref: 'User'
+//         },
+//         name: String,
+//         email: String,
+//         role: String // 'immediate_supervisor', 'supervisor_supervisor', 'project_creator'
+//       },
+//       status: {
+//         type: String,
+//         enum: ['pending', 'approved', 'rejected', 'skipped'],
+//         default: 'pending'
+//       },
+//       grade: {
+//         type: Number,
+//         min: 1.0,
+//         max: 5.0,
+//         default: null
+//       },
+//       comments: String,
+//       reviewedAt: Date
+//     }]
+//   }],
+  
+//   createdBy: {
+//     type: mongoose.Schema.Types.ObjectId,
+//     ref: 'User',
+//     required: true
+//   },
+  
+//   // Immediate supervisor
+//   supervisor: {
+//     name: String,
+//     email: String,
+//     department: String
+//   },
+  
+//   // Creation approval
+//   creationApproval: {
+//     status: {
+//       type: String,
+//       enum: ['pending', 'approved', 'rejected'],
+//       default: 'pending'
+//     },
+//     approvedBy: {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: 'User'
+//     },
+//     approvalDate: Date,
+//     comments: String
+//   },
+  
+//   // Milestone relationship
+//   milestoneId: {
+//     type: mongoose.Schema.Types.ObjectId,
+//     ref: 'Project.milestones',
+//     default: null
+//   },
+  
+//   // Task weight (percentage of milestone)
+//   taskWeight: {
+//     type: Number,
+//     min: 0,
+//     max: 100,
+//     default: 0,
+//     required: function() {
+//       return this.milestoneId != null;
+//     }
+//   },
+  
+//   // Project Association
+//   projectId: {
+//     type: mongoose.Schema.Types.ObjectId,
+//     ref: 'Project',
+//     default: null
+//   },
+  
+//   // Link to multiple KPIs
+//   linkedKPIs: [{
+//     kpiDocId: {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: 'QuarterlyKPI',
+//       required: true
+//     },
+//     kpiIndex: {
+//       type: Number,
+//       required: true
+//     },
+//     kpiTitle: String,
+//     kpiWeight: Number,
+//     // Track contribution to this specific KPI
+//     contributionToKPI: {
+//       type: Number,
+//       default: 0
+//     }
+//   }],
+  
+//   notes: {
+//     type: String,
+//     default: ''
+//   },
+//   tags: [{
+//     type: String,
+//     trim: true
+//   }],
+  
+//   completedDate: Date,
+//   completedBy: {
+//     type: mongoose.Schema.Types.ObjectId,
+//     ref: 'User'
+//   },
+  
+//   // Activity log
+//   activityLog: [{
+//     action: {
+//       type: String,
+//       enum: [
+//         'created',
+//         'creation_approved',
+//         'creation_rejected',
+//         'updated',
+//         'status_changed',
+//         'progress_updated',
+//         'assignee_added',
+//         'assignee_removed',
+//         'submitted_for_completion',
+//         'l1_graded',              // NEW
+//         'l2_reviewed',            // NEW
+//         'l3_approved',            // NEW
+//         'completion_approved',
+//         'completion_rejected',
+//         'reassigned'
+//       ]
+//     },
+//     performedBy: {
+//       type: mongoose.Schema.Types.ObjectId,
+//       ref: 'User'
+//     },
+//     timestamp: {
+//       type: Date,
+//       default: Date.now
+//     },
+//     details: String,
+//     oldValue: mongoose.Schema.Types.Mixed,
+//     newValue: mongoose.Schema.Types.Mixed
+//   }]
+// }, {
+//   timestamps: true,
+//   toJSON: { virtuals: true },
+//   toObject: { virtuals: true }
+// });
+
+// // Indexes
+// ActionItemSchema.index({ 'assignedTo.user': 1, status: 1 });
+// ActionItemSchema.index({ 'supervisor.email': 1, status: 1 });
+// ActionItemSchema.index({ projectId: 1, status: 1 });
+// ActionItemSchema.index({ milestoneId: 1, status: 1 });
+// ActionItemSchema.index({ dueDate: 1, status: 1 });
+// ActionItemSchema.index({ priority: 1, status: 1 });
+// ActionItemSchema.index({ status: 1, createdAt: -1 });
+// ActionItemSchema.index({ 'linkedKPIs.kpiDocId': 1 });
+// ActionItemSchema.index({ 'assignedTo.completionApprovalChain.approver.userId': 1 });
+
+// // Virtual for display ID
+// ActionItemSchema.virtual('displayId').get(function() {
+//   return `TASK-${this._id.toString().slice(-6).toUpperCase()}`;
+// });
+
+// // Virtual for overdue status
+// ActionItemSchema.virtual('isOverdue').get(function() {
+//   if (['Completed'].includes(this.status)) return false;
+//   return this.dueDate && new Date(this.dueDate) < new Date();
+// });
+
+// // Virtual for overall completion status
+// ActionItemSchema.virtual('overallCompletionStatus').get(function() {
+//   if (this.assignedTo.length === 0) return 'pending';
+  
+//   const allApproved = this.assignedTo.every(a => a.completionStatus === 'approved');
+//   const anyRejected = this.assignedTo.some(a => a.completionStatus === 'rejected');
+//   const anySubmitted = this.assignedTo.some(a => a.completionStatus === 'submitted');
+  
+//   if (allApproved) return 'approved';
+//   if (anyRejected) return 'rejected';
+//   if (anySubmitted) return 'submitted';
+//   return 'pending';
+// });
+
+// // Methods
+// ActionItemSchema.methods.logActivity = function(action, performedBy, details, oldValue = null, newValue = null) {
+//   this.activityLog.push({
+//     action,
+//     performedBy,
+//     timestamp: new Date(),
+//     details,
+//     oldValue,
+//     newValue
+//   });
+// };
+
+// ActionItemSchema.methods.approveCreation = function(userId, comments) {
+//   const oldStatus = this.status;
+//   this.status = 'Not Started';
+//   this.creationApproval.status = 'approved';
+//   this.creationApproval.approvedBy = userId;
+//   this.creationApproval.approvalDate = new Date();
+//   this.creationApproval.comments = comments || '';
+  
+//   this.logActivity('creation_approved', userId, 
+//     `Task creation approved${comments ? ': ' + comments : ''}`, oldStatus, this.status);
+// };
+
+// ActionItemSchema.methods.rejectCreation = function(userId, comments) {
+//   const oldStatus = this.status;
+//   this.status = 'Rejected';
+//   this.creationApproval.status = 'rejected';
+//   this.creationApproval.approvedBy = userId;
+//   this.creationApproval.approvalDate = new Date();
+//   this.creationApproval.comments = comments || 'Task creation rejected';
+  
+//   this.logActivity('creation_rejected', userId, 
+//     `Task creation rejected: ${comments}`, oldStatus, this.status);
+// };
+
+// // Submit completion for specific assignee
+// ActionItemSchema.methods.submitCompletionForAssignee = function(userId, assigneeUserId, documents, notes) {
+//   const assignee = this.assignedTo.find(a => a.user.equals(assigneeUserId));
+//   if (!assignee) {
+//     throw new Error('Assignee not found');
+//   }
+
+//   assignee.completionStatus = 'submitted';
+//   assignee.completionDocuments = documents || [];
+//   assignee.completionNotes = notes || '';
+//   assignee.submittedAt = new Date();
+
+//   // Update task status if this is the first submission
+//   if (this.status !== 'Pending Completion Approval') {
+//     this.status = 'Pending Completion Approval';
+//   }
+
+//   this.logActivity('submitted_for_completion', userId, 
+//     `Completion submitted by assignee ${assigneeUserId}`);
+// };
+
+// // Approve completion for specific assignee
+// ActionItemSchema.methods.approveCompletionForAssignee = async function(userId, assigneeUserId, grade, qualityNotes, comments) {
+//   const assignee = this.assignedTo.find(a => a.user.equals(assigneeUserId));
+//   if (!assignee) {
+//     throw new Error('Assignee not found');
+//   }
+
+//   // ✅ Calculate effective score with decimal precision
+//   const effectiveScore = parseFloat(((grade / 5.0) * this.taskWeight).toFixed(2));
+
+//   assignee.completionStatus = 'approved';
+//   assignee.completionGrade = {
+//     score: parseFloat(grade.toFixed(1)), // Store with 1 decimal place
+//     effectiveScore: effectiveScore,
+//     qualityNotes: qualityNotes || '',
+//     gradedBy: userId,
+//     gradedAt: new Date()
+//   };
+
+//   this.logActivity('completion_approved', userId, 
+//     `Completion approved for assignee with grade ${grade.toFixed(1)}/5.0 (Effective: ${effectiveScore}%)`);
+
+//   // Check if all assignees are approved
+//   const allApproved = this.assignedTo.every(a => a.completionStatus === 'approved');
+//   if (allApproved) {
+//     this.status = 'Completed';
+//     this.completedDate = new Date();
+//     this.completedBy = userId;
+//     this.progress = 100;
+//   }
+
+//   // Update KPI achievements for this assignee
+//   await this.updateKPIAchievements(assigneeUserId, grade);
+
+//   // Update milestone and project progress
+//   if (this.milestoneId) {
+//     await this.updateMilestoneProgress();
+//   }
+// };
+
+// // Reject completion for specific assignee
+// ActionItemSchema.methods.rejectCompletionForAssignee = function(userId, assigneeUserId, comments) {
+//   const assignee = this.assignedTo.find(a => a.user.equals(assigneeUserId));
+//   if (!assignee) {
+//     throw new Error('Assignee not found');
+//   }
+
+//   assignee.completionStatus = 'rejected';
+//   assignee.completionGrade = {
+//     qualityNotes: comments || 'Needs revision',
+//     gradedBy: userId,
+//     gradedAt: new Date()
+//   };
+
+//   // Set status back to In Progress
+//   this.status = 'In Progress';
+
+//   this.logActivity('completion_rejected', userId, 
+//     `Completion rejected for assignee: ${comments}`);
+// };
+
+// // Update KPI achievements - with decimal support
+// ActionItemSchema.methods.updateKPIAchievements = async function(assigneeUserId, grade) {
+//   const QuarterlyKPI = mongoose.model('QuarterlyKPI');
+
+//   for (const linkedKPI of this.linkedKPIs) {
+//     const kpiDoc = await QuarterlyKPI.findById(linkedKPI.kpiDocId);
+//     if (!kpiDoc) continue;
+
+//     const kpi = kpiDoc.kpis[linkedKPI.kpiIndex];
+//     if (!kpi) continue;
+
+//     const contribution = parseFloat((((grade / 5.0) * (linkedKPI.kpiWeight / 100)) * 100).toFixed(2));
+    
+//     kpi.achievement = (kpi.achievement || 0) + contribution;
+//     kpi.achievement = Math.min(100, parseFloat(kpi.achievement.toFixed(2)));
+
+//     linkedKPI.contributionToKPI = contribution;
+
+//     await kpiDoc.save();
+//   }
+// };
+
+
+// // Update milestone progress
+// ActionItemSchema.methods.updateMilestoneProgress = async function() {
+//   if (!this.milestoneId) return;
+
+//   const Project = mongoose.model('Project');
+//   const project = await Project.findOne({ 'milestones._id': this.milestoneId });
+  
+//   if (!project) return;
+
+//   await project.recalculateMilestoneProgress(this.milestoneId);
+//   await project.save();
+// };
+
+// ActionItemSchema.methods.updateProgress = function(progress, userId) {
+//   const oldProgress = this.progress;
+//   this.progress = Math.max(0, Math.min(100, progress));
+  
+//   if (this.progress === 0 && this.status === 'Not Started') {
+//     // Keep as Not Started
+//   } else if (this.progress > 0 && this.progress < 100 && this.status === 'Not Started') {
+//     this.status = 'In Progress';
+//   }
+  
+//   this.logActivity('progress_updated', userId, 
+//     `Progress updated from ${oldProgress}% to ${this.progress}%`, oldProgress, this.progress);
+// };
+
+// // Update task status
+// ActionItemSchema.methods.updateStatus = function(status, userId, notes) {
+//   const oldStatus = this.status;
+  
+//   const validStatuses = [
+//     'Not Started',
+//     'In Progress',
+//     'Completed',
+//     'On Hold'
+//   ];
+  
+//   if (!validStatuses.includes(status)) {
+//     throw new Error(`Invalid status: ${status}`);
+//   }
+  
+//   this.status = status;
+  
+//   if (status === 'Completed') {
+//     this.progress = 100;
+//     this.completedDate = new Date();
+//     this.completedBy = userId;
+//   } else if (status === 'In Progress' && this.progress === 0) {
+//     this.progress = 10;
+//   } else if (status === 'Not Started') {
+//     this.progress = 0;
+//   }
+  
+//   this.logActivity('status_changed', userId, 
+//     `Status changed from ${oldStatus} to ${status}${notes ? ': ' + notes : ''}`,
+//     oldStatus,
+//     status
+//   );
+// };
+
+// module.exports = mongoose.model('ActionItem', ActionItemSchema);
 

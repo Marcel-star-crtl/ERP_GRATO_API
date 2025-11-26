@@ -14,6 +14,20 @@ const {
 } = require('../utils/localFileStorage');
 const fsSync = require('fs');
 
+// Helper function to find sub-milestone by ID recursively
+function findSubMilestoneById(subMilestones, targetId) {
+  for (const sm of subMilestones) {
+    if (sm._id.toString() === targetId) {
+      return sm;
+    }
+    if (sm.subMilestones && sm.subMilestones.length > 0) {
+      const found = findSubMilestoneById(sm.subMilestones, targetId);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 
 // Create task under milestone
 const createTaskUnderMilestone = async (req, res) => {
@@ -2583,6 +2597,272 @@ const getProjectActionItems = async (req, res) => {
   }
 };
 
+
+const createTaskUnderSubMilestone = async (req, res) => {
+  try {
+    const {
+      projectId,
+      milestoneId,
+      subMilestoneId, // NEW: Can be nested at any level
+      title,
+      description,
+      priority,
+      dueDate,
+      taskWeight,
+      assignedTo,
+      linkedKPIs,
+      notes
+    } = req.body;
+
+    console.log('=== CREATE TASK UNDER SUB-MILESTONE ===');
+    console.log('Creator:', req.user.userId);
+    console.log('Sub-Milestone:', subMilestoneId);
+    console.log('Assignees:', assignedTo?.length || 0);
+
+    // Validate required fields
+    if (!projectId || !milestoneId || !subMilestoneId || !title || !description || !priority || !dueDate || !taskWeight) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields'
+      });
+    }
+
+    // Get project and find sub-milestone
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found'
+      });
+    }
+
+    const milestone = project.milestones.id(milestoneId);
+    if (!milestone) {
+      return res.status(404).json({
+        success: false,
+        message: 'Milestone not found'
+      });
+    }
+
+    // Find sub-milestone recursively
+    const subMilestone = findSubMilestoneById(milestone.subMilestones, subMilestoneId);
+    if (!subMilestone) {
+      return res.status(404).json({
+        success: false,
+        message: 'Sub-milestone not found'
+      });
+    }
+
+    // Get creator user
+    const creator = await User.findById(req.user.userId);
+    if (!creator) {
+      return res.status(404).json({
+        success: false,
+        message: 'Creator user not found'
+      });
+    }
+
+    // Check if creator is the assigned supervisor of this sub-milestone
+    if (!subMilestone.assignedSupervisor.equals(req.user.userId) && 
+        !['admin', 'supply_chain', 'project'].includes(creator.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the assigned supervisor can create tasks under this sub-milestone'
+      });
+    }
+
+    // Validate task weight against sub-milestone capacity
+    const existingTasks = await ActionItem.find({ subMilestoneId: subMilestoneId });
+    const totalExistingWeight = existingTasks.reduce((sum, t) => sum + t.taskWeight, 0);
+    
+    if (totalExistingWeight + taskWeight > 100) {
+      return res.status(400).json({
+        success: false,
+        message: `Task weight exceeds available capacity. Available: ${100 - totalExistingWeight}%, Requested: ${taskWeight}%`,
+        availableWeight: 100 - totalExistingWeight
+      });
+    }
+
+    // Handle assignment
+    let assignees = [];
+    let supervisor = null;
+
+    if (!assignedTo || assignedTo.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least one assignee is required'
+      });
+    }
+
+    // Validate assignees
+    for (const assigneeId of assignedTo) {
+      const assignee = await User.findById(assigneeId);
+      if (!assignee) {
+        return res.status(400).json({
+          success: false,
+          message: `Assignee ${assigneeId} not found'`
+        });
+      }
+
+      assignees.push({
+        user: assigneeId,
+        completionStatus: 'pending'
+      });
+    }
+
+    // Creator becomes the supervisor
+    supervisor = {
+      name: creator.fullName,
+      email: creator.email,
+      department: creator.department
+    };
+
+    console.log(`✅ Task assigned to ${assignees.length} user(s)`);
+    console.log(`   Supervisor (creator): ${supervisor.name}`);
+
+    // Process linked KPIs
+    const processedKPIs = [];
+    if (linkedKPIs && linkedKPIs.length > 0) {
+      for (const kpiLink of linkedKPIs) {
+        const kpiDoc = await QuarterlyKPI.findOne({
+          _id: kpiLink.kpiDocId,
+          approvalStatus: 'approved'
+        });
+
+        if (!kpiDoc) {
+          return res.status(400).json({
+            success: false,
+            message: `No approved KPI found for KPI document ${kpiLink.kpiDocId}`
+          });
+        }
+
+        const kpi = kpiDoc.kpis[kpiLink.kpiIndex];
+        if (!kpi) {
+          return res.status(400).json({
+            success: false,
+            message: `KPI index ${kpiLink.kpiIndex} not found`
+          });
+        }
+
+        processedKPIs.push({
+          kpiDocId: kpiLink.kpiDocId,
+          kpiIndex: kpiLink.kpiIndex,
+          kpiTitle: kpi.title,
+          kpiWeight: kpi.weight,
+          contributionToKPI: 0
+        });
+      }
+    }
+
+    // Create task
+    const task = new ActionItem({
+      title,
+      description,
+      priority,
+      dueDate: new Date(dueDate),
+      taskWeight,
+      assignedTo: assignees,
+      linkedKPIs: processedKPIs,
+      projectId,
+      milestoneId,
+      subMilestoneId, // NEW: Link to sub-milestone
+      createdBy: req.user.userId,
+      supervisor,
+      status: 'Not Started',
+      notes: notes || '',
+      creationApproval: {
+        status: 'approved',
+        approvedBy: req.user.userId,
+        approvalDate: new Date()
+      }
+    });
+
+    task.logActivity('created', req.user.userId, 
+      `Task created under sub-milestone "${subMilestone.title}" with weight ${taskWeight}%`);
+
+    await task.save();
+
+    // Populate task
+    await task.populate([
+      { path: 'assignedTo.user', select: 'fullName email department' },
+      { path: 'createdBy', select: 'fullName email' },
+      { path: 'projectId', select: 'name code' },
+      { path: 'linkedKPIs.kpiDocId' }
+    ]);
+
+    console.log('✅ Task created under sub-milestone');
+
+    // Send notifications to assignees
+    if (assignedTo && assignedTo.length > 0) {
+      for (const assigneeId of assignedTo) {
+        const assignee = await User.findById(assigneeId);
+        if (assignee) {
+          try {
+            await sendActionItemEmail.taskAssigned(
+              assignee.email,
+              assignee.fullName,
+              creator.fullName,
+              title,
+              description,
+              priority,
+              dueDate,
+              task._id,
+              `${project.name} > ${milestone.title} > ${subMilestone.title}`
+            );
+          } catch (emailError) {
+            console.error('Failed to send notification:', emailError);
+          }
+        }
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Task created under sub-milestone successfully',
+      data: task
+    });
+
+  } catch (error) {
+    console.error('Error creating task under sub-milestone:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create task',
+      error: error.message
+    });
+  }
+};
+
+// Get tasks for sub-milestone
+const getSubMilestoneTasks = async (req, res) => {
+  try {
+    const { subMilestoneId } = req.params;
+
+    console.log('=== GET SUB-MILESTONE TASKS ===');
+    console.log('Sub-Milestone:', subMilestoneId);
+
+    const tasks = await ActionItem.find({ subMilestoneId })
+      .populate('assignedTo.user', 'fullName email department')
+      .populate('createdBy', 'fullName email')
+      .populate('linkedKPIs.kpiDocId')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      data: tasks,
+      count: tasks.length
+    });
+
+  } catch (error) {
+    console.error('Error fetching sub-milestone tasks:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch sub-milestone tasks',
+      error: error.message
+    });
+  }
+};
+
+
 module.exports = {
   createTaskUnderMilestone,
   createPersonalTask,
@@ -2602,7 +2882,9 @@ module.exports = {
   getProjectActionItems,
   processCreationApproval,
   submitForCompletion,
-  processCompletionApproval
+  processCompletionApproval,
+  createTaskUnderSubMilestone,
+  getSubMilestoneTasks
 };
 
 

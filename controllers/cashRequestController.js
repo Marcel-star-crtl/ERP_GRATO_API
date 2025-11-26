@@ -545,6 +545,297 @@ const getFinanceRequests = async (req, res) => {
 };
 
 
+// const processFinanceDecision = async (req, res) => {
+//   try {
+//     const { requestId } = req.params;
+//     const { decision, comments, amountApproved, disbursementAmount, budgetCodeId } = req.body;
+
+//     console.log('\n=== FINANCE DECISION PROCESSING ===');
+//     console.log('Request ID:', requestId);
+//     console.log('Decision:', decision);
+//     console.log('Budget Code ID:', budgetCodeId);
+//     console.log('Disbursement Amount:', disbursementAmount);
+
+//     const user = await User.findById(req.user.userId);
+//     const request = await CashRequest.findById(requestId)
+//       .populate('employee', 'fullName email department')
+//       .populate('projectId', 'name code budgetCodeId');
+
+//     if (!request) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Request not found'
+//       });
+//     }
+
+//     // Find finance step
+//     const financeStepIndex = request.approvalChain.findIndex(step => 
+//       step.approver.email === user.email && 
+//       step.approver.role === 'Finance Officer' &&
+//       step.status === 'pending'
+//     );
+
+//     if (financeStepIndex === -1) {
+//       return res.status(403).json({
+//         success: false,
+//         message: 'This request is not pending your approval'
+//       });
+//     }
+
+//     const financeStep = request.approvalChain[financeStepIndex];
+
+//     // Verify previous approvals
+//     const allPreviousApproved = request.approvalChain
+//       .filter(s => s.level < financeStep.level)
+//       .every(s => s.status === 'approved');
+
+//     if (!allPreviousApproved) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Cannot process finance approval until all previous levels are approved'
+//       });
+//     }
+
+//     if (decision === 'approved') {
+//       const finalAmount = disbursementAmount || amountApproved || request.amountRequested;
+//       console.log(`Final approved amount: XAF ${finalAmount}`);
+
+//       // ============================================
+//       // BUDGET CODE HANDLING
+//       // ============================================
+//       let budgetCode = null;
+      
+//       // Check if budget already assigned (shouldn't happen with new flow)
+//       if (request.budgetAllocation && request.budgetAllocation.budgetCodeId) {
+//         console.log('⚠️  Budget already allocated - using existing');
+//         budgetCode = await BudgetCode.findById(request.budgetAllocation.budgetCodeId);
+//       }
+//       // Try project budget code
+//       else if (request.projectId && request.projectId.budgetCodeId) {
+//         console.log('Using project budget code');
+//         budgetCode = await BudgetCode.findById(request.projectId.budgetCodeId);
+//       }
+//       // Use finance-assigned budget code
+//       else if (budgetCodeId) {
+//         console.log(`Finance assigning budget code: ${budgetCodeId}`);
+//         budgetCode = await BudgetCode.findById(budgetCodeId);
+//       } else {
+//         return res.status(400).json({
+//           success: false,
+//           message: 'Budget code must be assigned for approval'
+//         });
+//       }
+
+//       if (!budgetCode) {
+//         return res.status(404).json({
+//           success: false,
+//           message: 'Budget code not found'
+//         });
+//       }
+
+//       console.log(`Budget code: ${budgetCode.code}`);
+//       console.log(`Available: XAF ${budgetCode.remaining.toLocaleString()}`);
+
+//       // Check sufficiency
+//       if (budgetCode.remaining < parseFloat(finalAmount)) {
+//         return res.status(400).json({
+//           success: false,
+//           message: `Insufficient budget. Available: XAF ${budgetCode.remaining.toLocaleString()}`
+//         });
+//       }
+
+//       // ============================================
+//       // PHASE 1: RESERVE BUDGET (Approval)
+//       // ============================================
+//       try {
+//         await budgetCode.reserveBudget(request._id, parseFloat(finalAmount), req.user.userId);
+//         console.log('✅ Budget reserved successfully');
+
+//         request.budgetAllocation = {
+//           budgetCodeId: budgetCode._id,
+//           budgetCode: budgetCode.code,
+//           allocatedAmount: parseFloat(finalAmount),
+//           allocationStatus: 'allocated', // Reserved, not spent yet
+//           assignedBy: req.user.userId,
+//           assignedAt: new Date()
+//         };
+//       } catch (budgetError) {
+//         console.error('❌ Budget reservation failed:', budgetError);
+//         return res.status(500).json({
+//           success: false,
+//           message: `Failed to reserve budget: ${budgetError.message}`
+//         });
+//       }
+
+//       // Update approval chain
+//       request.approvalChain[financeStepIndex].status = 'approved';
+//       request.approvalChain[financeStepIndex].comments = comments;
+//       request.approvalChain[financeStepIndex].actionDate = new Date();
+//       request.approvalChain[financeStepIndex].actionTime = new Date().toLocaleTimeString('en-GB');
+//       request.approvalChain[financeStepIndex].decidedBy = req.user.userId;
+
+//       request.financeDecision = {
+//         decision: 'approved',
+//         comments,
+//         decisionDate: new Date()
+//       };
+
+//       if (amountApproved) {
+//         request.amountApproved = parseFloat(amountApproved);
+//       }
+
+//       request.financeOfficer = req.user.userId;
+
+//       // ============================================
+//       // PHASE 2: DEDUCT BUDGET (Disbursement)
+//       // ============================================
+//       if (disbursementAmount) {
+//         const disbursedAmount = parseFloat(disbursementAmount);
+        
+//         try {
+//           // Deduct from budget code
+//           await budgetCode.deductBudget(request._id, disbursedAmount);
+//           console.log('✅ Budget deducted successfully');
+
+//           request.status = 'disbursed';
+//           request.disbursementDetails = {
+//             date: new Date(),
+//             amount: disbursedAmount,
+//             disbursedBy: req.user.userId
+//           };
+
+//           // Update allocation status
+//           request.budgetAllocation.allocationStatus = 'spent';
+//           request.budgetAllocation.actualSpent = disbursedAmount;
+
+//           console.log('✅ Request DISBURSED');
+//         } catch (deductError) {
+//           console.error('❌ Budget deduction failed:', deductError);
+//           return res.status(500).json({
+//             success: false,
+//             message: `Budget reserved but disbursement failed: ${deductError.message}`
+//           });
+//         }
+//       } else {
+//         request.status = 'approved';
+//         console.log('✅ Request APPROVED (awaiting disbursement)');
+//       }
+
+//       await request.save();
+
+//       // ============================================
+//       // NOTIFICATIONS
+//       // ============================================
+//       const notifications = [];
+
+//       const budgetInfo = `
+//         <div style="background-color: #e6f7ff; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #1890ff;">
+//           <p><strong>Budget Allocation:</strong></p>
+//           <ul>
+//             <li><strong>Budget Code:</strong> ${budgetCode.code} - ${budgetCode.name}</li>
+//             <li><strong>Amount ${disbursementAmount ? 'Disbursed' : 'Reserved'}:</strong> XAF ${parseFloat(finalAmount).toLocaleString()}</li>
+//             <li><strong>Budget Remaining:</strong> XAF ${budgetCode.remaining.toLocaleString()}</li>
+//             ${disbursementAmount ? '<li><strong>Status:</strong> 💸 Funds Disbursed</li>' : '<li><strong>Status:</strong> 💰 Funds Reserved (Awaiting Disbursement)</li>'}
+//           </ul>
+//         </div>
+//       `;
+
+//       // Notify employee
+//       notifications.push(
+//         sendEmail({
+//           to: request.employee.email,
+//           subject: `Cash Request ${disbursementAmount ? 'Disbursed' : 'Approved'} - ${request.employee.fullName}`,
+//           html: `
+//             <h3>Cash Request ${disbursementAmount ? 'Disbursed' : 'Approved'}</h3>
+//             <p>Dear ${request.employee.fullName},</p>
+            
+//             <p>Your cash request has been ${disbursementAmount ? 'approved and disbursed' : 'approved by the finance team'}.</p>
+
+//             <div style="background-color: #d4edda; padding: 15px; border-radius: 5px; margin: 15px 0;">
+//               <ul>
+//                 <li><strong>Request ID:</strong> REQ-${requestId.toString().slice(-6).toUpperCase()}</li>
+//                 <li><strong>Amount Approved:</strong> XAF ${parseFloat(finalAmount).toLocaleString()}</li>
+//                 <li><strong>Approved by:</strong> ${user.fullName}</li>
+//               </ul>
+//             </div>
+
+//             ${budgetInfo}
+
+//             ${disbursementAmount ? 
+//               '<p><em>⚠️ Please submit your justification with receipts within the required timeframe.</em></p>' : 
+//               '<p><em>💰 Budget has been reserved. Please wait for disbursement processing.</em></p>'
+//             }
+//           `
+//         }).catch(error => {
+//           console.error('Failed to send employee notification:', error);
+//           return { error, type: 'employee' };
+//         })
+//       );
+
+//       await Promise.allSettled(notifications);
+
+//       console.log('=== FINANCE APPROVAL COMPLETED ===\n');
+
+//       return res.json({
+//         success: true,
+//         message: `Request ${decision} by finance and budget ${disbursementAmount ? 'disbursed' : 'reserved'} from ${budgetCode.code}`,
+//         data: {
+//           request,
+//           budgetAllocation: {
+//             budgetCode: budgetCode.code,
+//             budgetName: budgetCode.name,
+//             allocatedAmount: parseFloat(finalAmount),
+//             remainingBudget: budgetCode.remaining,
+//             status: disbursementAmount ? 'disbursed' : 'reserved'
+//           }
+//         }
+//       });
+
+//     } else {
+//       // Handle rejection
+//       console.log('❌ Request REJECTED by finance');
+      
+//       request.status = 'denied';
+//       request.financeDecision = {
+//         decision: 'rejected',
+//         comments,
+//         decisionDate: new Date()
+//       };
+
+//       request.approvalChain[financeStepIndex].status = 'rejected';
+//       request.approvalChain[financeStepIndex].comments = comments;
+//       request.approvalChain[financeStepIndex].actionDate = new Date();
+//       request.approvalChain[financeStepIndex].actionTime = new Date().toLocaleTimeString('en-GB');
+//       request.approvalChain[financeStepIndex].decidedBy = req.user.userId;
+
+//       await request.save();
+
+//       await sendCashRequestEmail.denialToEmployee(
+//         request.employee.email,
+//         comments || 'Request denied by finance team',
+//         requestId,
+//         user.fullName
+//       ).catch(err => console.error('Failed to send denial email:', err));
+
+//       console.log('=== REQUEST DENIED ===\n');
+//       return res.json({
+//         success: true,
+//         message: 'Request rejected by finance',
+//         data: request
+//       });
+//     }
+
+//   } catch (error) {
+//     console.error('Process finance decision error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to process finance decision',
+//       error: error.message
+//     });
+//   }
+// };
+
+
 const processFinanceDecision = async (req, res) => {
   try {
     const { requestId } = req.params;
@@ -554,6 +845,7 @@ const processFinanceDecision = async (req, res) => {
     console.log('Request ID:', requestId);
     console.log('Decision:', decision);
     console.log('Budget Code ID:', budgetCodeId);
+    console.log('Amount Approved:', amountApproved);
     console.log('Disbursement Amount:', disbursementAmount);
 
     const user = await User.findById(req.user.userId);
@@ -597,27 +889,35 @@ const processFinanceDecision = async (req, res) => {
     }
 
     if (decision === 'approved') {
-      const finalAmount = disbursementAmount || amountApproved || request.amountRequested;
-      console.log(`Final approved amount: XAF ${finalAmount}`);
+      // Determine final amount
+      const finalAmount = parseFloat(amountApproved || request.amountRequested);
+      console.log(`Final approved amount: XAF ${finalAmount.toLocaleString()}`);
 
       // ============================================
-      // BUDGET CODE HANDLING
+      // STEP 1: GET OR ASSIGN BUDGET CODE
       // ============================================
       let budgetCode = null;
       
-      // Check if budget already assigned (shouldn't happen with new flow)
+      // Check if budget already assigned (shouldn't happen in normal flow)
       if (request.budgetAllocation && request.budgetAllocation.budgetCodeId) {
         console.log('⚠️  Budget already allocated - using existing');
         budgetCode = await BudgetCode.findById(request.budgetAllocation.budgetCodeId);
+        
+        if (!budgetCode) {
+          return res.status(404).json({
+            success: false,
+            message: 'Previously assigned budget code not found'
+          });
+        }
       }
       // Try project budget code
       else if (request.projectId && request.projectId.budgetCodeId) {
-        console.log('Using project budget code');
+        console.log('📦 Using project budget code');
         budgetCode = await BudgetCode.findById(request.projectId.budgetCodeId);
       }
       // Use finance-assigned budget code
       else if (budgetCodeId) {
-        console.log(`Finance assigning budget code: ${budgetCodeId}`);
+        console.log(`💼 Finance assigning budget code: ${budgetCodeId}`);
         budgetCode = await BudgetCode.findById(budgetCodeId);
       } else {
         return res.status(400).json({
@@ -633,32 +933,43 @@ const processFinanceDecision = async (req, res) => {
         });
       }
 
-      console.log(`Budget code: ${budgetCode.code}`);
-      console.log(`Available: XAF ${budgetCode.remaining.toLocaleString()}`);
+      console.log(`\n💰 Budget Code: ${budgetCode.code} - ${budgetCode.name}`);
+      console.log(`   Current Budget: XAF ${budgetCode.budget.toLocaleString()}`);
+      console.log(`   Used: XAF ${budgetCode.used.toLocaleString()}`);
+      console.log(`   Available: XAF ${budgetCode.remaining.toLocaleString()}`);
 
-      // Check sufficiency
-      if (budgetCode.remaining < parseFloat(finalAmount)) {
+      // Check budget sufficiency
+      if (budgetCode.remaining < finalAmount) {
         return res.status(400).json({
           success: false,
-          message: `Insufficient budget. Available: XAF ${budgetCode.remaining.toLocaleString()}`
+          message: `Insufficient budget. Available: XAF ${budgetCode.remaining.toLocaleString()}, Required: XAF ${finalAmount.toLocaleString()}`
         });
       }
 
+      console.log(`✅ Budget check passed`);
+
       // ============================================
-      // PHASE 1: RESERVE BUDGET (Approval)
+      // STEP 2: RESERVE BUDGET (Approval)
       // ============================================
       try {
-        await budgetCode.reserveBudget(request._id, parseFloat(finalAmount), req.user.userId);
+        console.log(`\n💰 RESERVING budget...`);
+        await budgetCode.reserveBudget(
+          request._id, 
+          finalAmount, 
+          req.user.userId
+        );
         console.log('✅ Budget reserved successfully');
 
+        // Update request allocation info (status: 'allocated' = reserved)
         request.budgetAllocation = {
           budgetCodeId: budgetCode._id,
           budgetCode: budgetCode.code,
-          allocatedAmount: parseFloat(finalAmount),
-          allocationStatus: 'allocated', // Reserved, not spent yet
+          allocatedAmount: finalAmount,
+          allocationStatus: 'allocated', // ✅ RESERVED, not spent yet
           assignedBy: req.user.userId,
           assignedAt: new Date()
         };
+
       } catch (budgetError) {
         console.error('❌ Budget reservation failed:', budgetError);
         return res.status(500).json({
@@ -667,7 +978,9 @@ const processFinanceDecision = async (req, res) => {
         });
       }
 
-      // Update approval chain
+      // ============================================
+      // STEP 3: UPDATE APPROVAL CHAIN
+      // ============================================
       request.approvalChain[financeStepIndex].status = 'approved';
       request.approvalChain[financeStepIndex].comments = comments;
       request.approvalChain[financeStepIndex].actionDate = new Date();
@@ -680,62 +993,113 @@ const processFinanceDecision = async (req, res) => {
         decisionDate: new Date()
       };
 
-      if (amountApproved) {
-        request.amountApproved = parseFloat(amountApproved);
-      }
-
+      request.amountApproved = finalAmount;
       request.financeOfficer = req.user.userId;
 
       // ============================================
-      // PHASE 2: DEDUCT BUDGET (Disbursement)
+      // STEP 4: HANDLE DISBURSEMENT (if provided)
       // ============================================
       if (disbursementAmount) {
         const disbursedAmount = parseFloat(disbursementAmount);
         
+        console.log(`\n💸 Processing disbursement...`);
+        console.log(`   Disbursement amount: XAF ${disbursedAmount.toLocaleString()}`);
+
+        // Validate disbursement amount
+        if (disbursedAmount > finalAmount) {
+          // Rollback reservation
+          try {
+            await budgetCode.releaseReservation(request._id, 'Disbursement amount exceeds approved amount');
+          } catch (rollbackError) {
+            console.error('Failed to rollback reservation:', rollbackError);
+          }
+
+          return res.status(400).json({
+            success: false,
+            message: `Disbursement amount (XAF ${disbursedAmount.toLocaleString()}) cannot exceed approved amount (XAF ${finalAmount.toLocaleString()})`
+          });
+        }
+
         try {
-          // Deduct from budget code
+          // ✅ DEDUCT from budget (moves allocation from 'allocated' → 'spent')
           await budgetCode.deductBudget(request._id, disbursedAmount);
           console.log('✅ Budget deducted successfully');
 
-          request.status = 'disbursed';
-          request.disbursementDetails = {
-            date: new Date(),
-            amount: disbursedAmount,
-            disbursedBy: req.user.userId
-          };
+          // ✅ Initialize disbursements array if needed
+          if (!request.disbursements) {
+            request.disbursements = [];
+          }
 
-          // Update allocation status
+          // ✅ Add disbursement record
+          request.disbursements.push({
+            amount: disbursedAmount,
+            date: new Date(),
+            disbursedBy: req.user.userId,
+            notes: comments || '',
+            disbursementNumber: request.disbursements.length + 1
+          });
+
+          // ✅ Update disbursement tracking
+          request.totalDisbursed = disbursedAmount;
+          request.remainingBalance = finalAmount - disbursedAmount;
+
+          // ✅ Set appropriate status
+          if (request.remainingBalance === 0) {
+            request.status = 'fully_disbursed';
+            console.log('✅ Request FULLY DISBURSED');
+          } else {
+            request.status = 'partially_disbursed';
+            console.log(`✅ Request PARTIALLY DISBURSED (${Math.round((disbursedAmount / finalAmount) * 100)}% complete)`);
+          }
+
+          // ✅ Update budget allocation status
           request.budgetAllocation.allocationStatus = 'spent';
           request.budgetAllocation.actualSpent = disbursedAmount;
 
-          console.log('✅ Request DISBURSED');
         } catch (deductError) {
           console.error('❌ Budget deduction failed:', deductError);
+          
+          // ✅ ROLLBACK: Release the reservation
+          try {
+            await budgetCode.releaseReservation(request._id, 'Disbursement failed');
+            console.log('✅ Budget reservation rolled back');
+          } catch (rollbackError) {
+            console.error('❌ Failed to rollback reservation:', rollbackError);
+          }
+
           return res.status(500).json({
             success: false,
-            message: `Budget reserved but disbursement failed: ${deductError.message}`
+            message: `Budget deduction failed: ${deductError.message}`
           });
         }
+
       } else {
+        // ✅ Approved but not disbursed yet
         request.status = 'approved';
-        console.log('✅ Request APPROVED (awaiting disbursement)');
+        console.log('✅ Request APPROVED (budget reserved, awaiting disbursement)');
       }
 
+      // ============================================
+      // STEP 5: SAVE REQUEST
+      // ============================================
       await request.save();
+      console.log('✅ Request saved successfully');
 
       // ============================================
-      // NOTIFICATIONS
+      // STEP 6: SEND NOTIFICATIONS
       // ============================================
       const notifications = [];
 
       const budgetInfo = `
         <div style="background-color: #e6f7ff; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #1890ff;">
-          <p><strong>Budget Allocation:</strong></p>
+          <p><strong>💰 Budget Allocation:</strong></p>
           <ul>
             <li><strong>Budget Code:</strong> ${budgetCode.code} - ${budgetCode.name}</li>
-            <li><strong>Amount ${disbursementAmount ? 'Disbursed' : 'Reserved'}:</strong> XAF ${parseFloat(finalAmount).toLocaleString()}</li>
+            <li><strong>Amount Approved:</strong> XAF ${finalAmount.toLocaleString()}</li>
+            ${disbursementAmount ? `<li><strong>Amount Disbursed:</strong> XAF ${parseFloat(disbursementAmount).toLocaleString()}</li>` : ''}
+            ${disbursementAmount && request.remainingBalance > 0 ? `<li><strong>Remaining to Disburse:</strong> XAF ${request.remainingBalance.toLocaleString()}</li>` : ''}
             <li><strong>Budget Remaining:</strong> XAF ${budgetCode.remaining.toLocaleString()}</li>
-            ${disbursementAmount ? '<li><strong>Status:</strong> 💸 Funds Disbursed</li>' : '<li><strong>Status:</strong> 💰 Funds Reserved (Awaiting Disbursement)</li>'}
+            <li><strong>Status:</strong> ${disbursementAmount ? '💸 Funds Disbursed' : '💰 Funds Reserved'}</li>
           </ul>
         </div>
       `;
@@ -744,27 +1108,41 @@ const processFinanceDecision = async (req, res) => {
       notifications.push(
         sendEmail({
           to: request.employee.email,
-          subject: `Cash Request ${disbursementAmount ? 'Disbursed' : 'Approved'} - ${request.employee.fullName}`,
+          subject: `Cash Request ${disbursementAmount ? 'Approved & Disbursed' : 'Approved'} - ${request.employee.fullName}`,
           html: `
-            <h3>Cash Request ${disbursementAmount ? 'Disbursed' : 'Approved'}</h3>
+            <h3>Cash Request ${disbursementAmount ? 'Approved & Disbursed' : 'Approved'}</h3>
             <p>Dear ${request.employee.fullName},</p>
             
-            <p>Your cash request has been ${disbursementAmount ? 'approved and disbursed' : 'approved by the finance team'}.</p>
+            <p>Your cash request has been ${disbursementAmount ? 'approved and funds have been disbursed' : 'approved by the finance team'}.</p>
 
-            <div style="background-color: #d4edda; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <div style="background-color: #d4edda; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #28a745;">
+              <p><strong>Approval Details:</strong></p>
               <ul>
                 <li><strong>Request ID:</strong> REQ-${requestId.toString().slice(-6).toUpperCase()}</li>
-                <li><strong>Amount Approved:</strong> XAF ${parseFloat(finalAmount).toLocaleString()}</li>
-                <li><strong>Approved by:</strong> ${user.fullName}</li>
+                <li><strong>Amount Approved:</strong> XAF ${finalAmount.toLocaleString()}</li>
+                <li><strong>Approved by:</strong> ${user.fullName} (Finance Officer)</li>
+                <li><strong>Date:</strong> ${new Date().toLocaleDateString('en-GB')}</li>
               </ul>
             </div>
 
             ${budgetInfo}
 
             ${disbursementAmount ? 
-              '<p><em>⚠️ Please submit your justification with receipts within the required timeframe.</em></p>' : 
-              '<p><em>💰 Budget has been reserved. Please wait for disbursement processing.</em></p>'
+              request.status === 'fully_disbursed' ?
+                `<div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #ffc107;">
+                  <p><strong>⚠️ Next Step: Submit Justification</strong></p>
+                  <p>Your funds have been fully disbursed. Please submit your justification with receipts within the required timeframe.</p>
+                </div>` :
+                `<div style="background-color: #e6f7ff; padding: 10px; border-radius: 5px; margin: 10px 0;">
+                  <p><em>💡 Partial disbursement (${Math.round((parseFloat(disbursementAmount) / finalAmount) * 100)}% of approved amount). More disbursements may follow.</em></p>
+                </div>`
+              : 
+              `<div style="background-color: #e6f7ff; padding: 10px; border-radius: 5px; margin: 10px 0;">
+                <p><em>💰 Budget has been reserved. Please wait for disbursement processing by the Finance team.</em></p>
+              </div>`
             }
+
+            <p>Thank you!</p>
           `
         }).catch(error => {
           console.error('Failed to send employee notification:', error);
@@ -774,25 +1152,38 @@ const processFinanceDecision = async (req, res) => {
 
       await Promise.allSettled(notifications);
 
-      console.log('=== FINANCE APPROVAL COMPLETED ===\n');
+      console.log('\n=== FINANCE APPROVAL COMPLETED ===\n');
 
-      return res.json({
+      // ============================================
+      // STEP 7: RETURN RESPONSE
+      // ============================================
+      await request.populate('employee', 'fullName email department');
+
+      res.json({
         success: true,
-        message: `Request ${decision} by finance and budget ${disbursementAmount ? 'disbursed' : 'reserved'} from ${budgetCode.code}`,
-        data: {
-          request,
-          budgetAllocation: {
-            budgetCode: budgetCode.code,
-            budgetName: budgetCode.name,
-            allocatedAmount: parseFloat(finalAmount),
-            remainingBudget: budgetCode.remaining,
-            status: disbursementAmount ? 'disbursed' : 'reserved'
-          }
-        }
+        message: `Request approved${disbursementAmount ? ' and funds disbursed' : ' (awaiting disbursement)'}`,
+        data: request,
+        budgetAllocation: {
+          budgetCode: budgetCode.code,
+          budgetName: budgetCode.name,
+          allocatedAmount: finalAmount,
+          remainingBudget: budgetCode.remaining,
+          status: disbursementAmount ? 'disbursed' : 'reserved'
+        },
+        disbursement: disbursementAmount ? {
+          amount: parseFloat(disbursementAmount),
+          disbursementNumber: request.disbursements.length,
+          totalDisbursed: request.totalDisbursed,
+          remainingBalance: request.remainingBalance,
+          progress: Math.round((request.totalDisbursed / finalAmount) * 100),
+          status: request.status
+        } : null
       });
 
     } else {
-      // Handle rejection
+      // ============================================
+      // HANDLE REJECTION
+      // ============================================
       console.log('❌ Request REJECTED by finance');
       
       request.status = 'denied';
@@ -818,6 +1209,7 @@ const processFinanceDecision = async (req, res) => {
       ).catch(err => console.error('Failed to send denial email:', err));
 
       console.log('=== REQUEST DENIED ===\n');
+      
       return res.json({
         success: true,
         message: 'Request rejected by finance',
@@ -826,7 +1218,9 @@ const processFinanceDecision = async (req, res) => {
     }
 
   } catch (error) {
-    console.error('Process finance decision error:', error);
+    console.error('❌ Process finance decision error:', error);
+    console.error('Stack trace:', error.stack);
+    
     res.status(500).json({
       success: false,
       message: 'Failed to process finance decision',

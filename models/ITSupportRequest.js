@@ -274,11 +274,12 @@ const ITSupportRequestSchema = new mongoose.Schema({
     }
   },
 
-  // Attachments
+  // In the attachments field:
   attachments: [{
     name: String,
     url: String,
     publicId: String,
+    localPath: String, // ✅ Add this field
     size: Number,
     mimetype: String
   }],
