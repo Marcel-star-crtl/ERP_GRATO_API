@@ -177,7 +177,7 @@ const projectSchema = new mongoose.Schema({
   department: {
     type: String,
     required: function() { return !this.isDraft; },
-    enum: ['Roll Out', 'Operations', 'IT', 'Finance', 'HR', 'Marketing', 'Supply Chain', 'Facilities']
+    enum: ['Roll Out', 'Operations', 'IT', 'Technical', 'Technical Operations', 'Technical QHSE', 'Finance', 'HR', 'Marketing', 'Supply Chain', 'Facilities', 'Business', ]
   },
   projectManager: {
     type: mongoose.Schema.Types.ObjectId,
@@ -432,11 +432,15 @@ async function generateProjectCode(department) {
     'Operations': 'OPS',
     'IT': 'IT',
     'Finance': 'FIN',
+    'Technical': 'TECH',
+    'Technical Operations': 'TECHPOPS',
+    'Technical QHSE': 'TECHSE',
     'HR': 'HR',
     'Marketing': 'MKT',
     'Supply Chain': 'SCM',
     'Facilities': 'FAC',
-    'Roll Out': 'RO'
+    'Roll Out': 'RO',
+    'Business': 'BU'
   };
   
   const prefix = deptPrefixes[department] || 'GEN';

@@ -38,12 +38,12 @@ const createOrUpdateKPIs = async (req, res) => {
     console.log('KPIs count:', kpis?.length);
 
     // Validate quarter format
-    if (!/^Q[1-4]-\d{4}$/.test(quarter)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid quarter format. Use Q1-2025, Q2-2025, etc.'
-      });
-    }
+    // if (!/^Q[1-4]-\d{4}$/.test(quarter)) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: 'Invalid quarter format. Use Q1-2025, Q2-2025, etc.'
+    //   });
+    // }
 
     // Validate KPIs
     if (!kpis || !Array.isArray(kpis) || kpis.length < 3) {
@@ -53,12 +53,12 @@ const createOrUpdateKPIs = async (req, res) => {
       });
     }
 
-    if (kpis.length > 10) {
-      return res.status(400).json({
-        success: false,
-        message: 'Maximum 10 KPIs allowed'
-      });
-    }
+    // if (kpis.length > 10) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: 'Maximum 10 KPIs allowed'
+    //   });
+    // }
 
     // Validate total weight
     const totalWeight = kpis.reduce((sum, kpi) => sum + (kpi.weight || 0), 0);

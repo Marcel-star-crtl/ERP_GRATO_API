@@ -860,25 +860,6 @@ const processFinanceDecision = async (req, res) => {
       });
     }
 
-    // ============================================
-    // CRITICAL CHECK: Is this request already processed?
-    // ============================================
-    if (request.budgetAllocation && request.budgetAllocation.allocationStatus === 'spent') {
-      console.log('⚠️  WARNING: Request already has spent budget allocation');
-      console.log(`   Budget Code: ${request.budgetAllocation.budgetCode}`);
-      console.log(`   Amount Spent: XAF ${request.budgetAllocation.actualSpent?.toLocaleString()}`);
-      
-      return res.status(400).json({
-        success: false,
-        message: 'This request has already been processed and funds have been disbursed',
-        data: {
-          budgetCode: request.budgetAllocation.budgetCode,
-          amountSpent: request.budgetAllocation.actualSpent,
-          status: request.status
-        }
-      });
-    }
-
     // Find finance step
     const financeStepIndex = request.approvalChain.findIndex(step => 
       step.approver.email === user.email && 
@@ -916,59 +897,65 @@ const processFinanceDecision = async (req, res) => {
       // STEP 1: GET OR ASSIGN BUDGET CODE
       // ============================================
       let budgetCode = null;
-      let existingAllocation = null;
+      let isReApproval = false; // ✅ Track if this is a re-approval
       
-      // Check if budget already assigned
+      // ✅ Check if this is a re-approval with existing allocation
       if (request.budgetAllocation && request.budgetAllocation.budgetCodeId) {
-        console.log('⚠️  Budget already allocated - checking status');
+        console.log('⚠️  Existing budget allocation found');
         budgetCode = await BudgetCode.findById(request.budgetAllocation.budgetCodeId);
         
-        if (!budgetCode) {
-          return res.status(404).json({
-            success: false,
-            message: 'Previously assigned budget code not found'
-          });
+        if (budgetCode) {
+          // ✅ Check if allocation exists for this request
+          const existingAllocation = budgetCode.allocations.find(
+            a => a.requisitionId && a.requisitionId.toString() === requestId.toString()
+          );
+
+          if (existingAllocation) {
+            console.log(`   Existing allocation status: ${existingAllocation.status}`);
+            
+            // ✅ If allocation exists with any status, this is a re-approval
+            if (['spent', 'released', 'allocated'].includes(existingAllocation.status)) {
+              isReApproval = true;
+              
+              // ✅ If allocation was spent or allocated, release it first
+              if (existingAllocation.status === 'spent' || existingAllocation.status === 'allocated') {
+                console.log(`   🔄 Releasing previous ${existingAllocation.status} allocation...`);
+                
+                // Manually release the allocation
+                existingAllocation.status = 'released';
+                existingAllocation.releaseDate = new Date();
+                existingAllocation.releaseReason = 'Re-approval after rejection';
+                
+                // If it was spent, return the funds
+                if (existingAllocation.status === 'spent') {
+                  budgetCode.used -= existingAllocation.amount;
+                }
+                
+                await budgetCode.save();
+                console.log('   ✅ Previous allocation released');
+              }
+            }
+          }
         }
-
-        // Find the existing allocation in budget code
-        existingAllocation = budgetCode.allocations.find(
-          a => a.requisitionId && a.requisitionId.toString() === requestId.toString()
-        );
-
-        console.log(`   Existing allocation status: ${existingAllocation?.status || 'not found'}`);
-
-        // If already spent, reject the duplicate request
-        if (existingAllocation && existingAllocation.status === 'spent') {
+      }
+      
+      // ✅ Get fresh budget code if not already loaded
+      if (!budgetCode) {
+        // Try project budget code
+        if (request.projectId && request.projectId.budgetCodeId) {
+          console.log('📦 Using project budget code');
+          budgetCode = await BudgetCode.findById(request.projectId.budgetCodeId);
+        }
+        // Use finance-assigned budget code
+        else if (budgetCodeId) {
+          console.log(`💼 Finance assigning budget code: ${budgetCodeId}`);
+          budgetCode = await BudgetCode.findById(budgetCodeId);
+        } else {
           return res.status(400).json({
             success: false,
-            message: 'This request has already been disbursed. Cannot process duplicate disbursement.',
-            data: {
-              budgetCode: budgetCode.code,
-              previouslySpent: existingAllocation.actualSpent || existingAllocation.amount,
-              allocationStatus: existingAllocation.status
-            }
+            message: 'Budget code must be assigned for approval'
           });
         }
-
-        // If allocated (reserved), we can proceed to disbursement
-        if (existingAllocation && existingAllocation.status === 'allocated') {
-          console.log('✅ Found existing reservation - can proceed to disbursement');
-        }
-      }
-      // Try project budget code
-      else if (request.projectId && request.projectId.budgetCodeId) {
-        console.log('📦 Using project budget code');
-        budgetCode = await BudgetCode.findById(request.projectId.budgetCodeId);
-      }
-      // Use finance-assigned budget code
-      else if (budgetCodeId) {
-        console.log(`💼 Finance assigning budget code: ${budgetCodeId}`);
-        budgetCode = await BudgetCode.findById(budgetCodeId);
-      } else {
-        return res.status(400).json({
-          success: false,
-          message: 'Budget code must be assigned for approval'
-        });
       }
 
       if (!budgetCode) {
@@ -982,6 +969,7 @@ const processFinanceDecision = async (req, res) => {
       console.log(`   Current Budget: XAF ${budgetCode.budget.toLocaleString()}`);
       console.log(`   Used: XAF ${budgetCode.used.toLocaleString()}`);
       console.log(`   Available: XAF ${budgetCode.remaining.toLocaleString()}`);
+      console.log(`   Is Re-Approval: ${isReApproval ? 'YES' : 'NO'}`);
 
       // Check budget sufficiency
       if (budgetCode.remaining < finalAmount) {
@@ -994,49 +982,34 @@ const processFinanceDecision = async (req, res) => {
       console.log(`✅ Budget check passed`);
 
       // ============================================
-      // STEP 2: RESERVE BUDGET (if not already reserved)
+      // STEP 2: RESERVE BUDGET (Fresh or Re-reserve)
       // ============================================
-      if (!existingAllocation || existingAllocation.status !== 'allocated') {
-        try {
-          console.log(`\n💰 RESERVING budget...`);
-          await budgetCode.reserveBudget(
-            request._id, 
-            finalAmount, 
-            req.user.userId
-          );
-          console.log('✅ Budget reserved successfully');
-
-          // Update request allocation info (status: 'allocated' = reserved)
-          request.budgetAllocation = {
-            budgetCodeId: budgetCode._id,
-            budgetCode: budgetCode.code,
-            allocatedAmount: finalAmount,
-            allocationStatus: 'allocated', // ✅ RESERVED, not spent yet
-            assignedBy: req.user.userId,
-            assignedAt: new Date()
-          };
-
-        } catch (budgetError) {
-          console.error('❌ Budget reservation failed:', budgetError);
-          return res.status(500).json({
-            success: false,
-            message: `Failed to reserve budget: ${budgetError.message}`
-          });
-        }
-      } else {
-        console.log('ℹ️  Budget already reserved, skipping reservation step');
+      try {
+        console.log(`\n💰 ${isReApproval ? 'RE-RESERVING' : 'RESERVING'} budget...`);
         
-        // Update request allocation info if needed
-        if (!request.budgetAllocation || !request.budgetAllocation.budgetCodeId) {
-          request.budgetAllocation = {
-            budgetCodeId: budgetCode._id,
-            budgetCode: budgetCode.code,
-            allocatedAmount: existingAllocation.amount,
-            allocationStatus: 'allocated',
-            assignedBy: existingAllocation.allocatedBy,
-            assignedAt: existingAllocation.allocatedDate
-          };
-        }
+        await budgetCode.reserveBudget(
+          request._id, 
+          finalAmount, 
+          req.user.userId
+        );
+        console.log('✅ Budget reserved successfully');
+
+        // Update request allocation info
+        request.budgetAllocation = {
+          budgetCodeId: budgetCode._id,
+          budgetCode: budgetCode.code,
+          allocatedAmount: finalAmount,
+          allocationStatus: 'allocated', // ✅ RESERVED
+          assignedBy: req.user.userId,
+          assignedAt: new Date()
+        };
+
+      } catch (budgetError) {
+        console.error('❌ Budget reservation failed:', budgetError);
+        return res.status(500).json({
+          success: false,
+          message: `Failed to reserve budget: ${budgetError.message}`
+        });
       }
 
       // ============================================
@@ -1068,13 +1041,11 @@ const processFinanceDecision = async (req, res) => {
 
         // Validate disbursement amount
         if (disbursedAmount > finalAmount) {
-          // Rollback reservation if we just created it
-          if (!existingAllocation || existingAllocation.status !== 'allocated') {
-            try {
-              await budgetCode.releaseReservation(request._id, 'Disbursement amount exceeds approved amount');
-            } catch (rollbackError) {
-              console.error('Failed to rollback reservation:', rollbackError);
-            }
+          // Rollback reservation
+          try {
+            await budgetCode.releaseReservation(request._id, 'Disbursement amount exceeds approved amount');
+          } catch (rollbackError) {
+            console.error('Failed to rollback reservation:', rollbackError);
           }
 
           return res.status(400).json({
@@ -1084,7 +1055,7 @@ const processFinanceDecision = async (req, res) => {
         }
 
         try {
-          // ✅ DEDUCT from budget (moves allocation from 'allocated' → 'spent')
+          // ✅ DEDUCT from budget
           await budgetCode.deductBudget(request._id, disbursedAmount);
           console.log('✅ Budget deducted successfully');
 
@@ -1122,20 +1093,17 @@ const processFinanceDecision = async (req, res) => {
         } catch (deductError) {
           console.error('❌ Budget deduction failed:', deductError);
           
-          // ✅ ROLLBACK: Release the reservation (only if we just created it)
-          if (!existingAllocation || existingAllocation.status !== 'allocated') {
-            try {
-              await budgetCode.releaseReservation(request._id, 'Disbursement failed');
-              console.log('✅ Budget reservation rolled back');
-            } catch (rollbackError) {
-              console.error('❌ Failed to rollback reservation:', rollbackError);
-            }
+          // ✅ ROLLBACK: Release the reservation
+          try {
+            await budgetCode.releaseReservation(request._id, 'Disbursement failed');
+            console.log('✅ Budget reservation rolled back');
+          } catch (rollbackError) {
+            console.error('❌ Failed to rollback reservation:', rollbackError);
           }
 
           return res.status(500).json({
             success: false,
-            message: `Budget deduction failed: ${deductError.message}`,
-            error: deductError.message
+            message: `Budget deduction failed: ${deductError.message}`
           });
         }
 
@@ -1227,14 +1195,15 @@ const processFinanceDecision = async (req, res) => {
 
       res.json({
         success: true,
-        message: `Request approved${disbursementAmount ? ' and funds disbursed' : ' (awaiting disbursement)'}`,
+        message: `Request ${isReApproval ? 're-' : ''}approved${disbursementAmount ? ' and funds disbursed' : ' (awaiting disbursement)'}`,
         data: request,
         budgetAllocation: {
           budgetCode: budgetCode.code,
           budgetName: budgetCode.name,
           allocatedAmount: finalAmount,
           remainingBudget: budgetCode.remaining,
-          status: disbursementAmount ? 'disbursed' : 'reserved'
+          status: disbursementAmount ? 'disbursed' : 'reserved',
+          isReApproval
         },
         disbursement: disbursementAmount ? {
           amount: parseFloat(disbursementAmount),
