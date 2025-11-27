@@ -1,6 +1,5 @@
 const mongoose = require('mongoose');
 
-// Sub-milestone schema (recursive structure)
 const subMilestoneSchema = new mongoose.Schema({
   title: {
     type: String,
@@ -37,6 +36,40 @@ const subMilestoneSchema = new mongoose.Schema({
     max: 100,
     default: 0
   },
+  
+  // NEW: Link to creator's KPIs
+  linkedKPIs: [{
+    kpiDocId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'QuarterlyKPI',
+      required: true
+    },
+    kpiIndex: {
+      type: Number,
+      required: true
+    },
+    kpiTitle: {
+      type: String,
+      required: true
+    },
+    kpiWeight: {
+      type: Number,
+      required: true
+    },
+    contributionWeight: {
+      type: Number,
+      min: 0,
+      max: 100,
+      required: true
+    },
+    currentContribution: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100
+    }
+  }],
+  
   subMilestones: [], // Will be populated recursively
   completedDate: Date,
   completedBy: {
