@@ -273,12 +273,17 @@ if (contractRoutes) app.use('/api/contracts', contractRoutes);
 if (itSupportRoutes) app.use('/api/it-support', itSupportRoutes);
 if (suggestionRoutes) app.use('/api/suggestions', suggestionRoutes);
 if (leaveManagementRoutes) app.use('/api/leave', leaveManagementRoutes);
-if (projectRoutes) app.use('/api/projects', projectRoutes);
+// if (projectRoutes) app.use('/api/projects', projectRoutes);
 
-// NEW: Mount sub-milestone routes (as a sub-router under projects)
-if (subMilestoneRoutes) {
-  app.use('/api/projects', subMilestoneRoutes);
-  console.log('✅ Mounted: /api/projects (sub-milestones)');
+// // NEW: Mount sub-milestone routes (as a sub-router under projects)
+// if (subMilestoneRoutes) {
+//   app.use('/api/projects', subMilestoneRoutes);
+//   console.log('✅ Mounted: /api/projects (sub-milestones)');
+// }
+
+if (projectRoutes) {
+  app.use('/api/projects', projectRoutes);
+  console.log('✅ Mounted: /api/projects');
 }
 
 if (supplierOnboardingRoutes) app.use('/api/supplier-onboarding', supplierOnboardingRoutes);
