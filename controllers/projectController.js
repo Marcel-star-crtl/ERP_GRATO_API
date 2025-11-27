@@ -59,70 +59,6 @@ const resolveUserId = async (identifier, fieldName) => {
     return { user, userId };
 };
 
-// // Helper function to find sub-milestones assigned to supervisor
-// async function findSupervisorSubMilestones(subMilestones, supervisorId, project, parentMilestone) {
-//     const results = [];
-    
-//     for (const subMilestone of subMilestones) {
-//         if (subMilestone.assignedSupervisor && 
-//             subMilestone.assignedSupervisor._id.toString() === supervisorId.toString()) {
-            
-//             // Get task counts for this sub-milestone
-//             const tasks = await ActionItem.find({ 
-//                 milestoneId: subMilestone._id 
-//             }).select('status taskWeight assignedTo');
-
-//             const totalTasks = tasks.length;
-//             const completedTasks = tasks.filter(t => t.status === 'Completed').length;
-//             const totalAssignedWeight = tasks.reduce((sum, t) => sum + t.taskWeight, 0);
-//             const totalAssignees = tasks.reduce((sum, t) => sum + t.assignedTo.length, 0);
-
-//             results.push({
-//                 project: {
-//                     _id: project._id,
-//                     name: project.name,
-//                     code: project.code,
-//                     status: project.status
-//                 },
-//                 milestone: {
-//                     _id: subMilestone._id,
-//                     title: subMilestone.title,
-//                     description: subMilestone.description,
-//                     weight: subMilestone.weight,
-//                     progress: subMilestone.progress,
-//                     status: subMilestone.status,
-//                     dueDate: subMilestone.dueDate,
-//                     subMilestoneCount: subMilestone.subMilestones?.length || 0,
-//                     type: 'sub-milestone',
-//                     parentMilestone: {
-//                         _id: parentMilestone._id,
-//                         title: parentMilestone.title
-//                     },
-//                     taskStats: {
-//                         total: totalTasks,
-//                         completed: completedTasks,
-//                         totalWeightAssigned: totalAssignedWeight,
-//                         totalAssignees: totalAssignees,
-//                         weightRemaining: 100 - totalAssignedWeight
-//                     }
-//                 }
-//             });
-//         }
-
-//         if (subMilestone.subMilestones && subMilestone.subMilestones.length > 0) {
-//             const nestedResults = await findSupervisorSubMilestones(
-//                 subMilestone.subMilestones,
-//                 supervisorId,
-//                 project,
-//                 parentMilestone
-//             );
-//             results.push(...nestedResults);
-//         }
-//     }
-
-//     return results;
-// }
-
 
 // Helper function to recursively find sub-milestones assigned to supervisor
 async function findSupervisorSubMilestones(subMilestones, supervisorId, project, parentMilestone) {
@@ -680,6 +616,85 @@ const deleteProject = async (req, res) => {
     }
 };
 
+// // Get all projects with filtering
+// const getProjects = async (req, res) => {
+//     try {
+//         const userId = req.user.userId;
+//         const userRole = req.user.role;
+//         const {
+//             status,
+//             department,
+//             priority,
+//             projectType,
+//             projectManager,
+//             isDraft,
+//             page = 1,
+//             limit = 10,
+//             sort = 'createdAt',
+//             order = 'desc'
+//         } = req.query;
+
+//         const filter = { isActive: true };
+
+//         // Regular users only see non-draft projects unless it's their own
+//         if (!['admin', 'supply_chain', 'project', 'manager'].includes(userRole)) {
+//             filter.$or = [
+//                 { isDraft: false },
+//                 { createdBy: userId }
+//             ];
+//         } else if (isDraft !== undefined) {
+//             filter.isDraft = isDraft === 'true';
+//         } else {
+//             // Admins see non-draft projects by default
+//             filter.isDraft = false;
+//         }
+
+//         if (status) filter.status = status;
+//         if (department) filter.department = department;
+//         if (priority) filter.priority = priority;
+//         if (projectType) filter.projectType = projectType;
+//         if (projectManager) filter.projectManager = projectManager;
+
+//         const skip = (parseInt(page) - 1) * parseInt(limit);
+//         const sortObj = {};
+//         sortObj[sort] = order === 'desc' ? -1 : 1;
+
+//         const projects = await Project.find(filter)
+//             .populate('projectManager', 'fullName email role department')
+//             .populate('budgetCodeId', 'code name totalBudget used available')
+//             .populate('createdBy', 'fullName email')
+//             .populate('milestones.assignedSupervisor', 'fullName email department')
+//             .sort(sortObj)
+//             .skip(skip)
+//             .limit(parseInt(limit));
+
+//         const total = await Project.countDocuments(filter);
+
+//         res.status(200).json({
+//             success: true,
+//             data: {
+//                 projects,
+//                 pagination: {
+//                     currentPage: parseInt(page),
+//                     totalPages: Math.ceil(total / parseInt(limit)),
+//                     totalProjects: total,
+//                     hasNextPage: skip + parseInt(limit) < total,
+//                     hasPrevPage: parseInt(page) > 1
+//                 }
+//             }
+//         });
+
+//     } catch (error) {
+//         console.error('Error fetching projects:', error);
+//         res.status(500).json({
+//             success: false,
+//             message: 'Failed to fetch projects',
+//             error: process.env.NODE_ENV === 'development' ? error.message : undefined
+//         });
+//     }
+// };
+
+
 // Get all projects with filtering
 const getProjects = async (req, res) => {
     try {
@@ -698,19 +713,40 @@ const getProjects = async (req, res) => {
             order = 'desc'
         } = req.query;
 
+        console.log('=== GET PROJECTS ===');
+        console.log('User:', userId);
+        console.log('Role:', userRole);
+        console.log('isDraft param:', isDraft, 'type:', typeof isDraft);
+
         const filter = { isActive: true };
+
+        // FIX: Properly handle isDraft parameter
+        // Convert string to boolean
+        const parsedIsDraft = isDraft === 'true' ? true : isDraft === 'false' ? false : undefined;
+        
+        console.log('Parsed isDraft:', parsedIsDraft);
 
         // Regular users only see non-draft projects unless it's their own
         if (!['admin', 'supply_chain', 'project', 'manager'].includes(userRole)) {
-            filter.$or = [
-                { isDraft: false },
-                { createdBy: userId }
-            ];
-        } else if (isDraft !== undefined) {
-            filter.isDraft = isDraft === 'true';
+            if (parsedIsDraft === true) {
+                // Regular users can only see their own drafts
+                filter.isDraft = true;
+                filter.createdBy = userId;
+            } else {
+                // Show non-drafts OR their own drafts
+                filter.$or = [
+                    { isDraft: false },
+                    { isDraft: true, createdBy: userId }
+                ];
+            }
         } else {
-            // Admins see non-draft projects by default
-            filter.isDraft = false;
+            // Admins/managers handle drafts
+            if (parsedIsDraft !== undefined) {
+                filter.isDraft = parsedIsDraft;
+            } else {
+                // Default: show only non-draft projects
+                filter.isDraft = false;
+            }
         }
 
         if (status) filter.status = status;
@@ -718,6 +754,8 @@ const getProjects = async (req, res) => {
         if (priority) filter.priority = priority;
         if (projectType) filter.projectType = projectType;
         if (projectManager) filter.projectManager = projectManager;
+
+        console.log('Final filter:', JSON.stringify(filter, null, 2));
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const sortObj = {};
@@ -733,6 +771,8 @@ const getProjects = async (req, res) => {
             .limit(parseInt(limit));
 
         const total = await Project.countDocuments(filter);
+
+        console.log(`Found ${projects.length} projects (total: ${total})`);
 
         res.status(200).json({
             success: true,
@@ -757,6 +797,7 @@ const getProjects = async (req, res) => {
         });
     }
 };
+
 
 // Get active projects only
 const getActiveProjects = async (req, res) => {
@@ -833,54 +874,6 @@ const getProjectById = async (req, res) => {
         });
     }
 };
-
-// Get supervisor's assigned milestones
-// const getSupervisorMilestones = async (req, res) => {
-//     try {
-//         const userId = req.user.userId;
-
-//         console.log('=== GET SUPERVISOR MILESTONES ===');
-//         console.log('Supervisor:', userId);
-
-//         const milestones = await Project.getSupervisorMilestones(userId);
-
-//         // Get task counts for each milestone
-//         for (const item of milestones) {
-//             const tasks = await ActionItem.find({ 
-//                 milestoneId: item.milestone._id 
-//             }).select('status taskWeight assignedTo');
-
-//             const totalTasks = tasks.length;
-//             const completedTasks = tasks.filter(t => t.status === 'Completed').length;
-//             const totalAssignedWeight = tasks.reduce((sum, t) => sum + t.taskWeight, 0);
-//             const totalAssignees = tasks.reduce((sum, t) => sum + t.assignedTo.length, 0);
-
-//             item.milestone.taskStats = {
-//                 total: totalTasks,
-//                 completed: completedTasks,
-//                 totalWeightAssigned: totalAssignedWeight,
-//                 totalAssignees: totalAssignees,
-//                 weightRemaining: 100 - totalAssignedWeight
-//             };
-//         }
-
-//         console.log(`Found ${milestones.length} assigned milestones`);
-
-//         res.status(200).json({
-//             success: true,
-//             data: milestones,
-//             count: milestones.length
-//         });
-
-//     } catch (error) {
-//         console.error('Error fetching supervisor milestones:', error);
-//         res.status(500).json({
-//             success: false,
-//             message: 'Failed to fetch supervisor milestones',
-//             error: process.env.NODE_ENV === 'development' ? error.message : undefined
-//         });
-//     }
-// };
 
 
 // const getSupervisorMilestones = async (req, res) => {
