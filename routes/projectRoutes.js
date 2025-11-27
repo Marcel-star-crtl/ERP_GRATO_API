@@ -7,8 +7,8 @@ const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware'
 // Apply authentication middleware to all routes
 router.use(authMiddleware);
 
-// ========== MILESTONE MANAGEMENT (SUPERVISORS) ==========
-// IMPORTANT: Put specific routes BEFORE parameterized routes
+// ========== STATIC/SPECIFIC ROUTES FIRST (NO PARAMS) ==========
+// These MUST come before any parameterized routes
 
 // Get supervisor's assigned milestones
 router.get(
@@ -17,13 +17,15 @@ router.get(
 );
 
 // Get project statistics
-router.get('/stats', 
-    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-    projectController.getProjectStats
+router.get(
+  '/stats', 
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+  projectController.getProjectStats
 );
 
 // Get dashboard stats
-router.get('/dashboard-stats', 
+router.get(
+  '/dashboard-stats', 
   requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   projectController.getDashboardStats
 );
@@ -41,30 +43,33 @@ router.get(
 );
 
 // Get user's projects
-router.get('/my-projects', 
-    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-    projectController.getUserProjects
+router.get(
+  '/my-projects', 
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+  projectController.getUserProjects
 );
 
-// Get projects by department
+// Get projects by department (specific keyword 'department')
 router.get(
   '/department/:department',
   projectController.getProjectsByDepartment
 );
 
 // Create project
-router.post('/', 
-    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-    projectController.createProject
+router.post(
+  '/', 
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+  projectController.createProject
 );
 
-// Get all projects (with filters)
+// Get all projects (with filters) - This handles query params like ?isDraft=false
 router.get(
   '/',
   projectController.getProjects
 );
 
-// ========== PROJECT-SPECIFIC ROUTES (with :projectId param) ==========
+// ========== PARAMETERIZED ROUTES (:projectId) ==========
+// These come AFTER all static routes
 
 // Get project analytics
 router.get(
@@ -188,9 +193,10 @@ router.put(
 );
 
 // Update project status
-router.patch('/:projectId/status', 
-    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-    projectController.updateProjectStatus
+router.patch(
+  '/:projectId/status', 
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+  projectController.updateProjectStatus
 );
 
 // Update project progress
@@ -205,14 +211,13 @@ router.delete(
   projectController.deleteProject
 );
 
-// Get project by ID (MUST BE LAST among :projectId routes)
+// Get project by ID (MUST BE LAST - catches any remaining /:projectId patterns)
 router.get(
   '/:projectId',
   projectController.getProjectById
 );
 
 module.exports = router;
-
 
 
 
