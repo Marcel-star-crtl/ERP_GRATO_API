@@ -59,6 +59,70 @@ const resolveUserId = async (identifier, fieldName) => {
     return { user, userId };
 };
 
+// Helper function to find sub-milestones assigned to supervisor
+async function findSupervisorSubMilestones(subMilestones, supervisorId, project, parentMilestone) {
+    const results = [];
+    
+    for (const subMilestone of subMilestones) {
+        if (subMilestone.assignedSupervisor && 
+            subMilestone.assignedSupervisor._id.toString() === supervisorId.toString()) {
+            
+            // Get task counts for this sub-milestone
+            const tasks = await ActionItem.find({ 
+                milestoneId: subMilestone._id 
+            }).select('status taskWeight assignedTo');
+
+            const totalTasks = tasks.length;
+            const completedTasks = tasks.filter(t => t.status === 'Completed').length;
+            const totalAssignedWeight = tasks.reduce((sum, t) => sum + t.taskWeight, 0);
+            const totalAssignees = tasks.reduce((sum, t) => sum + t.assignedTo.length, 0);
+
+            results.push({
+                project: {
+                    _id: project._id,
+                    name: project.name,
+                    code: project.code,
+                    status: project.status
+                },
+                milestone: {
+                    _id: subMilestone._id,
+                    title: subMilestone.title,
+                    description: subMilestone.description,
+                    weight: subMilestone.weight,
+                    progress: subMilestone.progress,
+                    status: subMilestone.status,
+                    dueDate: subMilestone.dueDate,
+                    subMilestoneCount: subMilestone.subMilestones?.length || 0,
+                    type: 'sub-milestone',
+                    parentMilestone: {
+                        _id: parentMilestone._id,
+                        title: parentMilestone.title
+                    },
+                    taskStats: {
+                        total: totalTasks,
+                        completed: completedTasks,
+                        totalWeightAssigned: totalAssignedWeight,
+                        totalAssignees: totalAssignees,
+                        weightRemaining: 100 - totalAssignedWeight
+                    }
+                }
+            });
+        }
+
+        if (subMilestone.subMilestones && subMilestone.subMilestones.length > 0) {
+            const nestedResults = await findSupervisorSubMilestones(
+                subMilestone.subMilestones,
+                supervisorId,
+                project,
+                parentMilestone
+            );
+            results.push(...nestedResults);
+        }
+    }
+
+    return results;
+}
+
 // Create or save project
 const createProject = async (req, res) => {
     try {
@@ -643,6 +707,54 @@ const getProjectById = async (req, res) => {
 };
 
 // Get supervisor's assigned milestones
+// const getSupervisorMilestones = async (req, res) => {
+//     try {
+//         const userId = req.user.userId;
+
+//         console.log('=== GET SUPERVISOR MILESTONES ===');
+//         console.log('Supervisor:', userId);
+
+//         const milestones = await Project.getSupervisorMilestones(userId);
+
+//         // Get task counts for each milestone
+//         for (const item of milestones) {
+//             const tasks = await ActionItem.find({ 
+//                 milestoneId: item.milestone._id 
+//             }).select('status taskWeight assignedTo');
+
+//             const totalTasks = tasks.length;
+//             const completedTasks = tasks.filter(t => t.status === 'Completed').length;
+//             const totalAssignedWeight = tasks.reduce((sum, t) => sum + t.taskWeight, 0);
+//             const totalAssignees = tasks.reduce((sum, t) => sum + t.assignedTo.length, 0);
+
+//             item.milestone.taskStats = {
+//                 total: totalTasks,
+//                 completed: completedTasks,
+//                 totalWeightAssigned: totalAssignedWeight,
+//                 totalAssignees: totalAssignees,
+//                 weightRemaining: 100 - totalAssignedWeight
+//             };
+//         }
+
+//         console.log(`Found ${milestones.length} assigned milestones`);
+
+//         res.status(200).json({
+//             success: true,
+//             data: milestones,
+//             count: milestones.length
+//         });
+
+//     } catch (error) {
+//         console.error('Error fetching supervisor milestones:', error);
+//         res.status(500).json({
+//             success: false,
+//             message: 'Failed to fetch supervisor milestones',
+//             error: process.env.NODE_ENV === 'development' ? error.message : undefined
+//         });
+//     }
+// };
+
+
 const getSupervisorMilestones = async (req, res) => {
     try {
         const userId = req.user.userId;
@@ -650,34 +762,94 @@ const getSupervisorMilestones = async (req, res) => {
         console.log('=== GET SUPERVISOR MILESTONES ===');
         console.log('Supervisor:', userId);
 
-        const milestones = await Project.getSupervisorMilestones(userId);
-
-        // Get task counts for each milestone
-        for (const item of milestones) {
-            const tasks = await ActionItem.find({ 
-                milestoneId: item.milestone._id 
-            }).select('status taskWeight assignedTo');
-
-            const totalTasks = tasks.length;
-            const completedTasks = tasks.filter(t => t.status === 'Completed').length;
-            const totalAssignedWeight = tasks.reduce((sum, t) => sum + t.taskWeight, 0);
-            const totalAssignees = tasks.reduce((sum, t) => sum + t.assignedTo.length, 0);
-
-            item.milestone.taskStats = {
-                total: totalTasks,
-                completed: completedTasks,
-                totalWeightAssigned: totalAssignedWeight,
-                totalAssignees: totalAssignees,
-                weightRemaining: 100 - totalAssignedWeight
-            };
+        // Validate userId is a valid ObjectId
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid user ID'
+            });
         }
 
-        console.log(`Found ${milestones.length} assigned milestones`);
+        const projects = await Project.find({
+            $or: [
+                { 'milestones.assignedSupervisor': userId },
+                { 'milestones.subMilestones.assignedSupervisor': userId }
+            ],
+            isActive: true
+        })
+        .populate('projectManager', 'fullName email')
+        .populate('milestones.assignedSupervisor', 'fullName email department')
+        .populate('milestones.subMilestones.assignedSupervisor', 'fullName email department')
+        .lean();
+
+        const result = [];
+        
+        for (const project of projects) {
+            if (!project.milestones || project.milestones.length === 0) continue;
+
+            for (const milestone of project.milestones) {
+                // Check if supervisor is assigned to main milestone
+                if (milestone.assignedSupervisor && 
+                    milestone.assignedSupervisor._id.toString() === userId.toString()) {
+                    
+                    // Get task counts for this milestone
+                    const tasks = await ActionItem.find({ 
+                        milestoneId: milestone._id 
+                    }).select('status taskWeight assignedTo');
+
+                    const totalTasks = tasks.length;
+                    const completedTasks = tasks.filter(t => t.status === 'Completed').length;
+                    const totalAssignedWeight = tasks.reduce((sum, t) => sum + t.taskWeight, 0);
+                    const totalAssignees = tasks.reduce((sum, t) => sum + t.assignedTo.length, 0);
+
+                    result.push({
+                        project: {
+                            _id: project._id,
+                            name: project.name,
+                            code: project.code,
+                            status: project.status
+                        },
+                        milestone: {
+                            _id: milestone._id,
+                            title: milestone.title,
+                            description: milestone.description,
+                            weight: milestone.weight,
+                            progress: milestone.progress,
+                            status: milestone.status,
+                            dueDate: milestone.dueDate,
+                            totalTaskWeightAssigned: milestone.totalTaskWeightAssigned,
+                            subMilestoneCount: milestone.subMilestones?.length || 0,
+                            type: 'milestone',
+                            taskStats: {
+                                total: totalTasks,
+                                completed: completedTasks,
+                                totalWeightAssigned: totalAssignedWeight,
+                                totalAssignees: totalAssignees,
+                                weightRemaining: 100 - totalAssignedWeight
+                            }
+                        }
+                    });
+                }
+
+                // Check sub-milestones recursively
+                if (milestone.subMilestones && milestone.subMilestones.length > 0) {
+                    const subMilestoneResults = await findSupervisorSubMilestones(
+                        milestone.subMilestones,
+                        userId,
+                        project,
+                        milestone
+                    );
+                    result.push(...subMilestoneResults);
+                }
+            }
+        }
+
+        console.log(`Found ${result.length} assigned milestones`);
 
         res.status(200).json({
             success: true,
-            data: milestones,
-            count: milestones.length
+            data: result,
+            count: result.length
         });
 
     } catch (error) {
