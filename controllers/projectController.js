@@ -407,111 +407,37 @@ const createProject = async (req, res) => {
     }
 };
 
-
-
-
-// Get all projects with filtering
-const getProjects = async (req, res) => {
+// Get my projects (including drafts)
+const getMyProjects = async (req, res) => {
     try {
         const userId = req.user.userId;
-        const userRole = req.user.role;
-        const {
-            status,
-            department,
-            priority,
-            projectType,
-            projectManager,
-            isDraft,
-            page = 1,
-            limit = 10,
-            sort = 'createdAt',
-            order = 'desc'
-        } = req.query;
+        const { isDraft } = req.query;
 
-        console.log('=== GET PROJECTS ===');
-        console.log('User:', userId);
-        console.log('Role:', userRole);
-        console.log('isDraft param:', isDraft, 'type:', typeof isDraft);
+        const filter = {
+            createdBy: userId,
+            isActive: true
+        };
 
-        const filter = { isActive: true };
-
-        // FIX: Properly handle isDraft parameter AND missing isDraft fields
-        const parsedIsDraft = isDraft === 'true' ? true : isDraft === 'false' ? false : undefined;
-        
-        console.log('Parsed isDraft:', parsedIsDraft);
-
-        // Regular users only see non-draft projects unless it's their own
-        if (!['admin', 'supply_chain', 'project', 'manager'].includes(userRole)) {
-            if (parsedIsDraft === true) {
-                // Regular users can only see their own drafts
-                filter.isDraft = true;
-                filter.createdBy = userId;
-            } else {
-                // Show non-drafts OR their own drafts OR documents without isDraft field
-                filter.$or = [
-                    { isDraft: false },
-                    { isDraft: { $exists: false } }, // Handle missing isDraft field
-                    { isDraft: true, createdBy: userId }
-                ];
-            }
-        } else {
-            // Admins/managers handle drafts
-            if (parsedIsDraft === true) {
-                filter.isDraft = true;
-            } else if (parsedIsDraft === false) {
-                // Show documents where isDraft is false OR doesn't exist
-                filter.$or = [
-                    { isDraft: false },
-                    { isDraft: { $exists: false } }
-                ];
-            }
-            // If parsedIsDraft is undefined, show all (no filter on isDraft)
+        if (isDraft !== undefined) {
+            filter.isDraft = isDraft === 'true';
         }
-
-        if (status) filter.status = status;
-        if (department) filter.department = department;
-        if (priority) filter.priority = priority;
-        if (projectType) filter.projectType = projectType;
-        if (projectManager) filter.projectManager = projectManager;
-
-        console.log('Final filter:', JSON.stringify(filter, null, 2));
-
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-        const sortObj = {};
-        sortObj[sort] = order === 'desc' ? -1 : 1;
 
         const projects = await Project.find(filter)
             .populate('projectManager', 'fullName email role department')
-            .populate('budgetCodeId', 'code name totalBudget used available')
-            .populate('createdBy', 'fullName email')
+            .populate('budgetCodeId', 'code name totalBudget available')
             .populate('milestones.assignedSupervisor', 'fullName email department')
-            .sort(sortObj)
-            .skip(skip)
-            .limit(parseInt(limit));
-
-        const total = await Project.countDocuments(filter);
-
-        console.log(`Found ${projects.length} projects (total: ${total})`);
+            .sort({ createdAt: -1 });
 
         res.status(200).json({
             success: true,
-            data: {
-                projects,
-                pagination: {
-                    currentPage: parseInt(page),
-                    totalPages: Math.ceil(total / parseInt(limit)),
-                    totalProjects: total,
-                    hasNextPage: skip + parseInt(limit) < total,
-                    hasPrevPage: parseInt(page) > 1
-                }
-            }
+            data: projects
         });
 
     } catch (error) {
-        console.error('Error fetching projects:', error);
+        console.error('Error fetching user projects:', error);
         res.status(500).json({
             success: false,
-            message: 'Failed to fetch projects',
+            message: 'Failed to fetch your projects',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
@@ -804,8 +730,7 @@ const getProjects = async (req, res) => {
 
         const filter = { isActive: true };
 
-        // FIX: Properly handle isDraft parameter
-        // Convert string to boolean
+        // FIX: Properly handle isDraft parameter AND missing isDraft fields
         const parsedIsDraft = isDraft === 'true' ? true : isDraft === 'false' ? false : undefined;
         
         console.log('Parsed isDraft:', parsedIsDraft);
@@ -817,20 +742,25 @@ const getProjects = async (req, res) => {
                 filter.isDraft = true;
                 filter.createdBy = userId;
             } else {
-                // Show non-drafts OR their own drafts
+                // Show non-drafts OR their own drafts OR documents without isDraft field
                 filter.$or = [
                     { isDraft: false },
+                    { isDraft: { $exists: false } }, // Handle missing isDraft field
                     { isDraft: true, createdBy: userId }
                 ];
             }
         } else {
             // Admins/managers handle drafts
-            if (parsedIsDraft !== undefined) {
-                filter.isDraft = parsedIsDraft;
-            } else {
-                // Default: show only non-draft projects
-                filter.isDraft = false;
+            if (parsedIsDraft === true) {
+                filter.isDraft = true;
+            } else if (parsedIsDraft === false) {
+                // Show documents where isDraft is false OR doesn't exist
+                filter.$or = [
+                    { isDraft: false },
+                    { isDraft: { $exists: false } }
+                ];
             }
+            // If parsedIsDraft is undefined, show all (no filter on isDraft)
         }
 
         if (status) filter.status = status;
