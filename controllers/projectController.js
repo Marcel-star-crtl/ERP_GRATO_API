@@ -408,135 +408,110 @@ const createProject = async (req, res) => {
 };
 
 
-// Debug: See ALL projects in database (including drafts and inactive)
-router.get('/debug/all-projects', 
-    authMiddleware,
-    requireRoles('admin', 'supply_chain', 'project'),
-    async (req, res) => {
-        try {
-            const projects = await Project.find({})
-                .select('name code status isDraft isActive createdBy createdAt')
-                .populate('createdBy', 'fullName email')
-                .sort({ createdAt: -1 });
-            
-            console.log(`\n=== DEBUG: ALL PROJECTS IN DATABASE ===`);
-            console.log(`Total projects found: ${projects.length}`);
-            
-            const breakdown = {
-                total: projects.length,
-                active: projects.filter(p => p.isActive).length,
-                inactive: projects.filter(p => !p.isActive).length,
-                drafts: projects.filter(p => p.isDraft).length,
-                published: projects.filter(p => !p.isDraft).length,
-                activeAndPublished: projects.filter(p => p.isActive && !p.isDraft).length
-            };
-            
-            console.log('Breakdown:', breakdown);
-            
-            res.json({
-                success: true,
-                breakdown,
-                projects: projects.map(p => ({
-                    _id: p._id,
-                    name: p.name,
-                    code: p.code,
-                    status: p.status,
-                    isDraft: p.isDraft,
-                    isActive: p.isActive,
-                    createdBy: p.createdBy?.fullName || 'Unknown',
-                    createdAt: p.createdAt
-                }))
-            });
-        } catch (error) {
-            console.error('Debug route error:', error);
-            res.status(500).json({ 
-                success: false, 
-                error: error.message 
-            });
-        }
-    }
-);
 
-// Debug: Check a specific project by ID
-router.get('/debug/check/:projectId',
-    authMiddleware,
-    async (req, res) => {
-        try {
-            const { projectId } = req.params;
-            
-            if (!mongoose.Types.ObjectId.isValid(projectId)) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Invalid project ID'
-                });
-            }
-            
-            const project = await Project.findById(projectId)
-                .populate('createdBy', 'fullName email')
-                .populate('projectManager', 'fullName email');
-            
-            if (!project) {
-                return res.json({
-                    success: false,
-                    message: 'Project not found in database'
-                });
-            }
-            
-            res.json({
-                success: true,
-                project: {
-                    _id: project._id,
-                    name: project.name,
-                    code: project.code,
-                    status: project.status,
-                    isDraft: project.isDraft,
-                    isActive: project.isActive,
-                    createdBy: project.createdBy,
-                    projectManager: project.projectManager,
-                    createdAt: project.createdAt,
-                    milestones: project.milestones.length
-                }
-            });
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                error: error.message
-            });
-        }
-    }
-);
 
-// Get my projects (including drafts)
-const getMyProjects = async (req, res) => {
+// Get all projects with filtering
+const getProjects = async (req, res) => {
     try {
         const userId = req.user.userId;
-        const { isDraft } = req.query;
+        const userRole = req.user.role;
+        const {
+            status,
+            department,
+            priority,
+            projectType,
+            projectManager,
+            isDraft,
+            page = 1,
+            limit = 10,
+            sort = 'createdAt',
+            order = 'desc'
+        } = req.query;
 
-        const filter = {
-            createdBy: userId,
-            isActive: true
-        };
+        console.log('=== GET PROJECTS ===');
+        console.log('User:', userId);
+        console.log('Role:', userRole);
+        console.log('isDraft param:', isDraft, 'type:', typeof isDraft);
 
-        if (isDraft !== undefined) {
-            filter.isDraft = isDraft === 'true';
+        const filter = { isActive: true };
+
+        // FIX: Properly handle isDraft parameter AND missing isDraft fields
+        const parsedIsDraft = isDraft === 'true' ? true : isDraft === 'false' ? false : undefined;
+        
+        console.log('Parsed isDraft:', parsedIsDraft);
+
+        // Regular users only see non-draft projects unless it's their own
+        if (!['admin', 'supply_chain', 'project', 'manager'].includes(userRole)) {
+            if (parsedIsDraft === true) {
+                // Regular users can only see their own drafts
+                filter.isDraft = true;
+                filter.createdBy = userId;
+            } else {
+                // Show non-drafts OR their own drafts OR documents without isDraft field
+                filter.$or = [
+                    { isDraft: false },
+                    { isDraft: { $exists: false } }, // Handle missing isDraft field
+                    { isDraft: true, createdBy: userId }
+                ];
+            }
+        } else {
+            // Admins/managers handle drafts
+            if (parsedIsDraft === true) {
+                filter.isDraft = true;
+            } else if (parsedIsDraft === false) {
+                // Show documents where isDraft is false OR doesn't exist
+                filter.$or = [
+                    { isDraft: false },
+                    { isDraft: { $exists: false } }
+                ];
+            }
+            // If parsedIsDraft is undefined, show all (no filter on isDraft)
         }
+
+        if (status) filter.status = status;
+        if (department) filter.department = department;
+        if (priority) filter.priority = priority;
+        if (projectType) filter.projectType = projectType;
+        if (projectManager) filter.projectManager = projectManager;
+
+        console.log('Final filter:', JSON.stringify(filter, null, 2));
+
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const sortObj = {};
+        sortObj[sort] = order === 'desc' ? -1 : 1;
 
         const projects = await Project.find(filter)
             .populate('projectManager', 'fullName email role department')
-            .populate('budgetCodeId', 'code name totalBudget available')
+            .populate('budgetCodeId', 'code name totalBudget used available')
+            .populate('createdBy', 'fullName email')
             .populate('milestones.assignedSupervisor', 'fullName email department')
-            .sort({ createdAt: -1 });
+            .sort(sortObj)
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        const total = await Project.countDocuments(filter);
+
+        console.log(`Found ${projects.length} projects (total: ${total})`);
 
         res.status(200).json({
             success: true,
-            data: projects
+            data: {
+                projects,
+                pagination: {
+                    currentPage: parseInt(page),
+                    totalPages: Math.ceil(total / parseInt(limit)),
+                    totalProjects: total,
+                    hasNextPage: skip + parseInt(limit) < total,
+                    hasPrevPage: parseInt(page) > 1
+                }
+            }
         });
 
     } catch (error) {
-        console.error('Error fetching user projects:', error);
+        console.error('Error fetching projects:', error);
         res.status(500).json({
             success: false,
-            message: 'Failed to fetch your projects',
+            message: 'Failed to fetch projects',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
