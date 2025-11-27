@@ -4,6 +4,62 @@ const BudgetCode = require('../models/BudgetCode');
 const ActionItem = require('../models/ActionItem');
 const mongoose = require('mongoose');
 
+// Helper function to resolve user ID from various formats
+const resolveUserId = async (identifier, fieldName) => {
+    if (!identifier) {
+        throw new Error(`${fieldName} is required`);
+    }
+
+    let user;
+    let userId;
+
+    // Check if it's an employee format: emp_NUMBER_email@domain.com
+    if (typeof identifier === 'string' && identifier.startsWith('emp_')) {
+        const emailMatch = identifier.match(/emp_\d+_(.+)/);
+        if (emailMatch && emailMatch[1]) {
+            const email = emailMatch[1];
+            console.log(`Looking up user by email: ${email}`);
+            user = await User.findOne({ email: email.toLowerCase(), isActive: true });
+            if (user) {
+                userId = user._id;
+            } else {
+                throw new Error(`${fieldName} "${email}" is not registered in the system`);
+            }
+        } else {
+            throw new Error(`Invalid ${fieldName} format: ${identifier}`);
+        }
+    } 
+    // Check if it's a valid ObjectId
+    else if (mongoose.Types.ObjectId.isValid(identifier)) {
+        try {
+            user = await User.findById(identifier);
+            if (user && user.isActive) {
+                userId = identifier;
+            } else {
+                throw new Error(`${fieldName} not found or inactive`);
+            }
+        } catch (error) {
+            throw new Error(`Invalid ${fieldName}: ${identifier}`);
+        }
+    }
+    // Try as email
+    else if (typeof identifier === 'string' && identifier.includes('@')) {
+        console.log(`Looking up user by email: ${identifier}`);
+        user = await User.findOne({ email: identifier.toLowerCase(), isActive: true });
+        if (user) {
+            userId = user._id;
+        } else {
+            throw new Error(`${fieldName} "${identifier}" is not registered in the system`);
+        }
+    }
+    else {
+        throw new Error(`Invalid ${fieldName} format: ${identifier}`);
+    }
+
+    return { user, userId };
+};
+
+// Create or save project
 const createProject = async (req, res) => {
     try {
         const {
@@ -15,14 +71,59 @@ const createProject = async (req, res) => {
             projectManager,
             timeline,
             budgetCodeId,
-            milestones = []
+            milestones = [],
+            isDraft = false
         } = req.body;
 
-        console.log('=== CREATE PROJECT ===');
-        console.log('Project:', name);
-        console.log('Milestones:', milestones.length);
+        const userId = req.user.userId;
 
-        // Validate required fields
+        console.log('=== CREATE PROJECT ===');
+        console.log('User:', userId);
+        console.log('Is Draft:', isDraft);
+
+        // If saving as draft, skip most validations
+        if (isDraft) {
+            if (!name || name.trim().length === 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Project name is required even for drafts'
+                });
+            }
+
+            const project = new Project({
+                name,
+                description: description || '',
+                projectType,
+                priority,
+                department,
+                projectManager,
+                timeline,
+                budgetCodeId,
+                milestones: milestones.map(m => ({
+                    ...m,
+                    dueDate: m.dueDate ? new Date(m.dueDate) : null
+                })),
+                isDraft: true,
+                createdBy: userId,
+                updatedBy: userId
+            });
+
+            await project.save();
+
+            const populatedProject = await Project.findById(project._id)
+                .populate('projectManager', 'fullName email role department')
+                .populate('budgetCodeId', 'code name totalBudget available')
+                .populate('createdBy', 'fullName email')
+                .populate('milestones.assignedSupervisor', 'fullName email department');
+
+            return res.status(201).json({
+                success: true,
+                message: 'Project saved as draft successfully',
+                data: populatedProject
+            });
+        }
+
+        // Full validation for submitted projects
         if (!name || !description || !projectType || !priority || !department || !projectManager || !timeline) {
             return res.status(400).json({
                 success: false,
@@ -30,7 +131,6 @@ const createProject = async (req, res) => {
             });
         }
 
-        // Validate timeline
         if (!timeline.startDate || !timeline.endDate) {
             return res.status(400).json({
                 success: false,
@@ -38,7 +138,6 @@ const createProject = async (req, res) => {
             });
         }
 
-        // Validate milestones
         if (!milestones || milestones.length === 0) {
             return res.status(400).json({
                 success: false,
@@ -46,7 +145,6 @@ const createProject = async (req, res) => {
             });
         }
 
-        // Validate milestone weights sum to 100%
         const totalWeight = milestones.reduce((sum, m) => sum + (m.weight || 0), 0);
         if (totalWeight !== 100) {
             return res.status(400).json({
@@ -54,61 +152,6 @@ const createProject = async (req, res) => {
                 message: `Milestone weights must sum to 100%. Current total: ${totalWeight}%`
             });
         }
-
-        // Helper function to resolve user ID from various formats
-        const resolveUserId = async (identifier, fieldName) => {
-            if (!identifier) {
-                throw new Error(`${fieldName} is required`);
-            }
-
-            let user;
-            let userId;
-
-            // Check if it's an employee format: emp_NUMBER_email@domain.com
-            if (typeof identifier === 'string' && identifier.startsWith('emp_')) {
-                const emailMatch = identifier.match(/emp_\d+_(.+)/);
-                if (emailMatch && emailMatch[1]) {
-                    const email = emailMatch[1];
-                    console.log(`Looking up user by email: ${email}`);
-                    user = await User.findOne({ email: email.toLowerCase(), isActive: true });
-                    if (user) {
-                        userId = user._id;
-                    } else {
-                        throw new Error(`${fieldName} "${email}" is not registered in the system`);
-                    }
-                } else {
-                    throw new Error(`Invalid ${fieldName} format: ${identifier}`);
-                }
-            } 
-            // Check if it's a valid ObjectId
-            else if (mongoose.Types.ObjectId.isValid(identifier)) {
-                try {
-                    user = await User.findById(identifier);
-                    if (user && user.isActive) {
-                        userId = identifier;
-                    } else {
-                        throw new Error(`${fieldName} not found or inactive`);
-                    }
-                } catch (error) {
-                    throw new Error(`Invalid ${fieldName}: ${identifier}`);
-                }
-            }
-            // Try as email
-            else if (typeof identifier === 'string' && identifier.includes('@')) {
-                console.log(`Looking up user by email: ${identifier}`);
-                user = await User.findOne({ email: identifier.toLowerCase(), isActive: true });
-                if (user) {
-                    userId = user._id;
-                } else {
-                    throw new Error(`${fieldName} "${identifier}" is not registered in the system`);
-                }
-            }
-            else {
-                throw new Error(`Invalid ${fieldName} format: ${identifier}`);
-            }
-
-            return { user, userId };
-        };
 
         // Validate and resolve project manager
         console.log('Resolving project manager:', projectManager);
@@ -174,7 +217,7 @@ const createProject = async (req, res) => {
             });
         }
 
-        // Create the project (no longer requires approval)
+        // Create the project (not draft, so it's active immediately)
         const project = new Project({
             name,
             description,
@@ -188,8 +231,10 @@ const createProject = async (req, res) => {
             },
             budgetCodeId: budgetCodeId || null,
             milestones: processedMilestones,
-            status: 'Planning', // Projects start directly in Planning status
-            createdBy: req.user.userId
+            isDraft: false,
+            status: 'Planning',
+            createdBy: userId,
+            updatedBy: userId
         });
 
         await project.save();
@@ -201,12 +246,16 @@ const createProject = async (req, res) => {
             .populate('createdBy', 'fullName email')
             .populate('milestones.assignedSupervisor', 'fullName email department');
 
-        console.log('✅ Project created with milestones assigned to supervisors');
+        console.log('✅ Project created successfully');
         console.log('Project Code:', populatedProject.code);
+
+        // TODO: Send notification to admins about new project
+        // TODO: Send notification to project manager
+        // TODO: Send notifications to milestone supervisors
 
         res.status(201).json({
             success: true,
-            message: 'Project created successfully with milestone assignments',
+            message: 'Project created successfully',
             data: populatedProject
         });
 
@@ -215,6 +264,379 @@ const createProject = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to create project',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Get my projects (including drafts)
+const getMyProjects = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { isDraft } = req.query;
+
+        const filter = {
+            createdBy: userId,
+            isActive: true
+        };
+
+        if (isDraft !== undefined) {
+            filter.isDraft = isDraft === 'true';
+        }
+
+        const projects = await Project.find(filter)
+            .populate('projectManager', 'fullName email role department')
+            .populate('budgetCodeId', 'code name totalBudget available')
+            .populate('milestones.assignedSupervisor', 'fullName email department')
+            .sort({ createdAt: -1 });
+
+        res.status(200).json({
+            success: true,
+            data: projects
+        });
+
+    } catch (error) {
+        console.error('Error fetching user projects:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch your projects',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Update project
+const updateProject = async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const updateData = req.body;
+        const userId = req.user.userId;
+
+        if (!mongoose.Types.ObjectId.isValid(projectId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid project ID'
+            });
+        }
+
+        const project = await Project.findById(projectId);
+        if (!project || !project.isActive) {
+            return res.status(404).json({
+                success: false,
+                message: 'Project not found'
+            });
+        }
+
+        // Check if user can edit this project (creator or project manager)
+        if (!project.createdBy.equals(userId) && !project.projectManager.equals(userId)) {
+            return res.status(403).json({
+                success: false,
+                message: 'You can only edit projects you created or manage'
+            });
+        }
+
+        // Validate milestone weights if updating milestones and not draft
+        if (updateData.milestones && updateData.milestones.length > 0 && !updateData.isDraft) {
+            const totalWeight = updateData.milestones.reduce((sum, m) => sum + (m.weight || 0), 0);
+            if (totalWeight !== 100) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Milestone weights must sum to 100%. Current total: ${totalWeight}%`
+                });
+            }
+
+            // Verify supervisors exist
+            for (const milestone of updateData.milestones) {
+                if (milestone.assignedSupervisor) {
+                    const supervisor = await User.findById(milestone.assignedSupervisor);
+                    if (!supervisor) {
+                        return res.status(400).json({
+                            success: false,
+                            message: `Supervisor not found for milestone "${milestone.title}"`
+                        });
+                    }
+                }
+            }
+        }
+
+        if (updateData.projectManager) {
+            const manager = await User.findById(updateData.projectManager);
+            if (!manager) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Selected project manager does not exist'
+                });
+            }
+        }
+
+        if (updateData.budgetCodeId) {
+            const budgetCode = await BudgetCode.findById(updateData.budgetCodeId);
+            if (!budgetCode) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Selected budget code does not exist'
+                });
+            }
+        }
+
+        if (updateData.timeline) {
+            if (updateData.timeline.startDate) {
+                updateData.timeline.startDate = new Date(updateData.timeline.startDate);
+            }
+            if (updateData.timeline.endDate) {
+                updateData.timeline.endDate = new Date(updateData.timeline.endDate);
+            }
+        }
+
+        if (updateData.milestones) {
+            updateData.milestones = updateData.milestones.map(milestone => ({
+                ...milestone,
+                dueDate: milestone.dueDate ? new Date(milestone.dueDate) : null
+            }));
+        }
+
+        updateData.updatedBy = userId;
+
+        const updatedProject = await Project.findByIdAndUpdate(
+            projectId,
+            { $set: updateData },
+            { new: true, runValidators: true }
+        )
+        .populate('projectManager', 'fullName email role department')
+        .populate('budgetCodeId', 'code name totalBudget used available')
+        .populate('updatedBy', 'fullName email')
+        .populate('milestones.assignedSupervisor', 'fullName email department');
+
+        res.status(200).json({
+            success: true,
+            message: 'Project updated successfully',
+            data: updatedProject
+        });
+
+    } catch (error) {
+        console.error('Error updating project:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update project',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Delete project (only drafts or creator/manager can delete)
+const deleteProject = async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const userId = req.user.userId;
+        const userRole = req.user.role;
+
+        if (!mongoose.Types.ObjectId.isValid(projectId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid project ID'
+            });
+        }
+
+        const project = await Project.findById(projectId);
+        if (!project || !project.isActive) {
+            return res.status(404).json({
+                success: false,
+                message: 'Project not found'
+            });
+        }
+
+        // Only creator, project manager, or admin can delete
+        const canDelete = project.createdBy.equals(userId) || 
+                         project.projectManager.equals(userId) ||
+                         ['admin', 'supply_chain', 'project'].includes(userRole);
+
+        if (!canDelete) {
+            return res.status(403).json({
+                success: false,
+                message: 'You do not have permission to delete this project'
+            });
+        }
+
+        // Drafts can be deleted anytime
+        // Active projects with tasks cannot be deleted
+        if (!project.isDraft) {
+            const taskCount = await ActionItem.countDocuments({ projectId: project._id });
+            if (taskCount > 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Cannot delete project with existing tasks. Please complete or delete all tasks first.'
+                });
+            }
+        }
+
+        project.isActive = false;
+        project.updatedBy = userId;
+        await project.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Project deleted successfully'
+        });
+
+    } catch (error) {
+        console.error('Error deleting project:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to delete project',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Get all projects with filtering
+const getProjects = async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const userRole = req.user.role;
+        const {
+            status,
+            department,
+            priority,
+            projectType,
+            projectManager,
+            isDraft,
+            page = 1,
+            limit = 10,
+            sort = 'createdAt',
+            order = 'desc'
+        } = req.query;
+
+        const filter = { isActive: true };
+
+        // Regular users only see non-draft projects unless it's their own
+        if (!['admin', 'supply_chain', 'project', 'manager'].includes(userRole)) {
+            filter.$or = [
+                { isDraft: false },
+                { createdBy: userId }
+            ];
+        } else if (isDraft !== undefined) {
+            filter.isDraft = isDraft === 'true';
+        } else {
+            // Admins see non-draft projects by default
+            filter.isDraft = false;
+        }
+
+        if (status) filter.status = status;
+        if (department) filter.department = department;
+        if (priority) filter.priority = priority;
+        if (projectType) filter.projectType = projectType;
+        if (projectManager) filter.projectManager = projectManager;
+
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const sortObj = {};
+        sortObj[sort] = order === 'desc' ? -1 : 1;
+
+        const projects = await Project.find(filter)
+            .populate('projectManager', 'fullName email role department')
+            .populate('budgetCodeId', 'code name totalBudget used available')
+            .populate('createdBy', 'fullName email')
+            .populate('milestones.assignedSupervisor', 'fullName email department')
+            .sort(sortObj)
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        const total = await Project.countDocuments(filter);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                projects,
+                pagination: {
+                    currentPage: parseInt(page),
+                    totalPages: Math.ceil(total / parseInt(limit)),
+                    totalProjects: total,
+                    hasNextPage: skip + parseInt(limit) < total,
+                    hasPrevPage: parseInt(page) > 1
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching projects:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch projects',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Get active projects only
+const getActiveProjects = async (req, res) => {
+    try {
+        console.log('=== FETCHING ACTIVE PROJECTS ===');
+        console.log('User:', req.user?.userId);
+        
+        const projects = await Project.find({
+            status: { $in: ['Planning', 'In Progress'] },
+            isActive: true,
+            isDraft: false
+        })
+        .populate('projectManager', 'fullName email role department')
+        .populate('budgetCodeId', 'code name budget used remaining totalBudget')
+        .populate('milestones.assignedSupervisor', 'fullName email department')
+        .sort({ createdAt: -1 });
+
+        console.log(`Found ${projects.length} active projects`);
+
+        res.status(200).json({
+            success: true,
+            data: projects,
+            count: projects.length
+        });
+
+    } catch (error) {
+        console.error('Error fetching active projects:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch active projects',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// Get project by ID
+const getProjectById = async (req, res) => {
+    try {
+        const { projectId } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(projectId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid project ID'
+            });
+        }
+
+        const project = await Project.findById(projectId)
+            .populate('projectManager', 'fullName email role department')
+            .populate('budgetCodeId', 'code name totalBudget used available')
+            .populate('teamMembers.user', 'fullName email role department')
+            .populate('createdBy', 'fullName email')
+            .populate('updatedBy', 'fullName email')
+            .populate('milestones.assignedSupervisor', 'fullName email department');
+
+        if (!project || !project.isActive) {
+            return res.status(404).json({
+                success: false,
+                message: 'Project not found'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: project
+        });
+
+    } catch (error) {
+        console.error('Error fetching project:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch project',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
@@ -456,253 +878,6 @@ const completeMilestone = async (req, res) => {
     }
 };
 
-// Get all projects with filtering
-const getProjects = async (req, res) => {
-    try {
-        const {
-            status,
-            department,
-            priority,
-            projectType,
-            projectManager,
-            page = 1,
-            limit = 10,
-            sort = 'createdAt',
-            order = 'desc'
-        } = req.query;
-
-        const filter = { isActive: true };
-
-        if (status) filter.status = status;
-        if (department) filter.department = department;
-        if (priority) filter.priority = priority;
-        if (projectType) filter.projectType = projectType;
-        if (projectManager) filter.projectManager = projectManager;
-
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-        const sortObj = {};
-        sortObj[sort] = order === 'desc' ? -1 : 1;
-
-        const projects = await Project.find(filter)
-            .populate('projectManager', 'fullName email role department')
-            .populate('budgetCodeId', 'code name totalBudget used available')
-            .populate('createdBy', 'fullName email')
-            .populate('milestones.assignedSupervisor', 'fullName email department')
-            .sort(sortObj)
-            .skip(skip)
-            .limit(parseInt(limit));
-
-        const total = await Project.countDocuments(filter);
-
-        res.status(200).json({
-            success: true,
-            data: {
-                projects,
-                pagination: {
-                    currentPage: parseInt(page),
-                    totalPages: Math.ceil(total / parseInt(limit)),
-                    totalProjects: total,
-                    hasNextPage: skip + parseInt(limit) < total,
-                    hasPrevPage: parseInt(page) > 1
-                }
-            }
-        });
-
-    } catch (error) {
-        console.error('Error fetching projects:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch projects',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-};
-
-// Get active projects only
-const getActiveProjects = async (req, res) => {
-    try {
-        console.log('=== FETCHING ACTIVE PROJECTS ===');
-        console.log('User:', req.user?.userId);
-        
-        const projects = await Project.find({
-            status: { $in: ['Planning', 'In Progress'] },
-            isActive: true
-        })
-        .populate('projectManager', 'fullName email role department')
-        .populate('budgetCodeId', 'code name budget used remaining totalBudget')
-        .populate('milestones.assignedSupervisor', 'fullName email department')
-        .sort({ createdAt: -1 });
-
-        console.log(`Found ${projects.length} active projects`);
-
-        res.status(200).json({
-            success: true,
-            data: projects,
-            count: projects.length
-        });
-
-    } catch (error) {
-        console.error('Error fetching active projects:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch active projects',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-};
-
-// Get project by ID
-const getProjectById = async (req, res) => {
-    try {
-        const { projectId } = req.params;
-
-        if (!mongoose.Types.ObjectId.isValid(projectId)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid project ID'
-            });
-        }
-
-        const project = await Project.findById(projectId)
-            .populate('projectManager', 'fullName email role department')
-            .populate('budgetCodeId', 'code name totalBudget used available')
-            .populate('teamMembers.user', 'fullName email role department')
-            .populate('createdBy', 'fullName email')
-            .populate('updatedBy', 'fullName email')
-            .populate('milestones.assignedSupervisor', 'fullName email department');
-
-        if (!project || !project.isActive) {
-            return res.status(404).json({
-                success: false,
-                message: 'Project not found'
-            });
-        }
-
-        res.status(200).json({
-            success: true,
-            data: project
-        });
-
-    } catch (error) {
-        console.error('Error fetching project:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch project',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-};
-
-// Update project
-const updateProject = async (req, res) => {
-    try {
-        const { projectId } = req.params;
-        const updateData = req.body;
-        const userId = req.user.userId;
-
-        if (!mongoose.Types.ObjectId.isValid(projectId)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid project ID'
-            });
-        }
-
-        const project = await Project.findById(projectId);
-        if (!project || !project.isActive) {
-            return res.status(404).json({
-                success: false,
-                message: 'Project not found'
-            });
-        }
-
-        // Validate milestone weights if updating milestones
-        if (updateData.milestones && updateData.milestones.length > 0) {
-            const totalWeight = updateData.milestones.reduce((sum, m) => sum + (m.weight || 0), 0);
-            if (totalWeight !== 100) {
-                return res.status(400).json({
-                    success: false,
-                    message: `Milestone weights must sum to 100%. Current total: ${totalWeight}%`
-                });
-            }
-
-            // Verify supervisors exist
-            for (const milestone of updateData.milestones) {
-                if (milestone.assignedSupervisor) {
-                    const supervisor = await User.findById(milestone.assignedSupervisor);
-                    if (!supervisor) {
-                        return res.status(400).json({
-                            success: false,
-                            message: `Supervisor not found for milestone "${milestone.title}"`
-                        });
-                    }
-                }
-            }
-        }
-
-        if (updateData.projectManager) {
-            const manager = await User.findById(updateData.projectManager);
-            if (!manager) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Selected project manager does not exist'
-                });
-            }
-        }
-
-        if (updateData.budgetCodeId) {
-            const budgetCode = await BudgetCode.findById(updateData.budgetCodeId);
-            if (!budgetCode) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Selected budget code does not exist'
-                });
-            }
-        }
-
-        if (updateData.timeline) {
-            if (updateData.timeline.startDate) {
-                updateData.timeline.startDate = new Date(updateData.timeline.startDate);
-            }
-            if (updateData.timeline.endDate) {
-                updateData.timeline.endDate = new Date(updateData.timeline.endDate);
-            }
-        }
-
-        if (updateData.milestones) {
-            updateData.milestones = updateData.milestones.map(milestone => ({
-                ...milestone,
-                dueDate: milestone.dueDate ? new Date(milestone.dueDate) : null
-            }));
-        }
-
-        updateData.updatedBy = userId;
-
-        const updatedProject = await Project.findByIdAndUpdate(
-            projectId,
-            { $set: updateData },
-            { new: true, runValidators: true }
-        )
-        .populate('projectManager', 'fullName email role department')
-        .populate('budgetCodeId', 'code name totalBudget used available')
-        .populate('updatedBy', 'fullName email')
-        .populate('milestones.assignedSupervisor', 'fullName email department');
-
-        res.status(200).json({
-            success: true,
-            message: 'Project updated successfully',
-            data: updatedProject
-        });
-
-    } catch (error) {
-        console.error('Error updating project:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to update project',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-};
-
 // Update project status
 const updateProjectStatus = async (req, res) => {
     try {
@@ -784,7 +959,6 @@ const updateProjectProgress = async (req, res) => {
             });
         }
 
-        // Recalculate progress from milestones
         project.progress = project.calculateProjectProgress();
         project.updatedBy = req.user.userId;
         await project.save();
@@ -804,46 +978,6 @@ const updateProjectProgress = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to update project progress',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-};
-
-// Delete project
-const deleteProject = async (req, res) => {
-    try {
-        const { projectId } = req.params;
-        const userId = req.user.userId;
-
-        if (!mongoose.Types.ObjectId.isValid(projectId)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid project ID'
-            });
-        }
-
-        const project = await Project.findById(projectId);
-        if (!project || !project.isActive) {
-            return res.status(404).json({
-                success: false,
-                message: 'Project not found'
-            });
-        }
-
-        project.isActive = false;
-        project.updatedBy = userId;
-        await project.save();
-
-        res.status(200).json({
-            success: true,
-            message: 'Project deleted successfully'
-        });
-
-    } catch (error) {
-        console.error('Error deleting project:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to delete project',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
@@ -889,7 +1023,8 @@ const getUserProjects = async (req, res) => {
                 { projectManager: userId },
                 { 'teamMembers.user': userId }
             ],
-            isActive: true
+            isActive: true,
+            isDraft: false
         })
         .populate('projectManager', 'fullName email role department')
         .populate('budgetCodeId', 'code name')
@@ -936,484 +1071,464 @@ const getProjectsByDepartment = async (req, res) => {
     }
 };
 
-// Get detailed project analytics
+// Get project analytics
 const getProjectAnalytics = async (req, res) => {
-  try {
-    const { projectId } = req.params;
+    try {
+        const { projectId } = req.params;
 
-    const project = await Project.findById(projectId)
-      .populate('projectManager', 'fullName email')
-      .populate('teamMembers.user', 'fullName email department')
-      .populate('milestones.assignedSupervisor', 'fullName email')
-      .populate('risks.owner', 'fullName email')
-      .populate('issues.assignedTo', 'fullName email')
-      .populate('issues.reportedBy', 'fullName email');
+        const project = await Project.findById(projectId)
+            .populate('projectManager', 'fullName email')
+            .populate('teamMembers.user', 'fullName email department')
+            .populate('milestones.assignedSupervisor', 'fullName email')
+            .populate('risks.owner', 'fullName email')
+            .populate('issues.assignedTo', 'fullName email')
+            .populate('issues.reportedBy', 'fullName email');
 
-    if (!project || !project.isActive) {
-      return res.status(404).json({
-        success: false,
-        message: 'Project not found'
-      });
-    }
-
-    // Calculate health score
-    const healthScore = project.calculateHealthScore();
-    
-    // Get timeline analysis
-    const timelineAnalysis = project.getTimelineAnalysis();
-    
-    // Milestone analytics
-    const milestoneStats = {
-      total: project.milestones.length,
-      notStarted: project.milestones.filter(m => m.status === 'Not Started').length,
-      inProgress: project.milestones.filter(m => m.status === 'In Progress').length,
-      completed: project.milestones.filter(m => m.status === 'Completed').length,
-      overdue: project.milestones.filter(m => 
-        m.status !== 'Completed' && m.dueDate && new Date(m.dueDate) < new Date()
-      ).length,
-      completionRate: project.milestones.length > 0 
-        ? Math.round((project.milestones.filter(m => m.status === 'Completed').length / project.milestones.length) * 100)
-        : 0
-    };
-
-    // Task analytics
-    const tasks = await ActionItem.find({ projectId: project._id });
-    
-    const taskStats = {
-      total: tasks.length,
-      pending: tasks.filter(t => t.status === 'Pending Approval').length,
-      notStarted: tasks.filter(t => t.status === 'Not Started').length,
-      inProgress: tasks.filter(t => t.status === 'In Progress').length,
-      completed: tasks.filter(t => t.status === 'Completed').length,
-      overdue: tasks.filter(t => 
-        t.status !== 'Completed' && new Date(t.dueDate) < new Date()
-      ).length,
-      byPriority: {
-        critical: tasks.filter(t => t.priority === 'CRITICAL').length,
-        high: tasks.filter(t => t.priority === 'HIGH').length,
-        medium: tasks.filter(t => t.priority === 'MEDIUM').length,
-        low: tasks.filter(t => t.priority === 'LOW').length
-      },
-      averageCompletionTime: tasks
-        .filter(t => t.status === 'Completed' && t.completedDate)
-        .reduce((sum, t) => sum + (t.completedDate - t.createdAt), 0) / tasks.filter(t => t.status === 'Completed').length || 0
-    };
-
-    // Risk analytics
-    const riskStats = {
-      total: project.risks.length,
-      byStatus: {
-        identified: project.risks.filter(r => r.status === 'Identified').length,
-        analyzing: project.risks.filter(r => r.status === 'Analyzing').length,
-        mitigating: project.risks.filter(r => r.status === 'Mitigating').length,
-        monitoring: project.risks.filter(r => r.status === 'Monitoring').length,
-        closed: project.risks.filter(r => r.status === 'Closed').length
-      },
-      byImpact: {
-        veryHigh: project.risks.filter(r => r.impact === 'Very High').length,
-        high: project.risks.filter(r => r.impact === 'High').length,
-        medium: project.risks.filter(r => r.impact === 'Medium').length,
-        low: project.risks.filter(r => r.impact === 'Low').length,
-        veryLow: project.risks.filter(r => r.impact === 'Very Low').length
-      }
-    };
-
-    // Issue analytics
-    const issueStats = {
-      total: project.issues.length,
-      open: project.issues.filter(i => i.status === 'Open').length,
-      inProgress: project.issues.filter(i => i.status === 'In Progress').length,
-      resolved: project.issues.filter(i => i.status === 'Resolved').length,
-      closed: project.issues.filter(i => i.status === 'Closed').length,
-      bySeverity: {
-        critical: project.issues.filter(i => i.severity === 'Critical').length,
-        high: project.issues.filter(i => i.severity === 'High').length,
-        medium: project.issues.filter(i => i.severity === 'Medium').length,
-        low: project.issues.filter(i => i.severity === 'Low').length
-      },
-      averageResolutionTime: project.issues
-        .filter(i => i.status === 'Resolved' && i.resolvedDate)
-        .reduce((sum, i) => sum + (i.resolvedDate - i.reportedDate), 0) / project.issues.filter(i => i.status === 'Resolved').length || 0
-    };
-
-    // Budget analytics
-    const budgetAnalytics = project.resources && project.resources.budget ? {
-      allocated: project.resources.budget.allocated,
-      spent: project.resources.budget.spent,
-      remaining: project.resources.budget.remaining,
-      utilizationRate: (project.resources.budget.spent / project.resources.budget.allocated) * 100,
-      burnRate: project.resources.budget.spent / Math.ceil((new Date() - project.timeline.startDate) / (1000 * 60 * 60 * 24)),
-      projectedTotal: project.resources.budget.spent + 
-        (project.resources.budget.spent / Math.ceil((new Date() - project.timeline.startDate) / (1000 * 60 * 60 * 24))) * 
-        Math.ceil((project.timeline.endDate - new Date()) / (1000 * 60 * 60 * 24)),
-      isOverBudget: project.resources.budget.spent > project.resources.budget.allocated
-    } : null;
-
-    // Team analytics
-    const teamStats = {
-      totalMembers: project.teamMembers.length,
-      byRole: project.teamMembers.reduce((acc, member) => {
-        acc[member.role] = (acc[member.role] || 0) + 1;
-        return acc;
-      }, {})
-    };
-
-    res.json({
-      success: true,
-      data: {
-        project: {
-          _id: project._id,
-          name: project.name,
-          code: project.code,
-          status: project.status,
-          priority: project.priority,
-          progress: project.progress
-        },
-        healthScore,
-        timelineAnalysis,
-        milestones: milestoneStats,
-        tasks: taskStats,
-        risks: riskStats,
-        issues: issueStats,
-        budget: budgetAnalytics,
-        team: teamStats,
-        changeRequests: {
-          total: project.changeRequests.length,
-          pending: project.changeRequests.filter(cr => cr.status === 'Pending').length,
-          approved: project.changeRequests.filter(cr => cr.status === 'Approved').length,
-          rejected: project.changeRequests.filter(cr => cr.status === 'Rejected').length
+        if (!project || !project.isActive) {
+            return res.status(404).json({
+                success: false,
+                message: 'Project not found'
+            });
         }
-      }
-    });
 
-  } catch (error) {
-    console.error('Error fetching project analytics:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch project analytics',
-      error: error.message
-    });
-  }
+        const healthScore = project.calculateHealthScore();
+        const timelineAnalysis = project.getTimelineAnalysis();
+
+        const milestoneStats = {
+            total: project.milestones.length,
+            notStarted: project.milestones.filter(m => m.status === 'Not Started').length,
+            inProgress: project.milestones.filter(m => m.status === 'In Progress').length,
+            completed: project.milestones.filter(m => m.status === 'Completed').length,
+            overdue: project.milestones.filter(m => 
+                m.status !== 'Completed' && m.dueDate && new Date(m.dueDate) < new Date()
+            ).length,
+            completionRate: project.milestones.length > 0 
+                ? Math.round((project.milestones.filter(m => m.status === 'Completed').length / project.milestones.length) * 100)
+                : 0
+        };
+
+        const tasks = await ActionItem.find({ projectId: project._id });
+
+        const taskStats = {
+            total: tasks.length,
+            pending: tasks.filter(t => t.status === 'Pending Approval').length,
+            notStarted: tasks.filter(t => t.status === 'Not Started').length,
+            inProgress: tasks.filter(t => t.status === 'In Progress').length,
+            completed: tasks.filter(t => t.status === 'Completed').length,
+            overdue: tasks.filter(t => 
+                t.status !== 'Completed' && new Date(t.dueDate) < new Date()
+            ).length,
+            byPriority: {
+                critical: tasks.filter(t => t.priority === 'CRITICAL').length,
+                high: tasks.filter(t => t.priority === 'HIGH').length,
+                medium: tasks.filter(t => t.priority === 'MEDIUM').length,
+                low: tasks.filter(t => t.priority === 'LOW').length
+            }
+        };
+
+        const riskStats = {
+            total: project.risks.length,
+            byStatus: {
+                identified: project.risks.filter(r => r.status === 'Identified').length,
+                analyzing: project.risks.filter(r => r.status === 'Analyzing').length,
+                mitigating: project.risks.filter(r => r.status === 'Mitigating').length,
+                monitoring: project.risks.filter(r => r.status === 'Monitoring').length,
+                closed: project.risks.filter(r => r.status === 'Closed').length
+            },
+            byImpact: {
+                veryHigh: project.risks.filter(r => r.impact === 'Very High').length,
+                high: project.risks.filter(r => r.impact === 'High').length,
+                medium: project.risks.filter(r => r.impact === 'Medium').length,
+                low: project.risks.filter(r => r.impact === 'Low').length,
+                veryLow: project.risks.filter(r => r.impact === 'Very Low').length
+            }
+        };
+
+        const issueStats = {
+            total: project.issues.length,
+            open: project.issues.filter(i => i.status === 'Open').length,
+            inProgress: project.issues.filter(i => i.status === 'In Progress').length,
+            resolved: project.issues.filter(i => i.status === 'Resolved').length,
+            closed: project.issues.filter(i => i.status === 'Closed').length,
+            bySeverity: {
+                critical: project.issues.filter(i => i.severity === 'Critical').length,
+                high: project.issues.filter(i => i.severity === 'High').length,
+                medium: project.issues.filter(i => i.severity === 'Medium').length,
+                low: project.issues.filter(i => i.severity === 'Low').length
+            }
+        };
+
+        const budgetAnalytics = project.resources && project.resources.budget ? {
+            allocated: project.resources.budget.allocated,
+            spent: project.resources.budget.spent,
+            remaining: project.resources.budget.remaining,
+            utilizationRate: (project.resources.budget.spent / project.resources.budget.allocated) * 100
+        } : null;
+
+        const teamStats = {
+            totalMembers: project.teamMembers.length,
+            byRole: project.teamMembers.reduce((acc, member) => {
+                acc[member.role] = (acc[member.role] || 0) + 1;
+                return acc;
+            }, {})
+        };
+
+        res.json({
+            success: true,
+            data: {
+                project: {
+                    _id: project._id,
+                    name: project.name,
+                    code: project.code,
+                    status: project.status,
+                    priority: project.priority,
+                    progress: project.progress
+                },
+                healthScore,
+                timelineAnalysis,
+                milestones: milestoneStats,
+                tasks: taskStats,
+                risks: riskStats,
+                issues: issueStats,
+                budget: budgetAnalytics,
+                team: teamStats,
+                changeRequests: {
+                    total: project.changeRequests.length,
+                    pending: project.changeRequests.filter(cr => cr.status === 'Pending').length,
+                    approved: project.changeRequests.filter(cr => cr.status === 'Approved').length,
+                    rejected: project.changeRequests.filter(cr => cr.status === 'Rejected').length
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching project analytics:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch project analytics',
+            error: error.message
+        });
+    }
 };
 
 // Add risk to project
 const addProjectRisk = async (req, res) => {
-  try {
-    const { projectId } = req.params;
-    const { title, description, category, probability, impact, mitigation, contingency } = req.body;
+    try {
+        const { projectId } = req.params;
+        const { title, description, category, probability, impact, mitigation, contingency } = req.body;
 
-    const project = await Project.findById(projectId);
-    if (!project || !project.isActive) {
-      return res.status(404).json({
-        success: false,
-        message: 'Project not found'
-      });
+        const project = await Project.findById(projectId);
+        if (!project || !project.isActive) {
+            return res.status(404).json({
+                success: false,
+                message: 'Project not found'
+            });
+        }
+
+        project.risks.push({
+            title,
+            description,
+            category,
+            probability,
+            impact,
+            mitigation,
+            contingency,
+            owner: req.user.userId,
+            identifiedDate: new Date(),
+            status: 'Identified'
+        });
+
+        project.updatedBy = req.user.userId;
+        await project.save();
+
+        res.json({
+            success: true,
+            message: 'Risk added successfully',
+            data: project.risks[project.risks.length - 1]
+        });
+
+    } catch (error) {
+        console.error('Error adding risk:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to add risk',
+            error: error.message
+        });
     }
-
-    project.risks.push({
-      title,
-      description,
-      category,
-      probability,
-      impact,
-      mitigation,
-      contingency,
-      owner: req.user.userId,
-      identifiedDate: new Date(),
-      status: 'Identified'
-    });
-
-    project.updatedBy = req.user.userId;
-    await project.save();
-
-    res.json({
-      success: true,
-      message: 'Risk added successfully',
-      data: project.risks[project.risks.length - 1]
-    });
-
-  } catch (error) {
-    console.error('Error adding risk:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to add risk',
-      error: error.message
-    });
-  }
 };
 
 // Update risk status
 const updateRiskStatus = async (req, res) => {
-  try {
-    const { projectId, riskId } = req.params;
-    const { status, notes } = req.body;
+    try {
+        const { projectId, riskId } = req.params;
+        const { status, notes } = req.body;
 
-    const project = await Project.findById(projectId);
-    if (!project) {
-      return res.status(404).json({
-        success: false,
-        message: 'Project not found'
-      });
+        const project = await Project.findById(projectId);
+        if (!project) {
+            return res.status(404).json({
+                success: false,
+                message: 'Project not found'
+            });
+        }
+
+        const risk = project.risks.id(riskId);
+        if (!risk) {
+            return res.status(404).json({
+                success: false,
+                message: 'Risk not found'
+            });
+        }
+
+        risk.status = status;
+        if (status === 'Closed') {
+            risk.closedDate = new Date();
+        }
+
+        project.updatedBy = req.user.userId;
+        await project.save();
+
+        res.json({
+            success: true,
+            message: 'Risk status updated',
+            data: risk
+        });
+
+    } catch (error) {
+        console.error('Error updating risk:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update risk',
+            error: error.message
+        });
     }
-
-    const risk = project.risks.id(riskId);
-    if (!risk) {
-      return res.status(404).json({
-        success: false,
-        message: 'Risk not found'
-      });
-    }
-
-    risk.status = status;
-    if (status === 'Closed') {
-      risk.closedDate = new Date();
-    }
-
-    project.updatedBy = req.user.userId;
-    await project.save();
-
-    res.json({
-      success: true,
-      message: 'Risk status updated',
-      data: risk
-    });
-
-  } catch (error) {
-    console.error('Error updating risk:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update risk',
-      error: error.message
-    });
-  }
 };
 
 // Add issue to project
 const addProjectIssue = async (req, res) => {
-  try {
-    const { projectId } = req.params;
-    const { title, description, severity, assignedTo } = req.body;
+    try {
+        const { projectId } = req.params;
+        const { title, description, severity, assignedTo } = req.body;
 
-    const project = await Project.findById(projectId);
-    if (!project || !project.isActive) {
-      return res.status(404).json({
-        success: false,
-        message: 'Project not found'
-      });
+        const project = await Project.findById(projectId);
+        if (!project || !project.isActive) {
+            return res.status(404).json({
+                success: false,
+                message: 'Project not found'
+            });
+        }
+
+        project.issues.push({
+            title,
+            description,
+            severity,
+            assignedTo,
+            reportedBy: req.user.userId,
+            reportedDate: new Date(),
+            status: 'Open'
+        });
+
+        project.updatedBy = req.user.userId;
+        await project.save();
+
+        res.json({
+            success: true,
+            message: 'Issue added successfully',
+            data: project.issues[project.issues.length - 1]
+        });
+
+    } catch (error) {
+        console.error('Error adding issue:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to add issue',
+            error: error.message
+        });
     }
-
-    project.issues.push({
-      title,
-      description,
-      severity,
-      assignedTo,
-      reportedBy: req.user.userId,
-      reportedDate: new Date(),
-      status: 'Open'
-    });
-
-    project.updatedBy = req.user.userId;
-    await project.save();
-
-    res.json({
-      success: true,
-      message: 'Issue added successfully',
-      data: project.issues[project.issues.length - 1]
-    });
-
-  } catch (error) {
-    console.error('Error adding issue:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to add issue',
-      error: error.message
-    });
-  }
 };
 
 // Resolve issue
 const resolveIssue = async (req, res) => {
-  try {
-    const { projectId, issueId } = req.params;
-    const { resolution } = req.body;
+    try {
+        const { projectId, issueId } = req.params;
+        const { resolution } = req.body;
 
-    const project = await Project.findById(projectId);
-    if (!project) {
-      return res.status(404).json({
-        success: false,
-        message: 'Project not found'
-      });
+        const project = await Project.findById(projectId);
+        if (!project) {
+            return res.status(404).json({
+                success: false,
+                message: 'Project not found'
+            });
+        }
+
+        const issue = project.issues.id(issueId);
+        if (!issue) {
+            return res.status(404).json({
+                success: false,
+                message: 'Issue not found'
+            });
+        }
+
+        issue.status = 'Resolved';
+        issue.resolution = resolution;
+        issue.resolvedDate = new Date();
+
+        project.updatedBy = req.user.userId;
+        await project.save();
+
+        res.json({
+            success: true,
+            message: 'Issue resolved',
+            data: issue
+        });
+
+    } catch (error) {
+        console.error('Error resolving issue:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to resolve issue',
+            error: error.message
+        });
     }
-
-    const issue = project.issues.id(issueId);
-    if (!issue) {
-      return res.status(404).json({
-        success: false,
-        message: 'Issue not found'
-      });
-    }
-
-    issue.status = 'Resolved';
-    issue.resolution = resolution;
-    issue.resolvedDate = new Date();
-
-    project.updatedBy = req.user.userId;
-    await project.save();
-
-    res.json({
-      success: true,
-      message: 'Issue resolved',
-      data: issue
-    });
-
-  } catch (error) {
-    console.error('Error resolving issue:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to resolve issue',
-      error: error.message
-    });
-  }
 };
 
 // Add change request
 const addChangeRequest = async (req, res) => {
-  try {
-    const { projectId } = req.params;
-    const { title, description, type, impact, justification } = req.body;
+    try {
+        const { projectId } = req.params;
+        const { title, description, type, impact, justification } = req.body;
 
-    const project = await Project.findById(projectId);
-    if (!project || !project.isActive) {
-      return res.status(404).json({
-        success: false,
-        message: 'Project not found'
-      });
+        const project = await Project.findById(projectId);
+        if (!project || !project.isActive) {
+            return res.status(404).json({
+                success: false,
+                message: 'Project not found'
+            });
+        }
+
+        project.changeRequests.push({
+            title,
+            description,
+            type,
+            impact,
+            justification,
+            requestedBy: req.user.userId,
+            requestDate: new Date(),
+            status: 'Pending'
+        });
+
+        project.updatedBy = req.user.userId;
+        await project.save();
+
+        res.json({
+            success: true,
+            message: 'Change request submitted',
+            data: project.changeRequests[project.changeRequests.length - 1]
+        });
+
+    } catch (error) {
+        console.error('Error adding change request:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to add change request',
+            error: error.message
+        });
     }
-
-    project.changeRequests.push({
-      title,
-      description,
-      type,
-      impact,
-      justification,
-      requestedBy: req.user.userId,
-      requestDate: new Date(),
-      status: 'Pending'
-    });
-
-    project.updatedBy = req.user.userId;
-    await project.save();
-
-    res.json({
-      success: true,
-      message: 'Change request submitted',
-      data: project.changeRequests[project.changeRequests.length - 1]
-    });
-
-  } catch (error) {
-    console.error('Error adding change request:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to add change request',
-      error: error.message
-    });
-  }
 };
 
-// Approve/Reject change request
+// Process change request
 const processChangeRequest = async (req, res) => {
-  try {
-    const { projectId, changeRequestId } = req.params;
-    const { decision, comments } = req.body;
+    try {
+        const { projectId, changeRequestId } = req.params;
+        const { decision, comments } = req.body;
 
-    if (!['approve', 'reject'].includes(decision)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid decision'
-      });
+        if (!['approve', 'reject'].includes(decision)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid decision'
+            });
+        }
+
+        const project = await Project.findById(projectId);
+        if (!project) {
+            return res.status(404).json({
+                success: false,
+                message: 'Project not found'
+            });
+        }
+
+        const changeRequest = project.changeRequests.id(changeRequestId);
+        if (!changeRequest) {
+            return res.status(404).json({
+                success: false,
+                message: 'Change request not found'
+            });
+        }
+
+        changeRequest.status = decision === 'approve' ? 'Approved' : 'Rejected';
+        changeRequest.approvedBy = req.user.userId;
+        changeRequest.approvalDate = new Date();
+
+        project.updatedBy = req.user.userId;
+        await project.save();
+
+        res.json({
+            success: true,
+            message: `Change request ${decision}d`,
+            data: changeRequest
+        });
+
+    } catch (error) {
+        console.error('Error processing change request:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to process change request',
+            error: error.message
+        });
     }
-
-    const project = await Project.findById(projectId);
-    if (!project) {
-      return res.status(404).json({
-        success: false,
-        message: 'Project not found'
-      });
-    }
-
-    const changeRequest = project.changeRequests.id(changeRequestId);
-    if (!changeRequest) {
-      return res.status(404).json({
-        success: false,
-        message: 'Change request not found'
-      });
-    }
-
-    changeRequest.status = decision === 'approve' ? 'Approved' : 'Rejected';
-    changeRequest.approvedBy = req.user.userId;
-    changeRequest.approvalDate = new Date();
-
-    project.updatedBy = req.user.userId;
-    await project.save();
-
-    res.json({
-      success: true,
-      message: `Change request ${decision}d`,
-      data: changeRequest
-    });
-
-  } catch (error) {
-    console.error('Error processing change request:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to process change request',
-      error: error.message
-    });
-  }
 };
 
 // Log meeting
 const logProjectMeeting = async (req, res) => {
-  try {
-    const { projectId } = req.params;
-    const { title, date, duration, attendees, agenda, minutes, actionItems } = req.body;
+    try {
+        const { projectId } = req.params;
+        const { title, date, duration, attendees, agenda, minutes, actionItems } = req.body;
 
-    const project = await Project.findById(projectId);
-    if (!project || !project.isActive) {
-      return res.status(404).json({
-        success: false,
-        message: 'Project not found'
-      });
+        const project = await Project.findById(projectId);
+        if (!project || !project.isActive) {
+            return res.status(404).json({
+                success: false,
+                message: 'Project not found'
+            });
+        }
+
+        project.meetings.push({
+            title,
+            date: new Date(date),
+            duration,
+            attendees,
+            agenda,
+            minutes,
+            actionItems,
+            organizer: req.user.userId
+        });
+
+        project.updatedBy = req.user.userId;
+        await project.save();
+
+        res.json({
+            success: true,
+            message: 'Meeting logged successfully',
+            data: project.meetings[project.meetings.length - 1]
+        });
+
+    } catch (error) {
+        console.error('Error logging meeting:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to log meeting',
+            error: error.message
+        });
     }
-
-    project.meetings.push({
-      title,
-      date: new Date(date),
-      duration,
-      attendees,
-      agenda,
-      minutes,
-      actionItems,
-      organizer: req.user.userId
-    });
-
-    project.updatedBy = req.user.userId;
-    await project.save();
-
-    res.json({
-      success: true,
-      message: 'Meeting logged successfully',
-      data: project.meetings[project.meetings.length - 1]
-    });
-
-  } catch (error) {
-    console.error('Error logging meeting:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to log meeting',
-      error: error.message
-    });
-  }
 };
 
 // Get project statistics
@@ -1456,7 +1571,7 @@ const getProjectStats = async (req, res) => {
     }
 };
 
-// Get dashboard statistics for projects
+// Get dashboard statistics
 const getDashboardStats = async (req, res) => {
     try {
         const userId = req.user.userId;
@@ -1466,10 +1581,8 @@ const getDashboardStats = async (req, res) => {
         console.log('User:', userId);
         console.log('Role:', userRole);
 
-        // Get projects based on user role
-        let projectQuery = { isActive: true };
+        let projectQuery = { isActive: true, isDraft: false };
         
-        // For supervisors and below, only show their projects
         if (!['admin', 'supply_chain', 'project'].includes(userRole)) {
             projectQuery.$or = [
                 { projectManager: userId },
@@ -1503,252 +1616,22 @@ const getDashboardStats = async (req, res) => {
     }
 };
 
-// Create or save project as draft
-const createOrSaveProject = async (req, res) => {
-    try {
-        const {
-            name,
-            description,
-            projectType,
-            priority,
-            department,
-            projectManager,
-            timeline,
-            budgetCodeId,
-            milestones = [],
-            saveAsDraft = false // NEW: flag to save as draft
-        } = req.body;
-
-        const userId = req.user.userId;
-
-        console.log('=== CREATE/SAVE PROJECT ===');
-        console.log('User:', userId);
-        console.log('Save as draft:', saveAsDraft);
-
-        // If saving as draft, skip most validations
-        if (saveAsDraft) {
-            // Minimal validation for draft
-            if (!name || name.trim().length === 0) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Project name is required even for drafts'
-                });
-            }
-
-            const project = new Project({
-                name,
-                description: description || '',
-                projectType,
-                priority,
-                department,
-                projectManager,
-                timeline,
-                budgetCodeId,
-                milestones: milestones.map(m => ({
-                    ...m,
-                    dueDate: m.dueDate ? new Date(m.dueDate) : null
-                })),
-                approvalStatus: 'draft',
-                createdBy: userId,
-                updatedBy: userId
-            });
-
-            await project.save();
-
-            const populatedProject = await Project.findById(project._id)
-                .populate('projectManager', 'fullName email role department')
-                .populate('budgetCodeId', 'code name totalBudget available')
-                .populate('createdBy', 'fullName email')
-                .populate('milestones.assignedSupervisor', 'fullName email department');
-
-            return res.status(201).json({
-                success: true,
-                message: 'Project saved as draft successfully',
-                data: populatedProject
-            });
-        }
-
-        // Full validation for non-draft projects
-        if (!name || !description || !projectType || !priority || !department || !projectManager || !timeline) {
-            return res.status(400).json({
-                success: false,
-                message: 'All required fields must be provided'
-            });
-        }
-
-        if (!timeline.startDate || !timeline.endDate) {
-            return res.status(400).json({
-                success: false,
-                message: 'Both start date and end date are required'
-            });
-        }
-
-        if (!milestones || milestones.length === 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'At least one milestone is required'
-            });
-        }
-
-        const totalWeight = milestones.reduce((sum, m) => sum + (m.weight || 0), 0);
-        if (totalWeight !== 100) {
-            return res.status(400).json({
-                success: false,
-                message: `Milestone weights must sum to 100%. Current total: ${totalWeight}%`
-            });
-        }
-
-        for (const milestone of milestones) {
-            if (!milestone.assignedSupervisor) {
-                return res.status(400).json({
-                    success: false,
-                    message: `Milestone "${milestone.title}" must have an assigned supervisor`
-                });
-            }
-
-            const supervisor = await User.findById(milestone.assignedSupervisor);
-            if (!supervisor) {
-                return res.status(400).json({
-                    success: false,
-                    message: `Supervisor not found for milestone "${milestone.title}"`
-                });
-            }
-        }
-
-        // Validate project manager
-        let manager;
-        let actualManagerId;
-
-        if (typeof projectManager === 'string' && projectManager.startsWith('emp_')) {
-            const emailMatch = projectManager.match(/emp_\d+_(.+)/);
-            if (emailMatch && emailMatch[1]) {
-                const email = emailMatch[1];
-                manager = await User.findOne({ email: email.toLowerCase(), isActive: true });
-                if (manager) {
-                    actualManagerId = manager._id;
-                } else {
-                    return res.status(400).json({
-                        success: false,
-                        message: `Project manager "${email}" is not registered in the system.`
-                    });
-                }
-            }
-        } else {
-            try {
-                manager = await User.findById(projectManager);
-                actualManagerId = projectManager;
-            } catch (error) {
-                manager = await User.findOne({ email: projectManager.toLowerCase(), isActive: true });
-                if (manager) {
-                    actualManagerId = manager._id;
-                }
-            }
-        }
-
-        if (!manager) {
-            return res.status(400).json({
-                success: false,
-                message: 'Selected project manager does not exist'
-            });
-        }
-
-        if (budgetCodeId) {
-            const budgetCode = await BudgetCode.findById(budgetCodeId);
-            if (!budgetCode) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Selected budget code does not exist'
-                });
-            }
-        }
-
-        const existingProject = await Project.findOne({ 
-            name: { $regex: new RegExp(`^${name}$`, 'i') },
-            isActive: true 
-        });
-
-        if (existingProject) {
-            return res.status(400).json({
-                success: false,
-                message: 'A project with this name already exists'
-            });
-        }
-
-        const processedMilestones = milestones.map(milestone => ({
-            title: milestone.title,
-            description: milestone.description || '',
-            dueDate: milestone.dueDate ? new Date(milestone.dueDate) : null,
-            assignedSupervisor: milestone.assignedSupervisor,
-            weight: milestone.weight || 0,
-            status: 'Not Started',
-            progress: 0,
-            totalTaskWeightAssigned: 0,
-            manuallyCompleted: false
-        }));
-
-        const project = new Project({
-            name,
-            description,
-            projectType,
-            priority,
-            department,
-            projectManager: actualManagerId,
-            timeline: {
-                startDate: new Date(timeline.startDate),
-                endDate: new Date(timeline.endDate)
-            },
-            budgetCodeId: budgetCodeId || null,
-            milestones: processedMilestones,
-            approvalStatus: 'draft', // Start as draft
-            createdBy: userId,
-            updatedBy: userId
-        });
-
-        await project.save();
-
-        const populatedProject = await Project.findById(project._id)
-            .populate('projectManager', 'fullName email role department')
-            .populate('budgetCodeId', 'code name totalBudget available')
-            .populate('createdBy', 'fullName email')
-            .populate('milestones.assignedSupervisor', 'fullName email department');
-
-        console.log('✅ Project created as draft');
-
-        res.status(201).json({
-            success: true,
-            message: 'Project created successfully. Submit for approval to activate.',
-            data: populatedProject
-        });
-
-    } catch (error) {
-        console.error('Error creating/saving project:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to create/save project',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-};
-
 module.exports = {
     createProject,
-    createOrSaveProject,
+    getMyProjects,
     updateProject,
+    deleteProject,
     getProjects,
     getActiveProjects,
     getProjectById,
-    updateProject,
-    updateProjectStatus,
-    updateProjectProgress,
-    getProjectStats,
-    getDashboardStats,
-    searchProjects,
-    getUserProjects,
-    getProjectsByDepartment,
-    deleteProject,
     getSupervisorMilestones,
     getMilestoneDetails,
     completeMilestone,
+    updateProjectStatus,
+    updateProjectProgress,
+    searchProjects,
+    getUserProjects,
+    getProjectsByDepartment,
     getProjectAnalytics,
     addProjectRisk,
     updateRiskStatus,
@@ -1756,9 +1639,10 @@ module.exports = {
     resolveIssue,
     addChangeRequest,
     processChangeRequest,
-    logProjectMeeting
+    logProjectMeeting,
+    getProjectStats,
+    getDashboardStats
 };
-
 
 
 
