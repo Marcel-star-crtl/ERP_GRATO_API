@@ -187,7 +187,7 @@ function populateSubMilestoneSupervisors(subMilestones, allUsers) {
 }
 
 
-// Create or save project
+// Fixed createProject function with explicit isDraft handling
 const createProject = async (req, res) => {
     try {
         const {
@@ -200,7 +200,7 @@ const createProject = async (req, res) => {
             timeline,
             budgetCodeId,
             milestones = [],
-            isDraft = false
+            isDraft = false  // Default to false
         } = req.body;
 
         const userId = req.user.userId;
@@ -208,9 +208,10 @@ const createProject = async (req, res) => {
         console.log('=== CREATE PROJECT ===');
         console.log('User:', userId);
         console.log('Is Draft:', isDraft);
+        console.log('Name:', name);
 
         // If saving as draft, skip most validations
-        if (isDraft) {
+        if (isDraft === true || isDraft === 'true') {
             if (!name || name.trim().length === 0) {
                 return res.status(400).json({
                     success: false,
@@ -232,11 +233,18 @@ const createProject = async (req, res) => {
                     dueDate: m.dueDate ? new Date(m.dueDate) : null
                 })),
                 isDraft: true,
+                isActive: true,  // Explicitly set
                 createdBy: userId,
                 updatedBy: userId
             });
 
             await project.save();
+
+            console.log('✅ Draft project saved:', {
+                id: project._id,
+                isDraft: project.isDraft,
+                isActive: project.isActive
+            });
 
             const populatedProject = await Project.findById(project._id)
                 .populate('projectManager', 'fullName email role department')
@@ -251,7 +259,7 @@ const createProject = async (req, res) => {
             });
         }
 
-        // Full validation for submitted projects
+        // Full validation for submitted projects (NOT drafts)
         if (!name || !description || !projectType || !priority || !department || !projectManager || !timeline) {
             return res.status(400).json({
                 success: false,
@@ -345,7 +353,7 @@ const createProject = async (req, res) => {
             });
         }
 
-        // Create the project (not draft, so it's active immediately)
+        // Create the project (NOT a draft, so it should be visible)
         const project = new Project({
             name,
             description,
@@ -359,13 +367,22 @@ const createProject = async (req, res) => {
             },
             budgetCodeId: budgetCodeId || null,
             milestones: processedMilestones,
-            isDraft: false,
+            isDraft: false,      // EXPLICITLY FALSE
+            isActive: true,      // EXPLICITLY TRUE
             status: 'Planning',
             createdBy: userId,
             updatedBy: userId
         });
 
         await project.save();
+
+        console.log('✅ Project created successfully:', {
+            id: project._id,
+            code: project.code,
+            isDraft: project.isDraft,
+            isActive: project.isActive,
+            status: project.status
+        });
 
         // Populate the created project
         const populatedProject = await Project.findById(project._id)
@@ -374,13 +391,6 @@ const createProject = async (req, res) => {
             .populate('createdBy', 'fullName email')
             .populate('milestones.assignedSupervisor', 'fullName email department');
 
-        console.log('✅ Project created successfully');
-        console.log('Project Code:', populatedProject.code);
-
-        // TODO: Send notification to admins about new project
-        // TODO: Send notification to project manager
-        // TODO: Send notifications to milestone supervisors
-
         res.status(201).json({
             success: true,
             message: 'Project created successfully',
@@ -388,7 +398,7 @@ const createProject = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error creating project:', error);
+        console.error('❌ Error creating project:', error);
         res.status(500).json({
             success: false,
             message: 'Failed to create project',
@@ -396,6 +406,105 @@ const createProject = async (req, res) => {
         });
     }
 };
+
+
+// Debug: See ALL projects in database (including drafts and inactive)
+router.get('/debug/all-projects', 
+    authMiddleware,
+    requireRoles('admin', 'supply_chain', 'project'),
+    async (req, res) => {
+        try {
+            const projects = await Project.find({})
+                .select('name code status isDraft isActive createdBy createdAt')
+                .populate('createdBy', 'fullName email')
+                .sort({ createdAt: -1 });
+            
+            console.log(`\n=== DEBUG: ALL PROJECTS IN DATABASE ===`);
+            console.log(`Total projects found: ${projects.length}`);
+            
+            const breakdown = {
+                total: projects.length,
+                active: projects.filter(p => p.isActive).length,
+                inactive: projects.filter(p => !p.isActive).length,
+                drafts: projects.filter(p => p.isDraft).length,
+                published: projects.filter(p => !p.isDraft).length,
+                activeAndPublished: projects.filter(p => p.isActive && !p.isDraft).length
+            };
+            
+            console.log('Breakdown:', breakdown);
+            
+            res.json({
+                success: true,
+                breakdown,
+                projects: projects.map(p => ({
+                    _id: p._id,
+                    name: p.name,
+                    code: p.code,
+                    status: p.status,
+                    isDraft: p.isDraft,
+                    isActive: p.isActive,
+                    createdBy: p.createdBy?.fullName || 'Unknown',
+                    createdAt: p.createdAt
+                }))
+            });
+        } catch (error) {
+            console.error('Debug route error:', error);
+            res.status(500).json({ 
+                success: false, 
+                error: error.message 
+            });
+        }
+    }
+);
+
+// Debug: Check a specific project by ID
+router.get('/debug/check/:projectId',
+    authMiddleware,
+    async (req, res) => {
+        try {
+            const { projectId } = req.params;
+            
+            if (!mongoose.Types.ObjectId.isValid(projectId)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid project ID'
+                });
+            }
+            
+            const project = await Project.findById(projectId)
+                .populate('createdBy', 'fullName email')
+                .populate('projectManager', 'fullName email');
+            
+            if (!project) {
+                return res.json({
+                    success: false,
+                    message: 'Project not found in database'
+                });
+            }
+            
+            res.json({
+                success: true,
+                project: {
+                    _id: project._id,
+                    name: project.name,
+                    code: project.code,
+                    status: project.status,
+                    isDraft: project.isDraft,
+                    isActive: project.isActive,
+                    createdBy: project.createdBy,
+                    projectManager: project.projectManager,
+                    createdAt: project.createdAt,
+                    milestones: project.milestones.length
+                }
+            });
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                error: error.message
+            });
+        }
+    }
+);
 
 // Get my projects (including drafts)
 const getMyProjects = async (req, res) => {
