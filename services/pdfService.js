@@ -211,6 +211,132 @@ class PDFService {
        .text(this.formatDateExact(poData.expectedDeliveryDate), 400, detailsY + 12);
   }
 
+  // drawItemsTable(doc, yPos, poData) {
+  //   console.log('=== DRAWING ITEMS TABLE ===');
+  //   console.log('Items data:', poData.items);
+    
+  //   const tableWidth = 515;
+  //   const colX = {
+  //     desc: 40,
+  //     qty: 280,
+  //     unitPrice: 325,
+  //     disc: 400,
+  //     taxes: 445,
+  //     amount: 490
+  //   };
+    
+  //   let currentY = yPos;
+
+  //   // Table header with gray background
+  //   doc.fillColor('#F5F5F5')
+  //      .rect(40, currentY, tableWidth, 20)
+  //      .fill();
+
+  //   doc.strokeColor('#CCCCCC')
+  //      .lineWidth(0.5)
+  //      .rect(40, currentY, tableWidth, 20)
+  //      .stroke();
+
+  //   doc.fillColor('#000000')
+  //      .fontSize(9)
+  //      .font(this.boldFont);
+
+  //   // Column headers
+  //   doc.text('Description', colX.desc + 5, currentY + 6);
+  //   doc.text('Qty', colX.qty, currentY + 6);
+  //   doc.text('Unit Price', colX.unitPrice, currentY + 6);
+  //   doc.text('Disc.', colX.disc, currentY + 6);
+  //   doc.text('Taxes', colX.taxes, currentY + 6);
+  //   doc.text('Amount', colX.amount, currentY + 6);
+
+  //   // Vertical lines for header
+  //   [colX.qty, colX.unitPrice, colX.disc, colX.taxes, colX.amount].forEach(x => {
+  //     doc.moveTo(x, currentY).lineTo(x, currentY + 20).stroke();
+  //   });
+
+  //   currentY += 20;
+
+  //   // Determine tax rate
+  //   let taxRate = 0;
+  //   if (poData.taxApplicable) {
+  //     taxRate = 0.1925; // 19.25%
+  //     console.log('Tax is applicable, using 19.25%');
+  //   }
+    
+  //   let grandTotal = 0;
+
+  //   // Table rows
+  //   const items = Array.isArray(poData.items) ? poData.items : [];
+  //   console.log(`Processing ${items.length} items`);
+
+  //   items.forEach((item, index) => {
+  //     console.log(`=== Processing item ${index} ===`, item);
+      
+  //     const quantity = this.safeNumber(item.quantity, 0);
+  //     const unitPrice = this.safeNumber(item.unitPrice, 0);
+  //     const discount = this.safeNumber(item.discount, 0);
+      
+  //     // Calculate amounts
+  //     const itemSubtotal = quantity * unitPrice;
+  //     const discountAmount = itemSubtotal * (discount / 100);
+  //     const afterDiscount = itemSubtotal - discountAmount;
+  //     const taxAmount = afterDiscount * taxRate;
+  //     const itemTotal = afterDiscount + taxAmount;
+      
+  //     console.log('Calculated:', { itemSubtotal, discountAmount, afterDiscount, taxAmount, itemTotal });
+      
+  //     grandTotal += itemTotal;
+      
+  //     // Row border
+  //     doc.strokeColor('#CCCCCC')
+  //        .rect(40, currentY, tableWidth, 22)
+  //        .stroke();
+
+  //     doc.fillColor('#000000')
+  //        .fontSize(9)
+  //        .font(this.defaultFont);
+
+  //     // Cell content
+  //     const description = this.truncateText(this.safeString(item.description, 'No description'), 35);
+      
+  //     doc.text(description, colX.desc + 5, currentY + 6);
+  //     doc.text(quantity.toFixed(2), colX.qty, currentY + 6);
+  //     doc.text(this.formatCurrency(unitPrice), colX.unitPrice, currentY + 6);
+  //     doc.text(discount > 0 ? `${discount.toFixed(2)}%` : '0.00%', colX.disc, currentY + 6);
+  //     doc.text(taxRate > 0 ? '19.25% G' : '0%', colX.taxes, currentY + 6);
+  //     doc.text(`${this.formatCurrency(itemTotal)} FCFA`, colX.amount, currentY + 6);
+
+  //     // Vertical lines for row
+  //     [colX.qty, colX.unitPrice, colX.disc, colX.taxes, colX.amount].forEach(x => {
+  //       doc.moveTo(x, currentY).lineTo(x, currentY + 22).stroke();
+  //     });
+
+  //     currentY += 22;
+  //   });
+
+  //   // If no items
+  //   if (items.length === 0) {
+  //     doc.fillColor('#F9F9F9')
+  //        .rect(40, currentY, tableWidth, 22)
+  //        .fill();
+
+  //     doc.strokeColor('#CCCCCC')
+  //        .rect(40, currentY, tableWidth, 22)
+  //        .stroke();
+
+  //     doc.fillColor('#666666')
+  //        .text('No items found', colX.desc + 5, currentY + 6);
+      
+  //     currentY += 22;
+  //   }
+
+  //   // Draw summary box
+  //   this.drawOrderSummary(doc, currentY, grandTotal, taxRate);
+
+  //   return currentY - yPos + 90;
+  // }
+
+
   drawItemsTable(doc, yPos, poData) {
     console.log('=== DRAWING ITEMS TABLE ===');
     console.log('Items data:', poData.items);
@@ -287,31 +413,46 @@ class PDFService {
       
       grandTotal += itemTotal;
       
+      // Get full description
+      const description = this.safeString(item.description, 'No description');
+      
+      // Calculate dynamic row height based on description length
+      const descWidth = 230; // Width available for description column
+      doc.fontSize(8).font(this.defaultFont);
+      const descHeight = doc.heightOfString(description, { width: descWidth, lineGap: 1 });
+      const rowHeight = Math.max(25, descHeight + 12); // Minimum 25px, or description height + padding
+      
       // Row border
       doc.strokeColor('#CCCCCC')
-         .rect(40, currentY, tableWidth, 22)
+         .rect(40, currentY, tableWidth, rowHeight)
          .stroke();
 
       doc.fillColor('#000000')
-         .fontSize(9)
+         .fontSize(8)
          .font(this.defaultFont);
 
-      // Cell content
-      const description = this.truncateText(this.safeString(item.description, 'No description'), 35);
+      // Description - full text with word wrap
+      doc.text(description, colX.desc + 5, currentY + 6, {
+        width: descWidth,
+        align: 'left',
+        lineGap: 1
+      });
       
-      doc.text(description, colX.desc + 5, currentY + 6);
-      doc.text(quantity.toFixed(2), colX.qty, currentY + 6);
-      doc.text(this.formatCurrency(unitPrice), colX.unitPrice, currentY + 6);
-      doc.text(discount > 0 ? `${discount.toFixed(2)}%` : '0.00%', colX.disc, currentY + 6);
-      doc.text(taxRate > 0 ? '19.25% G' : '0%', colX.taxes, currentY + 6);
-      doc.text(`${this.formatCurrency(itemTotal)} FCFA`, colX.amount, currentY + 6);
+      // Other columns - vertically centered
+      const textY = currentY + (rowHeight / 2) - 4;
+      
+      doc.text(quantity.toFixed(2), colX.qty, textY);
+      doc.text(this.formatCurrency(unitPrice), colX.unitPrice, textY);
+      doc.text(discount > 0 ? `${discount.toFixed(2)}%` : '0.00%', colX.disc, textY);
+      doc.text(taxRate > 0 ? '19.25% G' : '0%', colX.taxes, textY);
+      doc.text(`${this.formatCurrency(itemTotal)} FCFA`, colX.amount, textY);
 
       // Vertical lines for row
       [colX.qty, colX.unitPrice, colX.disc, colX.taxes, colX.amount].forEach(x => {
-        doc.moveTo(x, currentY).lineTo(x, currentY + 22).stroke();
+        doc.moveTo(x, currentY).lineTo(x, currentY + rowHeight).stroke();
       });
 
-      currentY += 22;
+      currentY += rowHeight;
     });
 
     // If no items

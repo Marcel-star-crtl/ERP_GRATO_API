@@ -7,27 +7,13 @@ const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware'
 // Apply authentication middleware to all routes
 router.use(authMiddleware);
 
-// ========== PROJECT CRUD OPERATIONS ==========
+// ========== MILESTONE MANAGEMENT (SUPERVISORS) ==========
+// IMPORTANT: Put specific routes BEFORE parameterized routes
 
-// Create project (draft or active)
-router.post('/', 
-    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-    projectController.createProject
-);
-
-// Get my projects (including drafts)
-router.get('/my-projects',
-    projectController.getMyProjects
-);
-
-// Get all projects (with filters)
-router.get('/',
-    projectController.getProjects
-);
-
-// Get active projects only
-router.get('/active',
-    projectController.getActiveProjects
+// Get supervisor's assigned milestones
+router.get(
+  '/my-milestones',
+  projectController.getSupervisorMilestones
 );
 
 // Get project statistics
@@ -38,39 +24,167 @@ router.get('/stats',
 
 // Get dashboard stats
 router.get('/dashboard-stats', 
-    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-    projectController.getDashboardStats
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+  projectController.getDashboardStats
+);
+
+// Get active projects only
+router.get(
+  '/active',
+  projectController.getActiveProjects
 );
 
 // Search projects
-router.get('/search',
-    projectController.searchProjects
+router.get(
+  '/search',
+  projectController.searchProjects
 );
 
 // Get user's projects
-router.get('/user-projects', 
+router.get('/my-projects', 
     requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
     projectController.getUserProjects
 );
 
 // Get projects by department
-router.get('/department/:department',
-    projectController.getProjectsByDepartment
+router.get(
+  '/department/:department',
+  projectController.getProjectsByDepartment
 );
 
-// Get project by ID
-router.get('/:projectId',
-    projectController.getProjectById
+// Create project
+router.post('/', 
+    requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+    projectController.createProject
 );
+
+// Get all projects (with filters)
+router.get(
+  '/',
+  projectController.getProjects
+);
+
+// ========== PROJECT-SPECIFIC ROUTES (with :projectId param) ==========
+
+// Get project analytics
+router.get(
+  '/:projectId/analytics',
+  projectController.getProjectAnalytics
+);
+
+// Get milestone details with tasks
+router.get(
+  '/:projectId/milestones/:milestoneId',
+  projectController.getMilestoneDetails
+);
+
+// Get milestone hierarchy (with all sub-milestones)
+router.get(
+  '/:projectId/milestones/:milestoneId/hierarchy',
+  subMilestoneController.getMilestoneHierarchy
+);
+
+// Complete milestone
+router.post(
+  '/:projectId/milestones/:milestoneId/complete',
+  projectController.completeMilestone
+);
+
+// Update milestone progress
+router.patch(
+  '/:projectId/milestones/:milestoneId/progress',
+  projectController.updateProjectProgress
+);
+
+// ========== SUB-MILESTONE MANAGEMENT ==========
+
+// Create sub-milestone under milestone or another sub-milestone
+router.post(
+  '/:projectId/milestones/:milestoneId/sub-milestones',
+  subMilestoneController.createSubMilestone
+);
+
+// Update sub-milestone
+router.put(
+  '/:projectId/milestones/:milestoneId/sub-milestones/:subMilestoneId',
+  subMilestoneController.updateSubMilestone
+);
+
+// Delete sub-milestone
+router.delete(
+  '/:projectId/milestones/:milestoneId/sub-milestones/:subMilestoneId',
+  subMilestoneController.deleteSubMilestone
+);
+
+// Update sub-milestone progress
+router.patch(
+  '/:projectId/milestones/:milestoneId/sub-milestones/:subMilestoneId/progress',
+  subMilestoneController.updateSubMilestoneProgress
+);
+
+// Complete sub-milestone
+router.post(
+  '/:projectId/milestones/:milestoneId/sub-milestones/:subMilestoneId/complete',
+  subMilestoneController.completeSubMilestone
+);
+
+// ========== PROJECT RISK MANAGEMENT ==========
+
+// Add risk to project
+router.post(
+  '/:projectId/risks',
+  projectController.addProjectRisk
+);
+
+// Update risk status
+router.patch(
+  '/:projectId/risks/:riskId/status',
+  projectController.updateRiskStatus
+);
+
+// ========== PROJECT ISSUE MANAGEMENT ==========
+
+// Add issue to project
+router.post(
+  '/:projectId/issues',
+  projectController.addProjectIssue
+);
+
+// Resolve issue
+router.patch(
+  '/:projectId/issues/:issueId/resolve',
+  projectController.resolveIssue
+);
+
+// ========== CHANGE REQUEST MANAGEMENT ==========
+
+// Add change request
+router.post(
+  '/:projectId/change-requests',
+  projectController.addChangeRequest
+);
+
+// Process change request
+router.post(
+  '/:projectId/change-requests/:changeRequestId/process',
+  requireRoles('admin', 'supply_chain', 'project', 'manager'),
+  projectController.processChangeRequest
+);
+
+// ========== MEETING MANAGEMENT ==========
+
+// Log meeting
+router.post(
+  '/:projectId/meetings',
+  projectController.logProjectMeeting
+);
+
+// ========== PROJECT CRUD OPERATIONS ==========
 
 // Update project
-router.put('/:projectId',
-    projectController.updateProject
-);
-
-// Delete project
-router.delete('/:projectId',
-    projectController.deleteProject
+router.put(
+  '/:projectId',
+  projectController.updateProject
 );
 
 // Update project status
@@ -80,113 +194,24 @@ router.patch('/:projectId/status',
 );
 
 // Update project progress
-router.patch('/:projectId/progress',
-    projectController.updateProjectProgress
+router.patch(
+  '/:projectId/progress',
+  projectController.updateProjectProgress
 );
 
-// ========== MILESTONE MANAGEMENT (SUPERVISORS) ==========
-
-// Get supervisor's assigned milestones
-router.get('/milestones/my-milestones',
-    projectController.getSupervisorMilestones
+// Delete project
+router.delete(
+  '/:projectId',
+  projectController.deleteProject
 );
 
-// Get milestone details with tasks
-router.get('/:projectId/milestones/:milestoneId',
-    projectController.getMilestoneDetails
-);
-
-// Complete milestone
-router.post('/:projectId/milestones/:milestoneId/complete',
-    projectController.completeMilestone
-);
-
-// ========== SUB-MILESTONE MANAGEMENT ==========
-
-// Get milestone hierarchy (with all sub-milestones)
-router.get('/:projectId/milestones/:milestoneId/hierarchy',
-    subMilestoneController.getMilestoneHierarchy
-);
-
-// Create sub-milestone under milestone or another sub-milestone
-router.post('/:projectId/milestones/:milestoneId/sub-milestones',
-    subMilestoneController.createSubMilestone
-);
-
-// Update sub-milestone
-router.put('/:projectId/milestones/:milestoneId/sub-milestones/:subMilestoneId',
-    subMilestoneController.updateSubMilestone
-);
-
-// Delete sub-milestone
-router.delete('/:projectId/milestones/:milestoneId/sub-milestones/:subMilestoneId',
-    subMilestoneController.deleteSubMilestone
-);
-
-// Update sub-milestone progress
-router.patch('/:projectId/milestones/:milestoneId/sub-milestones/:subMilestoneId/progress',
-    subMilestoneController.updateSubMilestoneProgress
-);
-
-// Complete sub-milestone
-router.post('/:projectId/milestones/:milestoneId/sub-milestones/:subMilestoneId/complete',
-    subMilestoneController.completeSubMilestone
-);
-
-// ========== PROJECT ANALYTICS & REPORTING ==========
-
-// Get project analytics
-router.get('/:projectId/analytics',
-    projectController.getProjectAnalytics
-);
-
-// ========== RISK MANAGEMENT ==========
-
-// Add risk to project
-router.post('/:projectId/risks',
-    projectController.addProjectRisk
-);
-
-// Update risk status
-router.patch('/:projectId/risks/:riskId/status',
-    projectController.updateRiskStatus
-);
-
-// ========== ISSUE MANAGEMENT ==========
-
-// Add issue to project
-router.post('/:projectId/issues',
-    projectController.addProjectIssue
-);
-
-// Resolve issue
-router.patch('/:projectId/issues/:issueId/resolve',
-    projectController.resolveIssue
-);
-
-// ========== CHANGE REQUEST MANAGEMENT ==========
-
-// Add change request
-router.post('/:projectId/change-requests',
-    projectController.addChangeRequest
-);
-
-// Process change request (approve/reject)
-router.post('/:projectId/change-requests/:changeRequestId/process',
-    requireRoles('admin', 'supply_chain', 'project', 'manager'),
-    projectController.processChangeRequest
-);
-
-// ========== MEETING MANAGEMENT ==========
-
-// Log meeting
-router.post('/:projectId/meetings',
-    projectController.logProjectMeeting
+// Get project by ID (MUST BE LAST among :projectId routes)
+router.get(
+  '/:projectId',
+  projectController.getProjectById
 );
 
 module.exports = router;
-
-
 
 
 
