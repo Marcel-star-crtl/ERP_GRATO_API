@@ -83,6 +83,34 @@ router.get(
   projectController.getProjectAnalytics
 );
 
+// Get projects with milestones pending PM review
+router.get(
+  '/pm/pending-review',
+  requireRoles('employee', 'manager', 'admin', 'supply_chain', 'project'),
+  pmReviewController.getProjectsPendingReview
+);
+
+// Approve milestone with PM KPI linking
+router.post(
+  '/:projectId/milestones/:milestoneId/pm-approve',
+  requireRoles('employee', 'manager', 'admin', 'supply_chain', 'project'),
+  pmReviewController.approveMilestoneWithKPIs
+);
+
+// Reject milestone
+router.post(
+  '/:projectId/milestones/:milestoneId/pm-reject',
+  requireRoles('employee', 'manager', 'admin', 'supply_chain', 'project'),
+  pmReviewController.rejectMilestone
+);
+
+// Bulk approve milestones
+router.post(
+  '/:projectId/milestones/pm-bulk-approve',
+  requireRoles('employee', 'manager', 'admin', 'supply_chain', 'project'),
+  pmReviewController.bulkApproveMilestones
+);
+
 // Get milestone details with tasks
 router.get(
   '/:projectId/milestones/:milestoneId',

@@ -1,4 +1,3 @@
-// scripts/getAllUsers.js - Fetch all users with their complete data
 require('dotenv').config();
 const mongoose = require('mongoose');
 const User = require('../models/User');

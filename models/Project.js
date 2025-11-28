@@ -134,6 +134,53 @@ const milestoneSchema = new mongoose.Schema({
     max: 100,
     default: 0
   },
+  // NEW: PM Approval and KPI Linking
+  approvalStatus: {
+    type: String,
+    enum: ['pending_pm_review', 'approved', 'rejected'],
+    default: 'pending_pm_review'
+  },
+  pmLinkedKPIs: [{
+    kpiDocId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'QuarterlyKPI',
+      required: true
+    },
+    kpiIndex: {
+      type: Number,
+      required: true
+    },
+    kpiTitle: {
+      type: String,
+      required: true
+    },
+    kpiWeight: {
+      type: Number,
+      required: true
+    },
+    contributionWeight: {
+      type: Number,
+      min: 0,
+      max: 100,
+      required: true
+    },
+    currentContribution: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 100
+    }
+  }],
+  approvedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  approvedAt: {
+    type: Date
+  },
+  rejectionReason: {
+    type: String
+  },
   subMilestones: [subMilestoneSchema],
   completedDate: {
     type: Date
