@@ -95,11 +95,22 @@ const QuarterlyKPISchema = new mongoose.Schema({
   quarter: {
     type: String,
     required: true,
-    match: /^Q[1-4]-\d{4}$/
+    // ✅ REMOVED: strict regex validation
+    // match: /^Q[1-4]-\d{4}$/,
+    default: function() {
+      const now = new Date();
+      const month = now.getMonth() + 1;
+      const year = now.getFullYear();
+      const q = Math.ceil(month / 3);
+      return `Q${q}-${year}`;
+    }
   },
   year: {
     type: Number,
-    required: true
+    required: true,
+    default: function() {
+      return new Date().getFullYear();
+    }
   },
   
   // Use the integrated kpiSchema

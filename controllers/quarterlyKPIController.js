@@ -210,6 +210,11 @@ const createOrUpdateKPIs = async (req, res) => {
     const { quarter, kpis } = req.body;
     const userId = req.user.userId;
 
+    console.log('=== CREATE/UPDATE KPIs ===');
+    console.log('User:', userId);
+    console.log('Quarter received:', quarter);
+    console.log('KPIs count:', kpis?.length);
+
     // Validate KPIs
     if (!kpis || !Array.isArray(kpis) || kpis.length < 3) {
       return res.status(400).json({
@@ -227,7 +232,7 @@ const createOrUpdateKPIs = async (req, res) => {
       });
     }
 
-    // ✅ FIX: Map fields BEFORE validation
+    // Map fields BEFORE validation
     const mappedKPIs = kpis.map(kpi => {
       if (!kpi.title || !kpi.description || !kpi.weight || !kpi.targetValue || !kpi.measurableOutcome) {
         throw new Error('All KPI fields are required: title, description, weight, targetValue, measurableOutcome');
@@ -237,8 +242,8 @@ const createOrUpdateKPIs = async (req, res) => {
         title: kpi.title,
         description: kpi.description,
         weight: kpi.weight,
-        target: kpi.targetValue,        // ✅ Map BEFORE saving
-        measurement: kpi.measurableOutcome,  // ✅ Map BEFORE saving
+        target: kpi.targetValue,
+        measurement: kpi.measurableOutcome,
         status: 'draft'
       };
     });
@@ -272,12 +277,38 @@ const createOrUpdateKPIs = async (req, res) => {
       };
     }
 
-    const [, year] = quarter.split('-');
+    // ✅ FIX: Handle empty/missing quarter - use current quarter as default
+    let finalQuarter = quarter;
+    let finalYear;
+
+    if (!finalQuarter || finalQuarter.trim() === '') {
+      finalQuarter = getCurrentQuarter();
+      console.log('⚠️ Empty quarter provided, using current:', finalQuarter);
+    }
+
+    // ✅ Parse year from quarter string
+    const quarterParts = finalQuarter.split('-');
+    if (quarterParts.length === 2) {
+      finalYear = parseInt(quarterParts[1], 10);
+    } else {
+      // Fallback to current year if quarter format is unexpected
+      finalYear = new Date().getFullYear();
+      console.log('⚠️ Could not parse year from quarter, using current:', finalYear);
+    }
+
+    // Handle NaN year
+    if (isNaN(finalYear)) {
+      finalYear = new Date().getFullYear();
+      console.log('⚠️ Invalid year parsed, using current:', finalYear);
+    }
+
+    console.log('Final quarter:', finalQuarter);
+    console.log('Final year:', finalYear);
 
     // Check if KPIs already exist
     let quarterlyKPI = await QuarterlyKPI.findOne({
       employee: userId,
-      quarter: quarter
+      quarter: finalQuarter
     });
 
     if (quarterlyKPI) {
@@ -296,24 +327,28 @@ const createOrUpdateKPIs = async (req, res) => {
         });
       }
 
-      // ✅ Use pre-mapped KPIs
       quarterlyKPI.kpis = mappedKPIs;
       quarterlyKPI.approvalStatus = 'draft';
       quarterlyKPI.rejectionReason = undefined;
       quarterlyKPI.supervisor = supervisorInfo;
+      quarterlyKPI.year = finalYear;
+
+      console.log('Updating existing KPIs');
     } else {
       // Create new KPIs
       quarterlyKPI = new QuarterlyKPI({
         employee: userId,
-        quarter: quarter,
-        year: parseInt(year),
-        kpis: mappedKPIs,  // ✅ Use pre-mapped KPIs
+        quarter: finalQuarter,
+        year: finalYear,
+        kpis: mappedKPIs,
         supervisor: supervisorInfo
       });
+
+      console.log('Creating new KPIs');
     }
 
-    // ✅ FIX: Save only once
     await quarterlyKPI.save();
+    console.log('✅ KPIs saved successfully');
 
     res.status(200).json({
       success: true,
@@ -323,6 +358,12 @@ const createOrUpdateKPIs = async (req, res) => {
 
   } catch (error) {
     console.error('Create/Update KPIs error:', error);
+    console.error('Error details:', {
+      name: error.name,
+      message: error.message,
+      errors: error.errors
+    });
+    
     res.status(500).json({
       success: false,
       message: 'Failed to save KPIs',
