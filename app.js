@@ -69,8 +69,14 @@ const scheduledReportRoutes = loadRoute('./routes/scheduledReportRoutes', 'sched
 const migrationRoutes = loadRoute('./routes/migrationRoutes', 'migrationRoutes');
 const headApprovalRoutes = require('./routes/headApproval');
 
-// NEW: Load sub-milestone routes
-const subMilestoneRoutes = loadRoute('./routes/subMilestoneRoutes', 'subMilestoneRoutes');
+// Critical check for projectRoutes
+if (!projectRoutes) {
+  console.error('\n❌❌❌ CRITICAL: projectRoutes is NULL/UNDEFINED! ❌❌❌');
+  console.error('The /api/projects endpoint will NOT work!');
+  console.error('Check ./routes/projectRoutes.js for syntax errors\n');
+} else {
+  console.log('✅ projectRoutes loaded successfully, type:', typeof projectRoutes);
+}
 
 console.log('✅ Route loading complete\n');
 
@@ -233,6 +239,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
   }
 }));
 
+// Request logging middleware
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   if (req.files) {
@@ -243,15 +250,44 @@ app.use((req, res, next) => {
 
 console.log('\n🚀 Mounting API routes...');
 
+// Swagger documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec.specs));
 
-if (authRoutes) app.use('/api/auth', authRoutes);
-if (pettyCashRoutes) app.use('/api/petty-cash', pettyCashRoutes);
-if (cashRequestRoutes) app.use('/api/cash-requests', cashRequestRoutes);
-if (invoiceRoutes) app.use('/api/invoices', invoiceRoutes);
-if (supplierRoutes) app.use('/api/suppliers', supplierRoutes);
-if (purchaseRequisitionRoutes) app.use('/api/purchase-requisitions', purchaseRequisitionRoutes);
-if (incidentReportRoutes) app.use('/api/incident-reports', incidentReportRoutes);
+// Mount all routes with proper checks
+if (authRoutes) {
+  app.use('/api/auth', authRoutes);
+  console.log('✅ Mounted: /api/auth');
+}
+
+if (pettyCashRoutes) {
+  app.use('/api/petty-cash', pettyCashRoutes);
+  console.log('✅ Mounted: /api/petty-cash');
+}
+
+if (cashRequestRoutes) {
+  app.use('/api/cash-requests', cashRequestRoutes);
+  console.log('✅ Mounted: /api/cash-requests');
+}
+
+if (invoiceRoutes) {
+  app.use('/api/invoices', invoiceRoutes);
+  console.log('✅ Mounted: /api/invoices');
+}
+
+if (supplierRoutes) {
+  app.use('/api/suppliers', supplierRoutes);
+  console.log('✅ Mounted: /api/suppliers');
+}
+
+if (purchaseRequisitionRoutes) {
+  app.use('/api/purchase-requisitions', purchaseRequisitionRoutes);
+  console.log('✅ Mounted: /api/purchase-requisitions');
+}
+
+if (incidentReportRoutes) {
+  app.use('/api/incident-reports', incidentReportRoutes);
+  console.log('✅ Mounted: /api/incident-reports');
+}
 
 try {
   app.use('/api/files', require('./routes/fileRoutes'));
@@ -267,41 +303,123 @@ try {
   console.error('❌ Failed to mount /api/items:', e.message);
 }
 
-if (budgetCodeRoutes) app.use('/api/budget-codes', budgetCodeRoutes);
-if (buyerRoutes) app.use('/api/buyer', buyerRoutes);
-if (contractRoutes) app.use('/api/contracts', contractRoutes);
-if (itSupportRoutes) app.use('/api/it-support', itSupportRoutes);
-if (suggestionRoutes) app.use('/api/suggestions', suggestionRoutes);
-if (leaveManagementRoutes) app.use('/api/leave', leaveManagementRoutes);
-// if (projectRoutes) app.use('/api/projects', projectRoutes);
-
-// // NEW: Mount sub-milestone routes (as a sub-router under projects)
-// if (subMilestoneRoutes) {
-//   app.use('/api/projects', subMilestoneRoutes);
-//   console.log('✅ Mounted: /api/projects (sub-milestones)');
-// }
-
-if (projectRoutes) {
-  app.use('/api/projects', projectRoutes);
-  console.log('✅ Mounted: /api/projects');
+if (budgetCodeRoutes) {
+  app.use('/api/budget-codes', budgetCodeRoutes);
+  console.log('✅ Mounted: /api/budget-codes');
 }
 
-if (supplierOnboardingRoutes) app.use('/api/supplier-onboarding', supplierOnboardingRoutes);
-if (sharepointRoutes) app.use('/api/sharepoint', sharepointRoutes);
-if (actionItemRoutes) app.use('/api/action-items', actionItemRoutes);
-if (communicationRoutes) app.use('/api/communications', communicationRoutes);
-if (quarterlyKPIRoutes) app.use('/api/kpis', quarterlyKPIRoutes);
-if (behavioralEvaluationRoutes) app.use('/api/behavioral-evaluations', behavioralEvaluationRoutes);
-if (quarterlyEvaluationRoutes) app.use('/api/quarterly-evaluations', quarterlyEvaluationRoutes);
-if (inventoryRoutes) app.use('/api/inventory', inventoryRoutes);
-if (fixedAssetRoutes) app.use('/api/fixed-assets', fixedAssetRoutes);
-if (supplierPerformanceRoutes) app.use('/api/supplier-performance', supplierPerformanceRoutes);
-if (enhancedUserRoutes) app.use('/api/enhanced-users', enhancedUserRoutes);
-if (enhancedBehavioralRoutes) app.use('/api/enhanced-behavioral-evaluations', enhancedBehavioralRoutes);
-if (migrationRoutes) app.use('/api/migration', migrationRoutes);
-if (scheduledReportRoutes) app.use('/api/scheduled-reports', scheduledReportRoutes);
-if (budgetTransferRoutes) app.use('/api/budget-transfers', budgetTransferRoutes);
-if (headApprovalRoutes) app.use('/api/head-approval', headApprovalRoutes);
+if (buyerRoutes) {
+  app.use('/api/buyer', buyerRoutes);
+  console.log('✅ Mounted: /api/buyer');
+}
+
+if (contractRoutes) {
+  app.use('/api/contracts', contractRoutes);
+  console.log('✅ Mounted: /api/contracts');
+}
+
+if (itSupportRoutes) {
+  app.use('/api/it-support', itSupportRoutes);
+  console.log('✅ Mounted: /api/it-support');
+}
+
+if (suggestionRoutes) {
+  app.use('/api/suggestions', suggestionRoutes);
+  console.log('✅ Mounted: /api/suggestions');
+}
+
+if (leaveManagementRoutes) {
+  app.use('/api/leave', leaveManagementRoutes);
+  console.log('✅ Mounted: /api/leave');
+}
+
+// ========== PROJECT ROUTES - CRITICAL SECTION ==========
+if (projectRoutes) {
+  app.use('/api/projects', projectRoutes);
+  console.log('✅ Mounted: /api/projects (includes all sub-milestone routes)');
+} else {
+  console.error('❌ FAILED to mount /api/projects - projectRoutes is null/undefined!');
+}
+
+if (supplierOnboardingRoutes) {
+  app.use('/api/supplier-onboarding', supplierOnboardingRoutes);
+  console.log('✅ Mounted: /api/supplier-onboarding');
+}
+
+if (sharepointRoutes) {
+  app.use('/api/sharepoint', sharepointRoutes);
+  console.log('✅ Mounted: /api/sharepoint');
+}
+
+if (actionItemRoutes) {
+  app.use('/api/action-items', actionItemRoutes);
+  console.log('✅ Mounted: /api/action-items');
+}
+
+if (communicationRoutes) {
+  app.use('/api/communications', communicationRoutes);
+  console.log('✅ Mounted: /api/communications');
+}
+
+if (quarterlyKPIRoutes) {
+  app.use('/api/kpis', quarterlyKPIRoutes);
+  console.log('✅ Mounted: /api/kpis');
+}
+
+if (behavioralEvaluationRoutes) {
+  app.use('/api/behavioral-evaluations', behavioralEvaluationRoutes);
+  console.log('✅ Mounted: /api/behavioral-evaluations');
+}
+
+if (quarterlyEvaluationRoutes) {
+  app.use('/api/quarterly-evaluations', quarterlyEvaluationRoutes);
+  console.log('✅ Mounted: /api/quarterly-evaluations');
+}
+
+if (inventoryRoutes) {
+  app.use('/api/inventory', inventoryRoutes);
+  console.log('✅ Mounted: /api/inventory');
+}
+
+if (fixedAssetRoutes) {
+  app.use('/api/fixed-assets', fixedAssetRoutes);
+  console.log('✅ Mounted: /api/fixed-assets');
+}
+
+if (supplierPerformanceRoutes) {
+  app.use('/api/supplier-performance', supplierPerformanceRoutes);
+  console.log('✅ Mounted: /api/supplier-performance');
+}
+
+if (enhancedUserRoutes) {
+  app.use('/api/enhanced-users', enhancedUserRoutes);
+  console.log('✅ Mounted: /api/enhanced-users');
+}
+
+if (enhancedBehavioralRoutes) {
+  app.use('/api/enhanced-behavioral-evaluations', enhancedBehavioralRoutes);
+  console.log('✅ Mounted: /api/enhanced-behavioral-evaluations');
+}
+
+if (migrationRoutes) {
+  app.use('/api/migration', migrationRoutes);
+  console.log('✅ Mounted: /api/migration');
+}
+
+if (scheduledReportRoutes) {
+  app.use('/api/scheduled-reports', scheduledReportRoutes);
+  console.log('✅ Mounted: /api/scheduled-reports');
+}
+
+if (budgetTransferRoutes) {
+  app.use('/api/budget-transfers', budgetTransferRoutes);
+  console.log('✅ Mounted: /api/budget-transfers');
+}
+
+if (headApprovalRoutes) {
+  app.use('/api/head-approval', headApprovalRoutes);
+  console.log('✅ Mounted: /api/head-approval');
+}
 
 try {
   app.use('/api/hr', require('./routes/hrRoutes'));
@@ -312,6 +430,7 @@ try {
 
 console.log('✅ Route mounting complete\n');
 
+// Multer error handling
 app.use(handleMulterError);
 
 // Initialize directories and run migration
@@ -319,7 +438,6 @@ app.use(handleMulterError);
   try {
     await ensureUploadDirectories();
     
-    // NEW: Run migration to fix existing projects
     console.log('\n🔧 Checking for projects needing migration...');
     try {
       const Project = require('./models/Project');
@@ -359,6 +477,7 @@ initializeScheduledReports();
 app.use((err, req, res, next) => {
   console.error('Global error handler:', err);
   
+  // Cleanup uploaded files on error
   if (req.files) {
     const cleanupFiles = [];
     
@@ -381,6 +500,7 @@ app.use((err, req, res, next) => {
     });
   }
   
+  // Handle specific error types
   if (err.name === 'ValidationError') {
     return res.status(400).json({
       success: false,
@@ -403,6 +523,7 @@ app.use((err, req, res, next) => {
     });
   }
   
+  // Generic error response
   res.status(err.status || 500).json({
     success: false,
     message: err.message || 'Internal server error',
@@ -410,14 +531,16 @@ app.use((err, req, res, next) => {
   });
 });
 
-// 404 handler
+// 404 handler - MUST BE LAST
 app.use('*', (req, res) => {
+  console.log(`❌ 404 - Route not found: ${req.method} ${req.originalUrl}`);
   res.status(404).json({
     success: false,
-    message: 'Route not found'
+    message: `Route not found: ${req.method} ${req.originalUrl}`
   });
 });
 
+// Process error handlers
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
@@ -427,13 +550,15 @@ process.on('uncaughtException', (error) => {
   process.exit(1);
 });
 
+// Start server
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`\n✅ Server started on port http://localhost:${PORT}`);
   console.log(`✅ Swagger UI available at http://localhost:${PORT}/api-docs\n`);
 });
 
+module.exports = app;
 
 
 

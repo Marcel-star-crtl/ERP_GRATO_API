@@ -36,8 +36,6 @@ const subMilestoneSchema = new mongoose.Schema({
     max: 100,
     default: 0
   },
-  
-  // NEW: Link to creator's KPIs
   linkedKPIs: [{
     kpiDocId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -69,8 +67,7 @@ const subMilestoneSchema = new mongoose.Schema({
       max: 100
     }
   }],
-  
-  subMilestones: [], // Will be populated recursively
+  subMilestones: [],
   completedDate: Date,
   completedBy: {
     type: mongoose.Schema.Types.ObjectId,
@@ -99,7 +96,7 @@ subMilestoneSchema.add({
 const milestoneSchema = new mongoose.Schema({
   title: {
     type: String,
-    required: true, // Remove conditional validation
+    required: true,
     trim: true
   },
   description: {
@@ -112,7 +109,7 @@ const milestoneSchema = new mongoose.Schema({
   assignedSupervisor: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true // Remove conditional validation
+    required: true
   },
   weight: {
     type: Number,
@@ -137,7 +134,6 @@ const milestoneSchema = new mongoose.Schema({
     max: 100,
     default: 0
   },
-  // Sub-milestones for breakdown
   subMilestones: [subMilestoneSchema],
   completedDate: {
     type: Date
@@ -162,18 +158,26 @@ const projectSchema = new mongoose.Schema({
   },
   name: {
     type: String,
-    required: true, // Remove conditional validation
+    required: function() {
+      // Name is always required, even for drafts
+      return true;
+    },
     trim: true,
     maxlength: 255
   },
   description: {
     type: String,
-    required: true, // Remove conditional validation
+    required: function() {
+      // Description only required for non-drafts
+      return !this.isDraft;
+    },
     trim: true
   },
   projectType: {
     type: String,
-    required: true, // Remove conditional validation
+    required: function() {
+      return !this.isDraft;
+    },
     enum: [
       'Site Build',
       'Colocation',
@@ -196,7 +200,9 @@ const projectSchema = new mongoose.Schema({
   },
   priority: {
     type: String,
-    required: true, // Remove conditional validation
+    required: function() {
+      return !this.isDraft;
+    },
     enum: ['Low', 'Medium', 'High', 'Critical'],
     default: 'Medium'
   },
@@ -207,22 +213,43 @@ const projectSchema = new mongoose.Schema({
   },
   department: {
     type: String,
-    required: true, // Remove conditional validation
-    enum: ['Technical Roll Out', 'Operations', 'IT', 'Technical', 'Technical Operations', 'Technical QHSE', 'Finance', 'HR', 'Marketing', 'Supply Chain', 'Facilities', 'Business', ]
+    required: function() {
+      return !this.isDraft;
+    },
+    enum: [
+      'Technical Roll Out', 
+      'Operations', 
+      'IT', 
+      'Technical', 
+      'Technical Operations', 
+      'Technical QHSE', 
+      'Finance', 
+      'HR', 
+      'Marketing', 
+      'Supply Chain', 
+      'Facilities', 
+      'Business'
+    ]
   },
   projectManager: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true // Remove conditional validation
+    required: function() {
+      return !this.isDraft;
+    }
   },
   timeline: {
     startDate: {
       type: Date,
-      required: true // Remove conditional validation
+      required: function() {
+        return !this.isDraft;
+      }
     },
     endDate: {
       type: Date,
-      required: true // Remove conditional validation
+      required: function() {
+        return !this.isDraft;
+      }
     }
   },
   budgetCodeId: {
@@ -230,6 +257,41 @@ const projectSchema = new mongoose.Schema({
     ref: 'BudgetCode',
     default: null
   },
+  
+  // ========== NEW: DRAFT & APPROVAL FIELDS ==========
+  isDraft: {
+    type: Boolean,
+    default: false
+    // index added in schema.index() below
+  },
+  
+  approvalStatus: {
+    type: String,
+    enum: ['draft', 'pending', 'approved', 'rejected'],
+    default: 'draft'
+  },
+  
+  approvalHistory: [{
+    approver: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    decision: {
+      type: String,
+      enum: ['approved', 'rejected']
+    },
+    comments: String,
+    timestamp: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  
+  submittedForApprovalAt: Date,
+  approvedAt: Date,
+  rejectedAt: Date,
+  // ========== END NEW FIELDS ==========
+  
   milestones: [milestoneSchema],
   teamMembers: [{
     user: {
@@ -448,6 +510,8 @@ projectSchema.index({ department: 1 });
 projectSchema.index({ projectManager: 1 });
 projectSchema.index({ status: 1 });
 projectSchema.index({ priority: 1 });
+projectSchema.index({ isDraft: 1 }); // Index for draft queries
+projectSchema.index({ approvalStatus: 1 }); // Index for approval queries
 projectSchema.index({ 'milestones.assignedSupervisor': 1 });
 projectSchema.index({ 'milestones.subMilestones.assignedSupervisor': 1 });
 projectSchema.index({ createdBy: 1 });
@@ -463,14 +527,14 @@ async function generateProjectCode(department) {
     'IT': 'IT',
     'Finance': 'FIN',
     'Technical': 'TECH',
-    'Technical Operations': 'TECHPOPS',
+    'Technical Operations': 'TECHOPS',
     'Technical QHSE': 'TECHSE',
     'HR': 'HR',
     'Marketing': 'MKT',
     'Supply Chain': 'SCM',
     'Facilities': 'FAC',
     'Roll Out': 'RO',
-    'Technical Roll Out': 'TECHPOPS',
+    'Technical Roll Out': 'TRO',
     'Business': 'BU'
   };
   
@@ -492,11 +556,11 @@ async function generateProjectCode(department) {
   return `${prefix}${year}-${String(sequence).padStart(4, '0')}`;
 }
 
-// Pre-save hook - generate code immediately on creation
+// Pre-save hook
 projectSchema.pre('save', async function(next) {
   try {
-    // Generate code on first save if it doesn't exist
-    if (this.isNew && !this.code) {
+    // Generate code ONLY for non-draft projects
+    if (this.isNew && !this.code && !this.isDraft) {
       this.code = await generateProjectCode(this.department);
       
       let exists = await this.constructor.findOne({ code: this.code });
@@ -518,14 +582,19 @@ projectSchema.pre('save', async function(next) {
       }
     }
     
-    // Validate timeline
+    // Skip validation for drafts
+    if (this.isDraft) {
+      return next();
+    }
+    
+    // Validate timeline for non-drafts
     if (this.timeline && this.timeline.startDate && this.timeline.endDate) {
       if (this.timeline.endDate <= this.timeline.startDate) {
         return next(new Error('End date must be after start date'));
       }
     }
     
-    // Validate milestone weights
+    // Validate milestone weights for non-drafts
     if (this.milestones && this.milestones.length > 0) {
       const totalWeight = this.milestones.reduce((sum, m) => sum + (m.weight || 0), 0);
       if (totalWeight !== 100) {
@@ -601,7 +670,8 @@ projectSchema.methods.recalculateMilestoneProgress = async function(milestoneId)
 projectSchema.statics.getProjectsBySupervisor = function(supervisorId) {
   return this.find({
     'milestones.assignedSupervisor': supervisorId,
-    isActive: true
+    isActive: true,
+    isDraft: false
   })
   .populate('projectManager', 'fullName email role')
   .populate('milestones.assignedSupervisor', 'fullName email department')
@@ -613,7 +683,10 @@ projectSchema.statics.getProjectsBySupervisor = function(supervisorId) {
 projectSchema.statics.getStatistics = async function() {
   const stats = await this.aggregate([
     {
-      $match: { isActive: true }
+      $match: { 
+        isActive: true,
+        isDraft: false // Don't count drafts in stats
+      }
     },
     {
       $group: {
@@ -641,6 +714,7 @@ projectSchema.statics.getStatistics = async function() {
 
   const overdue = await this.countDocuments({
     isActive: true,
+    isDraft: false,
     status: { $nin: ['Completed', 'Cancelled'] },
     'timeline.endDate': { $lt: new Date() }
   });
@@ -661,6 +735,7 @@ projectSchema.statics.getStatistics = async function() {
 projectSchema.statics.searchProjects = function(searchQuery, filters = {}) {
   const query = {
     isActive: true,
+    isDraft: false,
     $or: [
       { name: new RegExp(searchQuery, 'i') },
       { code: new RegExp(searchQuery, 'i') },
@@ -775,7 +850,8 @@ projectSchema.methods.getTimelineAnalysis = function() {
 projectSchema.statics.getByDepartment = function(department, options = {}) {
   const query = {
     department,
-    isActive: true
+    isActive: true,
+    isDraft: false
   };
 
   return this.find(query)
@@ -787,9 +863,6 @@ projectSchema.statics.getByDepartment = function(department, options = {}) {
 const Project = mongoose.model('Project', projectSchema);
 
 module.exports = Project;
-
-
-
 
 
 

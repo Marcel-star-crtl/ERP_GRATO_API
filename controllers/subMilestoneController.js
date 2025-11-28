@@ -1,11 +1,6 @@
 const Project = require('../models/Project');
 const User = require('../models/User');
 const ActionItem = require('../models/ActionItem');
-const mongoose = require('mongoose');
-
-
-const Project = require('../models/Project');
-const User = require('../models/User');
 const QuarterlyKPI = require('../models/QuarterlyKPI');
 const mongoose = require('mongoose');
 
@@ -21,6 +16,23 @@ function findSubMilestoneById(subMilestones, targetId) {
     }
   }
   return null;
+}
+
+// Helper to flatten tasks from hierarchy
+function flattenTasksFromHierarchy(node) {
+  let tasks = [];
+  
+  if (node.tasks && Array.isArray(node.tasks)) {
+    tasks = [...tasks, ...node.tasks];
+  }
+  
+  if (node.subMilestones && node.subMilestones.length > 0) {
+    node.subMilestones.forEach(subMilestone => {
+      tasks = [...tasks, ...flattenTasksFromHierarchy(subMilestone)];
+    });
+  }
+  
+  return tasks;
 }
 
 // Helper to get current quarter
@@ -92,6 +104,7 @@ async function updateKPIContributions(subMilestone) {
     }
   }
 }
+
 
 // Helper to update all parent KPIs recursively
 async function updateParentKPIContributions(subMilestone, project, milestone) {
@@ -296,6 +309,169 @@ const createSubMilestone = async (req, res) => {
     });
   }
 };
+
+
+// Get sub-milestone hierarchy (works for nested sub-milestones)
+const getSubMilestoneHierarchy = async (req, res) => {
+  try {
+    const { projectId, milestoneId, subMilestoneId } = req.params;
+
+    console.log('=== GET SUB-MILESTONE HIERARCHY ===');
+    console.log('Project:', projectId);
+    console.log('Milestone:', milestoneId);
+    console.log('Sub-milestone:', subMilestoneId);
+
+    if (!mongoose.Types.ObjectId.isValid(projectId) || 
+        !mongoose.Types.ObjectId.isValid(milestoneId) ||
+        !mongoose.Types.ObjectId.isValid(subMilestoneId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ID format'
+      });
+    }
+
+    // Fetch fresh project data
+    const project = await Project.findById(projectId)
+      .populate('projectManager', 'fullName email');
+
+    if (!project || !project.isActive) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found'
+      });
+    }
+
+    const milestone = project.milestones.id(milestoneId);
+    if (!milestone) {
+      return res.status(404).json({
+        success: false,
+        message: 'Parent milestone not found'
+      });
+    }
+
+    console.log('Milestone found:', milestone.title);
+    console.log('Sub-milestones count:', milestone.subMilestones?.length || 0);
+
+    // Find the sub-milestone recursively
+    const subMilestone = findSubMilestoneById(milestone.subMilestones, subMilestoneId);
+    if (!subMilestone) {
+      console.error('Sub-milestone not found in hierarchy');
+      return res.status(404).json({
+        success: false,
+        message: 'Sub-milestone not found'
+      });
+    }
+
+    console.log('Sub-milestone found:', subMilestone.title);
+    console.log('Nested sub-milestones:', subMilestone.subMilestones?.length || 0);
+
+    // Verify user has access (is the assigned supervisor or admin)
+    const user = await User.findById(req.user.userId);
+    const isAssignedSupervisor = subMilestone.assignedSupervisor.equals(req.user.userId);
+    const isAdmin = ['admin', 'supply_chain', 'project'].includes(user.role);
+
+    if (!isAssignedSupervisor && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to access this sub-milestone'
+      });
+    }
+
+    // Build hierarchy with tasks recursively
+    const buildHierarchyWithTasks = async (node) => {
+      console.log(`Building hierarchy for: ${node.title}`);
+      
+      // Get tasks for this node
+      const tasks = await ActionItem.find({ subMilestoneId: node._id })
+        .populate('assignedTo.user', 'fullName email department')
+        .populate('createdBy', 'fullName email')
+        .populate('linkedKPIs.kpiDocId')
+        .lean();
+
+      console.log(`  Found ${tasks.length} tasks for ${node.title}`);
+
+      // Populate assignedSupervisor
+      let populatedSupervisor = null;
+      if (node.assignedSupervisor) {
+        try {
+          const supervisor = await User.findById(node.assignedSupervisor)
+            .select('fullName email department')
+            .lean();
+          if (supervisor) {
+            populatedSupervisor = supervisor;
+          }
+        } catch (error) {
+          console.error('Error populating supervisor:', error);
+        }
+      }
+
+      const hierarchyNode = {
+        _id: node._id,
+        title: node.title,
+        description: node.description || '',
+        weight: node.weight || 0,
+        progress: node.progress || 0,
+        status: node.status || 'Not Started',
+        dueDate: node.dueDate,
+        assignedSupervisor: populatedSupervisor,
+        linkedKPIs: node.linkedKPIs || [],
+        createdBy: node.createdBy,
+        taskCount: tasks.length,
+        tasks: tasks,
+        subMilestones: []
+      };
+
+      // Recursively build child sub-milestones
+      if (node.subMilestones && node.subMilestones.length > 0) {
+        console.log(`  Processing ${node.subMilestones.length} child sub-milestones...`);
+        for (const child of node.subMilestones) {
+          const childHierarchy = await buildHierarchyWithTasks(child);
+          hierarchyNode.subMilestones.push(childHierarchy);
+        }
+      }
+
+      return hierarchyNode;
+    };
+
+    const hierarchy = await buildHierarchyWithTasks(subMilestone);
+
+    console.log('Final hierarchy built:', {
+      title: hierarchy.title,
+      taskCount: hierarchy.taskCount,
+      subMilestoneCount: hierarchy.subMilestones.length
+    });
+
+    // Get all tasks (flattened)
+    const allTasks = flattenTasksFromHierarchy(hierarchy);
+
+    res.json({
+      success: true,
+      data: {
+        project: {
+          _id: project._id,
+          name: project.name,
+          code: project.code,
+          status: project.status
+        },
+        parentMilestone: {
+          _id: milestone._id,
+          title: milestone.title
+        },
+        hierarchy,
+        allTasks
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching sub-milestone hierarchy:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch sub-milestone hierarchy',
+      error: error.message
+    });
+  }
+};
+
 
 // Get milestone hierarchy with all sub-milestones
 const getMilestoneHierarchy = async (req, res) => {
@@ -886,7 +1062,8 @@ module.exports = {
   updateSubMilestone,
   deleteSubMilestone,
   updateSubMilestoneProgress,
-  completeSubMilestone
+  completeSubMilestone,
+  getSubMilestoneHierarchy
 };
 
 

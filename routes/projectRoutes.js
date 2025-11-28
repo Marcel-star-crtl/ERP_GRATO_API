@@ -4,11 +4,16 @@ const projectController = require('../controllers/projectController');
 const subMilestoneController = require('../controllers/subMilestoneController');
 const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware');
 
+// DO NOT declare Project model here - it's already declared in models/Project.js
+// If you need it, use: const Project = require('../models/Project');
+
+console.log('📋 Loading project routes...');
+
 // Apply authentication middleware to all routes
 router.use(authMiddleware);
 
-// ========== STATIC/SPECIFIC ROUTES FIRST (NO PARAMS) ==========
-// These MUST come before any parameterized routes
+// ========== STATIC ROUTES FIRST (NO PARAMS) ==========
+// CRITICAL: These MUST come before ANY /:projectId routes
 
 // Get supervisor's assigned milestones
 router.get(
@@ -49,10 +54,17 @@ router.get(
   projectController.getUserProjects
 );
 
-// Get projects by department (specific keyword 'department')
+// Get projects by department (keyword 'department')
 router.get(
   '/department/:department',
   projectController.getProjectsByDepartment
+);
+
+// Get all projects with filtering
+// This handles: GET /api/projects?isDraft=false
+router.get(
+  '/',
+  projectController.getProjects
 );
 
 // Create project
@@ -60,12 +72,6 @@ router.post(
   '/', 
   requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   projectController.createProject
-);
-
-// Get all projects (with filters) - This handles query params like ?isDraft=false
-router.get(
-  '/',
-  projectController.getProjects
 );
 
 // ========== PARAMETERIZED ROUTES (:projectId) ==========
@@ -81,6 +87,11 @@ router.get(
 router.get(
   '/:projectId/milestones/:milestoneId',
   projectController.getMilestoneDetails
+);
+
+router.get(
+  '/:projectId/milestones/:milestoneId/sub-milestones/:subMilestoneId/hierarchy',
+  subMilestoneController.getSubMilestoneHierarchy
 );
 
 // Get milestone hierarchy (with all sub-milestones)
@@ -217,10 +228,9 @@ router.get(
   projectController.getProjectById
 );
 
+console.log('✅ Project routes loaded');
+
 module.exports = router;
-
-
-
 
 
 

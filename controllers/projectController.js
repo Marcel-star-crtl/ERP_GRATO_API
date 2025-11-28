@@ -705,7 +705,6 @@ const deleteProject = async (req, res) => {
 // };
 
 
-// Get all projects with filtering
 const getProjects = async (req, res) => {
     try {
         const userId = req.user.userId;
@@ -726,43 +725,54 @@ const getProjects = async (req, res) => {
         console.log('=== GET PROJECTS ===');
         console.log('User:', userId);
         console.log('Role:', userRole);
-        console.log('isDraft param:', isDraft, 'type:', typeof isDraft);
+        console.log('Query params:', { isDraft, status, department });
 
         const filter = { isActive: true };
 
-        // FIX: Properly handle isDraft parameter AND missing isDraft fields
+        // Parse isDraft parameter
         const parsedIsDraft = isDraft === 'true' ? true : isDraft === 'false' ? false : undefined;
         
         console.log('Parsed isDraft:', parsedIsDraft);
 
-        // Regular users only see non-draft projects unless it's their own
+        // Handle draft filtering based on role
         if (!['admin', 'supply_chain', 'project', 'manager'].includes(userRole)) {
+            // Regular users
             if (parsedIsDraft === true) {
-                // Regular users can only see their own drafts
+                // Only show their own drafts
                 filter.isDraft = true;
                 filter.createdBy = userId;
-            } else {
-                // Show non-drafts OR their own drafts OR documents without isDraft field
+            } else if (parsedIsDraft === false) {
+                // Show non-drafts OR missing isDraft field
                 filter.$or = [
                     { isDraft: false },
-                    { isDraft: { $exists: false } }, // Handle missing isDraft field
+                    { isDraft: { $exists: false } },
+                    { isDraft: null }
+                ];
+            } else {
+                // No isDraft specified: show non-drafts, missing isDraft, OR their own drafts
+                filter.$or = [
+                    { isDraft: false },
+                    { isDraft: { $exists: false } },
+                    { isDraft: null },
                     { isDraft: true, createdBy: userId }
                 ];
             }
         } else {
-            // Admins/managers handle drafts
+            // Admins/managers
             if (parsedIsDraft === true) {
                 filter.isDraft = true;
             } else if (parsedIsDraft === false) {
-                // Show documents where isDraft is false OR doesn't exist
+                // Show documents where isDraft is false, null, or doesn't exist
                 filter.$or = [
                     { isDraft: false },
-                    { isDraft: { $exists: false } }
+                    { isDraft: { $exists: false } },
+                    { isDraft: null }
                 ];
             }
-            // If parsedIsDraft is undefined, show all (no filter on isDraft)
+            // If parsedIsDraft is undefined, no filter (show all)
         }
 
+        // Apply other filters
         if (status) filter.status = status;
         if (department) filter.department = department;
         if (priority) filter.priority = priority;
@@ -771,10 +781,12 @@ const getProjects = async (req, res) => {
 
         console.log('Final filter:', JSON.stringify(filter, null, 2));
 
+        // Pagination
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const sortObj = {};
         sortObj[sort] = order === 'desc' ? -1 : 1;
 
+        // Execute query
         const projects = await Project.find(filter)
             .populate('projectManager', 'fullName email role department')
             .populate('budgetCodeId', 'code name totalBudget used available')
@@ -782,12 +794,14 @@ const getProjects = async (req, res) => {
             .populate('milestones.assignedSupervisor', 'fullName email department')
             .sort(sortObj)
             .skip(skip)
-            .limit(parseInt(limit));
+            .limit(parseInt(limit))
+            .lean(); // Use lean() for better performance
 
         const total = await Project.countDocuments(filter);
 
-        console.log(`Found ${projects.length} projects (total: ${total})`);
+        console.log(`✅ Found ${projects.length} projects (total: ${total})`);
 
+        // Return response
         res.status(200).json({
             success: true,
             data: {
@@ -803,7 +817,7 @@ const getProjects = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error fetching projects:', error);
+        console.error('❌ Error fetching projects:', error);
         res.status(500).json({
             success: false,
             message: 'Failed to fetch projects',
