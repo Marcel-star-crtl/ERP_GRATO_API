@@ -3,17 +3,12 @@ const router = express.Router();
 const projectController = require('../controllers/projectController');
 const subMilestoneController = require('../controllers/subMilestoneController');
 const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware');
-
-// DO NOT declare Project model here - it's already declared in models/Project.js
-// If you need it, use: const Project = require('../models/Project');
+const pmReviewController = require('../controllers/pmMilestoneReviewController');
 
 console.log('📋 Loading project routes...');
 
 // Apply authentication middleware to all routes
 router.use(authMiddleware);
-
-// ========== STATIC ROUTES FIRST (NO PARAMS) ==========
-// CRITICAL: These MUST come before ANY /:projectId routes
 
 // Get supervisor's assigned milestones
 router.get(
@@ -73,9 +68,6 @@ router.post(
   requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   projectController.createProject
 );
-
-// ========== PARAMETERIZED ROUTES (:projectId) ==========
-// These come AFTER all static routes
 
 // Get project analytics
 router.get(

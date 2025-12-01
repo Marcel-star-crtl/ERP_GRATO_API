@@ -6,6 +6,7 @@ const contractController = require('../controllers/contractController');
 const supplierInvoiceController = require('../controllers/supplierInvoiceController');
 const supplierOnboardingController = require('../controllers/supplierOnboardingController');
 const supplierRfqController = require('../controllers/supplierRfqController');
+const supplierApprovalController = require('../controllers/supplierApprovalController');
 const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware');
 const { 
   supplierAuthMiddleware, 
@@ -82,6 +83,93 @@ router.get('/supply-chain/dashboard/stats',
   authMiddleware,
   requireRoles('admin', 'supply_chain'),
   supplierInvoiceController.getSupplyChainDashboardStats
+);
+
+
+/**
+ * Get suppliers pending approval for current user
+ * Returns suppliers where user is the current approver
+ */
+router.get('/admin/approvals/pending',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  supplierApprovalController.getPendingApprovalsForUser
+);
+
+/**
+ * Get single supplier with full approval details
+ * Includes approval chain, history, and current status
+ */
+router.get('/admin/approvals/:supplierId',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  supplierApprovalController.getSupplierWithApprovalDetails
+);
+
+/**
+ * Process supplier approval/rejection
+ * Handles the 3-level approval workflow with signatures
+ * Body: { decision: 'approved' | 'rejected', comments: string }
+ */
+router.post('/admin/approvals/:supplierId/decision',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  supplierApprovalController.processSupplierApproval
+);
+
+/**
+ * Get supplier approval statistics
+ * Returns counts by approval status
+ */
+router.get('/admin/approvals/statistics',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  async (req, res) => {
+    try {
+      const User = require('../models/User');
+      const { getSupplierApprovalStats } = require('../config/supplierApprovalChain');
+      
+      const suppliers = await User.find({ role: 'supplier' });
+      const stats = getSupplierApprovalStats(suppliers);
+      
+      res.json({
+        success: true,
+        data: stats
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch statistics',
+        error: error.message
+      });
+    }
+  }
+);
+
+/**
+ * Get comprehensive supplier approval dashboard
+ * Includes stats, pending items, recent activity, analytics
+ */
+router.get('/admin/approvals/dashboard',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  supplierApprovalController.getSupplierApprovalDashboard
+);
+
+/**
+ * Get supplier approval timeline
+ * Shows complete approval journey with all events
+ */
+router.get('/admin/approvals/:supplierId/timeline',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  supplierApprovalController.getSupplierApprovalTimeline
+);
+
+router.post('/admin/approvals/bulk-process',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'finance'),
+  supplierApprovalController.bulkProcessSupplierApprovals
 );
 
 // ===============================
@@ -186,13 +274,76 @@ router.post('/bulk-import',
 router.post('/:supplierId/approve-reject',
   authMiddleware,
   requireRoles('admin', 'supply_chain', 'finance'),
-  unifiedSupplierController.approveOrRejectSupplier
+  supplierApprovalController.processSupplierApproval  // Changed from unifiedSupplierController
 );
 
+// Update getAllSuppliers to include approval filtering
 router.get('/admin/all',
   authMiddleware,
   requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-  supplierController.getAllSuppliers
+  async (req, res) => {
+    try {
+      const { 
+        status, 
+        supplierType, 
+        approvalStatus,
+        page = 1, 
+        limit = 50,
+        search 
+      } = req.query;
+
+      const filter = { role: 'supplier' };
+      
+      if (status) {
+        filter['supplierStatus.accountStatus'] = status;
+      }
+      
+      if (supplierType) {
+        filter['supplierDetails.supplierType'] = supplierType;
+      }
+      
+      if (approvalStatus) {
+        filter['supplierStatus.accountStatus'] = approvalStatus;
+      }
+      
+      if (search) {
+        filter.$or = [
+          { 'supplierDetails.companyName': new RegExp(search, 'i') },
+          { 'supplierDetails.contactName': new RegExp(search, 'i') },
+          { email: new RegExp(search, 'i') }
+        ];
+      }
+
+      const suppliers = await User.find(filter)
+        .select('-password')
+        .populate('supplierStatus.approvedBy', 'fullName email')
+        .populate('supplierStatus.rejectedBy', 'fullName email')
+        .sort({ createdAt: -1 })
+        .limit(limit * 1)
+        .skip((page - 1) * limit);
+
+      const total = await User.countDocuments(filter);
+
+      res.json({
+        success: true,
+        data: suppliers,
+        pagination: {
+          current: parseInt(page),
+          total: Math.ceil(total / limit),
+          count: suppliers.length,
+          totalRecords: total
+        }
+      });
+
+    } catch (error) {
+      console.error('Get all suppliers error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch suppliers',
+        error: error.message
+      });
+    }
+  }
 );
 
 router.put('/admin/:supplierId/status',
@@ -378,6 +529,8 @@ router.get('/admin/analytics',
   requireRoles('finance', 'admin'),
   supplierInvoiceController.getSupplierInvoiceAnalytics
 );
+
+
 
 module.exports = router;
 

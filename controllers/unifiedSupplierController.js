@@ -13,7 +13,7 @@ const crypto = require('crypto');
  */
 exports.registerAndOnboardSupplier = async (req, res) => {
   try {
-    console.log('=== UNIFIED SUPPLIER REGISTRATION & ONBOARDING ===');
+    console.log('=== UNIFIED SUPPLIER REGISTRATION & ONBOARDING WITH APPROVAL ===');
     
     const {
       // Basic account info
@@ -69,7 +69,7 @@ exports.registerAndOnboardSupplier = async (req, res) => {
     if (req.files) {
       const processFile = (file) => ({
         name: file.originalname,
-        url: file.path, // Or Cloudinary URL if using cloud storage
+        url: file.path,
         publicId: file.filename,
         size: file.size,
         mimetype: file.mimetype,
@@ -129,7 +129,14 @@ exports.registerAndOnboardSupplier = async (req, res) => {
       }
     });
 
-    console.log('Unified supplier account created:', supplier.email);
+    // Initialize approval chain
+    supplier.initializeSupplierApprovalChain();
+    await supplier.save();
+
+    console.log('Supplier account created with approval chain:', supplier.email);
+    console.log('Approval chain levels:', supplier.approvalChain.map(s => 
+      `L${s.level}: ${s.approver.name} (${s.approver.role})`
+    ).join(' → '));
 
     // Send verification email
     const verificationUrl = `${process.env.CLIENT_URL}/suppliers/verify-email/${verificationToken}`;
@@ -166,12 +173,13 @@ exports.registerAndOnboardSupplier = async (req, res) => {
             </div>
             
             <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px;">
-              <p><strong>Next Steps:</strong></p>
+              <p><strong>Approval Process:</strong></p>
               <ol>
                 <li>Verify your email address</li>
-                <li>Our team will review your application</li>
-                <li>You'll receive approval notification</li>
-                <li>Start submitting invoices and quotes</li>
+                <li>Supply Chain Coordinator review</li>
+                <li>Head of Business approval</li>
+                <li>Finance final approval</li>
+                <li>Account activation</li>
               </ol>
             </div>
           </div>
@@ -179,24 +187,32 @@ exports.registerAndOnboardSupplier = async (req, res) => {
       `
     });
 
-    // Notify admin
-    const adminUsers = await User.find({ role: { $in: ['admin', 'finance', 'supply_chain'] } }).select('email');
-    if (adminUsers.length > 0) {
+    // Notify first approver (Supply Chain Coordinator)
+    if (supplier.approvalChain.length > 0) {
+      const firstApprover = supplier.approvalChain[0].approver;
       await sendEmail({
-        to: adminUsers.map(u => u.email),
+        to: firstApprover.email,
         subject: `New Supplier Registration - ${companyName}`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h3>New Supplier Registration</h3>
-            <p>A new supplier has registered and requires approval.</p>
-            <ul>
-              <li><strong>Company:</strong> ${companyName}</li>
-              <li><strong>Type:</strong> ${supplierType}</li>
-              <li><strong>Contact:</strong> ${contactName}</li>
-              <li><strong>Email:</strong> ${email}</li>
-              <li><strong>Documents:</strong> ${Object.keys(documents).length} uploaded</li>
-            </ul>
-            <p>Please review and approve/reject in the admin portal.</p>
+            <h2 style="color: #1890ff;">New Supplier Registration Requires Your Review</h2>
+            <p>Dear ${firstApprover.name},</p>
+            <p>A new supplier has registered and requires your review as Supply Chain Coordinator.</p>
+            
+            <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <p><strong>Company:</strong> ${companyName}</p>
+              <p><strong>Type:</strong> ${supplierType}</p>
+              <p><strong>Contact:</strong> ${contactName}</p>
+              <p><strong>Email:</strong> ${email}</p>
+              <p><strong>Documents:</strong> ${Object.keys(documents).length} uploaded</p>
+            </div>
+            
+            <p style="text-align: center;">
+              <a href="${process.env.CLIENT_URL}/admin/suppliers/${supplier._id}/approve" 
+                 style="background-color: #1890ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                Review Supplier Application
+              </a>
+            </p>
           </div>
         `
       });
@@ -209,7 +225,13 @@ exports.registerAndOnboardSupplier = async (req, res) => {
         id: supplier._id,
         email: supplier.email,
         companyName: supplier.supplierDetails.companyName,
-        status: 'pending_verification'
+        status: 'pending_verification',
+        approvalChain: supplier.approvalChain.map(step => ({
+          level: step.level,
+          approver: step.approver.name,
+          role: step.approver.role,
+          status: step.status
+        }))
       }
     });
 
@@ -222,6 +244,7 @@ exports.registerAndOnboardSupplier = async (req, res) => {
     });
   }
 };
+
 
 /**
  * GET COMPLETE SUPPLIER PROFILE

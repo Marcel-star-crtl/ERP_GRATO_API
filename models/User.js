@@ -224,7 +224,16 @@ const UserSchema = new mongoose.Schema({
     supplierStatus: {
         accountStatus: {
             type: String,
-            enum: ['pending', 'approved', 'rejected', 'suspended', 'inactive'],
+            enum: [
+              'pending', 
+              'pending_supply_chain',
+              'pending_head_of_business',
+              'pending_finance',
+              'approved', 
+              'rejected', 
+              'suspended', 
+              'inactive'
+            ],
             default: 'pending'
         },
         emailVerified: { type: Boolean, default: false },
@@ -234,7 +243,48 @@ const UserSchema = new mongoose.Schema({
         approvalDate: Date,
         approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         rejectionReason: String,
+        rejectedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        rejectionDate: Date,
         suspensionReason: String
+    },
+
+    approvalChain: [{
+      level: {
+        type: Number,
+        required: true
+      },
+      approver: {
+        name: { type: String, required: true },
+        email: { type: String, required: true },
+        role: { type: String, required: true },
+        department: { type: String }
+      },
+      status: {
+        type: String,
+        enum: ['pending', 'approved', 'rejected'],
+        default: 'pending'
+      },
+      decision: {
+        type: String,
+        enum: ['approved', 'rejected']
+      },
+      comments: String,
+      signature: {
+        url: String,
+        signedAt: Date,
+        signedBy: String
+      },
+      actionDate: Date,
+      actionTime: String,
+      assignedDate: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+
+    currentApprovalLevel: {
+      type: Number,
+      default: 0
     },
 
     onboardingApplicationId: {
@@ -293,6 +343,21 @@ UserSchema.virtual('performanceEvaluations', {
     ref: 'SupplierPerformance',
     localField: '_id',
     foreignField: 'supplier'
+});
+
+// Virtual for current approval step
+UserSchema.virtual('currentApprovalStep').get(function() {
+  if (this.role !== 'supplier' || !this.approvalChain) return null;
+  return this.approvalChain.find(step => 
+    step.level === this.currentApprovalLevel && step.status === 'pending'
+  );
+});
+
+// Virtual for approval progress
+UserSchema.virtual('approvalProgress').get(function() {
+  if (this.role !== 'supplier' || !this.approvalChain || this.approvalChain.length === 0) return 0;
+  const approvedSteps = this.approvalChain.filter(step => step.status === 'approved').length;
+  return Math.round((approvedSteps / this.approvalChain.length) * 100);
 });
 
 // ==========================================
@@ -439,6 +504,59 @@ UserSchema.methods.getPerformanceScore = async function() {
         latestEvaluationDate: evaluations[0].evaluationDate
     };
 };
+
+
+/**
+ * Initialize approval chain for new supplier
+ */
+UserSchema.methods.initializeSupplierApprovalChain = function() {
+  if (this.role !== 'supplier') {
+    throw new Error('Can only initialize approval chain for suppliers');
+  }
+  
+  const { getSupplierApprovalChain } = require('../config/supplierApprovalChain');
+  this.approvalChain = getSupplierApprovalChain(this.supplierDetails.supplierType);
+  this.currentApprovalLevel = 1; // Start at level 1
+  this.supplierStatus.accountStatus = 'pending_supply_chain';
+  
+  return this;
+};
+
+/**
+ * Get current approval step
+ */
+UserSchema.methods.getCurrentApprovalStep = function() {
+  if (this.role !== 'supplier' || !this.approvalChain) return null;
+  return this.approvalChain.find(step => 
+    step.level === this.currentApprovalLevel && step.status === 'pending'
+  );
+};
+
+/**
+ * Check if user can approve this supplier
+ */
+UserSchema.methods.canUserApproveSupplier = function(userEmail) {
+  const currentStep = this.getCurrentApprovalStep();
+  return currentStep && currentStep.approver.email === userEmail;
+};
+
+/**
+ * Get approval history
+ */
+UserSchema.methods.getSupplierApprovalHistory = function() {
+  if (this.role !== 'supplier' || !this.approvalChain) return [];
+  return this.approvalChain
+    .filter(step => step.status !== 'pending')
+    .sort((a, b) => a.level - b.level);
+};
+
+// Add index for supplier approval queries:
+UserSchema.index({ 
+  'approvalChain.approver.email': 1, 
+  'approvalChain.status': 1,
+  'supplierStatus.accountStatus': 1 
+});
+UserSchema.index({ currentApprovalLevel: 1, role: 1 });
 
 // ==========================================
 // PASSWORD HANDLING

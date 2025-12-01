@@ -554,6 +554,7 @@ const getFinanceRequests = async (req, res) => {
 //     console.log('Request ID:', requestId);
 //     console.log('Decision:', decision);
 //     console.log('Budget Code ID:', budgetCodeId);
+//     console.log('Amount Approved:', amountApproved);
 //     console.log('Disbursement Amount:', disbursementAmount);
 
 //     const user = await User.findById(req.user.userId);
@@ -597,33 +598,73 @@ const getFinanceRequests = async (req, res) => {
 //     }
 
 //     if (decision === 'approved') {
-//       const finalAmount = disbursementAmount || amountApproved || request.amountRequested;
-//       console.log(`Final approved amount: XAF ${finalAmount}`);
+//       // Determine final amount
+//       const finalAmount = parseFloat(amountApproved || request.amountRequested);
+//       console.log(`Final approved amount: XAF ${finalAmount.toLocaleString()}`);
 
 //       // ============================================
-//       // BUDGET CODE HANDLING
+//       // STEP 1: GET OR ASSIGN BUDGET CODE
 //       // ============================================
 //       let budgetCode = null;
+//       let isReApproval = false; // ✅ Track if this is a re-approval
       
-//       // Check if budget already assigned (shouldn't happen with new flow)
+//       // ✅ Check if this is a re-approval with existing allocation
 //       if (request.budgetAllocation && request.budgetAllocation.budgetCodeId) {
-//         console.log('⚠️  Budget already allocated - using existing');
+//         console.log('⚠️  Existing budget allocation found');
 //         budgetCode = await BudgetCode.findById(request.budgetAllocation.budgetCodeId);
+        
+//         if (budgetCode) {
+//           // ✅ Check if allocation exists for this request
+//           const existingAllocation = budgetCode.allocations.find(
+//             a => a.requisitionId && a.requisitionId.toString() === requestId.toString()
+//           );
+
+//           if (existingAllocation) {
+//             console.log(`   Existing allocation status: ${existingAllocation.status}`);
+            
+//             // ✅ If allocation exists with any status, this is a re-approval
+//             if (['spent', 'released', 'allocated'].includes(existingAllocation.status)) {
+//               isReApproval = true;
+              
+//               // ✅ If allocation was spent or allocated, release it first
+//               if (existingAllocation.status === 'spent' || existingAllocation.status === 'allocated') {
+//                 console.log(`   🔄 Releasing previous ${existingAllocation.status} allocation...`);
+                
+//                 // Manually release the allocation
+//                 existingAllocation.status = 'released';
+//                 existingAllocation.releaseDate = new Date();
+//                 existingAllocation.releaseReason = 'Re-approval after rejection';
+                
+//                 // If it was spent, return the funds
+//                 if (existingAllocation.status === 'spent') {
+//                   budgetCode.used -= existingAllocation.amount;
+//                 }
+                
+//                 await budgetCode.save();
+//                 console.log('   ✅ Previous allocation released');
+//               }
+//             }
+//           }
+//         }
 //       }
-//       // Try project budget code
-//       else if (request.projectId && request.projectId.budgetCodeId) {
-//         console.log('Using project budget code');
-//         budgetCode = await BudgetCode.findById(request.projectId.budgetCodeId);
-//       }
-//       // Use finance-assigned budget code
-//       else if (budgetCodeId) {
-//         console.log(`Finance assigning budget code: ${budgetCodeId}`);
-//         budgetCode = await BudgetCode.findById(budgetCodeId);
-//       } else {
-//         return res.status(400).json({
-//           success: false,
-//           message: 'Budget code must be assigned for approval'
-//         });
+      
+//       // ✅ Get fresh budget code if not already loaded
+//       if (!budgetCode) {
+//         // Try project budget code
+//         if (request.projectId && request.projectId.budgetCodeId) {
+//           console.log('📦 Using project budget code');
+//           budgetCode = await BudgetCode.findById(request.projectId.budgetCodeId);
+//         }
+//         // Use finance-assigned budget code
+//         else if (budgetCodeId) {
+//           console.log(`💼 Finance assigning budget code: ${budgetCodeId}`);
+//           budgetCode = await BudgetCode.findById(budgetCodeId);
+//         } else {
+//           return res.status(400).json({
+//             success: false,
+//             message: 'Budget code must be assigned for approval'
+//           });
+//         }
 //       }
 
 //       if (!budgetCode) {
@@ -633,32 +674,45 @@ const getFinanceRequests = async (req, res) => {
 //         });
 //       }
 
-//       console.log(`Budget code: ${budgetCode.code}`);
-//       console.log(`Available: XAF ${budgetCode.remaining.toLocaleString()}`);
+//       console.log(`\n💰 Budget Code: ${budgetCode.code} - ${budgetCode.name}`);
+//       console.log(`   Current Budget: XAF ${budgetCode.budget.toLocaleString()}`);
+//       console.log(`   Used: XAF ${budgetCode.used.toLocaleString()}`);
+//       console.log(`   Available: XAF ${budgetCode.remaining.toLocaleString()}`);
+//       console.log(`   Is Re-Approval: ${isReApproval ? 'YES' : 'NO'}`);
 
-//       // Check sufficiency
-//       if (budgetCode.remaining < parseFloat(finalAmount)) {
+//       // Check budget sufficiency
+//       if (budgetCode.remaining < finalAmount) {
 //         return res.status(400).json({
 //           success: false,
-//           message: `Insufficient budget. Available: XAF ${budgetCode.remaining.toLocaleString()}`
+//           message: `Insufficient budget. Available: XAF ${budgetCode.remaining.toLocaleString()}, Required: XAF ${finalAmount.toLocaleString()}`
 //         });
 //       }
 
+//       console.log(`✅ Budget check passed`);
+
 //       // ============================================
-//       // PHASE 1: RESERVE BUDGET (Approval)
+//       // STEP 2: RESERVE BUDGET (Fresh or Re-reserve)
 //       // ============================================
 //       try {
-//         await budgetCode.reserveBudget(request._id, parseFloat(finalAmount), req.user.userId);
+//         console.log(`\n💰 ${isReApproval ? 'RE-RESERVING' : 'RESERVING'} budget...`);
+        
+//         await budgetCode.reserveBudget(
+//           request._id, 
+//           finalAmount, 
+//           req.user.userId
+//         );
 //         console.log('✅ Budget reserved successfully');
 
+//         // Update request allocation info
 //         request.budgetAllocation = {
 //           budgetCodeId: budgetCode._id,
 //           budgetCode: budgetCode.code,
-//           allocatedAmount: parseFloat(finalAmount),
-//           allocationStatus: 'allocated', // Reserved, not spent yet
+//           allocatedAmount: finalAmount,
+//           allocationStatus: 'allocated', // ✅ RESERVED
 //           assignedBy: req.user.userId,
 //           assignedAt: new Date()
 //         };
+
 //       } catch (budgetError) {
 //         console.error('❌ Budget reservation failed:', budgetError);
 //         return res.status(500).json({
@@ -667,7 +721,9 @@ const getFinanceRequests = async (req, res) => {
 //         });
 //       }
 
-//       // Update approval chain
+//       // ============================================
+//       // STEP 3: UPDATE APPROVAL CHAIN
+//       // ============================================
 //       request.approvalChain[financeStepIndex].status = 'approved';
 //       request.approvalChain[financeStepIndex].comments = comments;
 //       request.approvalChain[financeStepIndex].actionDate = new Date();
@@ -680,62 +736,113 @@ const getFinanceRequests = async (req, res) => {
 //         decisionDate: new Date()
 //       };
 
-//       if (amountApproved) {
-//         request.amountApproved = parseFloat(amountApproved);
-//       }
-
+//       request.amountApproved = finalAmount;
 //       request.financeOfficer = req.user.userId;
 
 //       // ============================================
-//       // PHASE 2: DEDUCT BUDGET (Disbursement)
+//       // STEP 4: HANDLE DISBURSEMENT (if provided)
 //       // ============================================
 //       if (disbursementAmount) {
 //         const disbursedAmount = parseFloat(disbursementAmount);
         
+//         console.log(`\n💸 Processing disbursement...`);
+//         console.log(`   Disbursement amount: XAF ${disbursedAmount.toLocaleString()}`);
+
+//         // Validate disbursement amount
+//         if (disbursedAmount > finalAmount) {
+//           // Rollback reservation
+//           try {
+//             await budgetCode.releaseReservation(request._id, 'Disbursement amount exceeds approved amount');
+//           } catch (rollbackError) {
+//             console.error('Failed to rollback reservation:', rollbackError);
+//           }
+
+//           return res.status(400).json({
+//             success: false,
+//             message: `Disbursement amount (XAF ${disbursedAmount.toLocaleString()}) cannot exceed approved amount (XAF ${finalAmount.toLocaleString()})`
+//           });
+//         }
+
 //         try {
-//           // Deduct from budget code
+//           // ✅ DEDUCT from budget
 //           await budgetCode.deductBudget(request._id, disbursedAmount);
 //           console.log('✅ Budget deducted successfully');
 
-//           request.status = 'disbursed';
-//           request.disbursementDetails = {
-//             date: new Date(),
-//             amount: disbursedAmount,
-//             disbursedBy: req.user.userId
-//           };
+//           // ✅ Initialize disbursements array if needed
+//           if (!request.disbursements) {
+//             request.disbursements = [];
+//           }
 
-//           // Update allocation status
+//           // ✅ Add disbursement record
+//           request.disbursements.push({
+//             amount: disbursedAmount,
+//             date: new Date(),
+//             disbursedBy: req.user.userId,
+//             notes: comments || '',
+//             disbursementNumber: request.disbursements.length + 1
+//           });
+
+//           // ✅ Update disbursement tracking
+//           request.totalDisbursed = disbursedAmount;
+//           request.remainingBalance = finalAmount - disbursedAmount;
+
+//           // ✅ Set appropriate status
+//           if (request.remainingBalance === 0) {
+//             request.status = 'fully_disbursed';
+//             console.log('✅ Request FULLY DISBURSED');
+//           } else {
+//             request.status = 'partially_disbursed';
+//             console.log(`✅ Request PARTIALLY DISBURSED (${Math.round((disbursedAmount / finalAmount) * 100)}% complete)`);
+//           }
+
+//           // ✅ Update budget allocation status
 //           request.budgetAllocation.allocationStatus = 'spent';
 //           request.budgetAllocation.actualSpent = disbursedAmount;
 
-//           console.log('✅ Request DISBURSED');
 //         } catch (deductError) {
 //           console.error('❌ Budget deduction failed:', deductError);
+          
+//           // ✅ ROLLBACK: Release the reservation
+//           try {
+//             await budgetCode.releaseReservation(request._id, 'Disbursement failed');
+//             console.log('✅ Budget reservation rolled back');
+//           } catch (rollbackError) {
+//             console.error('❌ Failed to rollback reservation:', rollbackError);
+//           }
+
 //           return res.status(500).json({
 //             success: false,
-//             message: `Budget reserved but disbursement failed: ${deductError.message}`
+//             message: `Budget deduction failed: ${deductError.message}`
 //           });
 //         }
+
 //       } else {
+//         // ✅ Approved but not disbursed yet
 //         request.status = 'approved';
-//         console.log('✅ Request APPROVED (awaiting disbursement)');
+//         console.log('✅ Request APPROVED (budget reserved, awaiting disbursement)');
 //       }
 
+//       // ============================================
+//       // STEP 5: SAVE REQUEST
+//       // ============================================
 //       await request.save();
+//       console.log('✅ Request saved successfully');
 
 //       // ============================================
-//       // NOTIFICATIONS
+//       // STEP 6: SEND NOTIFICATIONS
 //       // ============================================
 //       const notifications = [];
 
 //       const budgetInfo = `
 //         <div style="background-color: #e6f7ff; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #1890ff;">
-//           <p><strong>Budget Allocation:</strong></p>
+//           <p><strong>💰 Budget Allocation:</strong></p>
 //           <ul>
 //             <li><strong>Budget Code:</strong> ${budgetCode.code} - ${budgetCode.name}</li>
-//             <li><strong>Amount ${disbursementAmount ? 'Disbursed' : 'Reserved'}:</strong> XAF ${parseFloat(finalAmount).toLocaleString()}</li>
+//             <li><strong>Amount Approved:</strong> XAF ${finalAmount.toLocaleString()}</li>
+//             ${disbursementAmount ? `<li><strong>Amount Disbursed:</strong> XAF ${parseFloat(disbursementAmount).toLocaleString()}</li>` : ''}
+//             ${disbursementAmount && request.remainingBalance > 0 ? `<li><strong>Remaining to Disburse:</strong> XAF ${request.remainingBalance.toLocaleString()}</li>` : ''}
 //             <li><strong>Budget Remaining:</strong> XAF ${budgetCode.remaining.toLocaleString()}</li>
-//             ${disbursementAmount ? '<li><strong>Status:</strong> 💸 Funds Disbursed</li>' : '<li><strong>Status:</strong> 💰 Funds Reserved (Awaiting Disbursement)</li>'}
+//             <li><strong>Status:</strong> ${disbursementAmount ? '💸 Funds Disbursed' : '💰 Funds Reserved'}</li>
 //           </ul>
 //         </div>
 //       `;
@@ -744,27 +851,41 @@ const getFinanceRequests = async (req, res) => {
 //       notifications.push(
 //         sendEmail({
 //           to: request.employee.email,
-//           subject: `Cash Request ${disbursementAmount ? 'Disbursed' : 'Approved'} - ${request.employee.fullName}`,
+//           subject: `Cash Request ${disbursementAmount ? 'Approved & Disbursed' : 'Approved'} - ${request.employee.fullName}`,
 //           html: `
-//             <h3>Cash Request ${disbursementAmount ? 'Disbursed' : 'Approved'}</h3>
+//             <h3>Cash Request ${disbursementAmount ? 'Approved & Disbursed' : 'Approved'}</h3>
 //             <p>Dear ${request.employee.fullName},</p>
             
-//             <p>Your cash request has been ${disbursementAmount ? 'approved and disbursed' : 'approved by the finance team'}.</p>
+//             <p>Your cash request has been ${disbursementAmount ? 'approved and funds have been disbursed' : 'approved by the finance team'}.</p>
 
-//             <div style="background-color: #d4edda; padding: 15px; border-radius: 5px; margin: 15px 0;">
+//             <div style="background-color: #d4edda; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #28a745;">
+//               <p><strong>Approval Details:</strong></p>
 //               <ul>
 //                 <li><strong>Request ID:</strong> REQ-${requestId.toString().slice(-6).toUpperCase()}</li>
-//                 <li><strong>Amount Approved:</strong> XAF ${parseFloat(finalAmount).toLocaleString()}</li>
-//                 <li><strong>Approved by:</strong> ${user.fullName}</li>
+//                 <li><strong>Amount Approved:</strong> XAF ${finalAmount.toLocaleString()}</li>
+//                 <li><strong>Approved by:</strong> ${user.fullName} (Finance Officer)</li>
+//                 <li><strong>Date:</strong> ${new Date().toLocaleDateString('en-GB')}</li>
 //               </ul>
 //             </div>
 
 //             ${budgetInfo}
 
 //             ${disbursementAmount ? 
-//               '<p><em>⚠️ Please submit your justification with receipts within the required timeframe.</em></p>' : 
-//               '<p><em>💰 Budget has been reserved. Please wait for disbursement processing.</em></p>'
+//               request.status === 'fully_disbursed' ?
+//                 `<div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #ffc107;">
+//                   <p><strong>⚠️ Next Step: Submit Justification</strong></p>
+//                   <p>Your funds have been fully disbursed. Please submit your justification with receipts within the required timeframe.</p>
+//                 </div>` :
+//                 `<div style="background-color: #e6f7ff; padding: 10px; border-radius: 5px; margin: 10px 0;">
+//                   <p><em>💡 Partial disbursement (${Math.round((parseFloat(disbursementAmount) / finalAmount) * 100)}% of approved amount). More disbursements may follow.</em></p>
+//                 </div>`
+//               : 
+//               `<div style="background-color: #e6f7ff; padding: 10px; border-radius: 5px; margin: 10px 0;">
+//                 <p><em>💰 Budget has been reserved. Please wait for disbursement processing by the Finance team.</em></p>
+//               </div>`
 //             }
+
+//             <p>Thank you!</p>
 //           `
 //         }).catch(error => {
 //           console.error('Failed to send employee notification:', error);
@@ -774,25 +895,39 @@ const getFinanceRequests = async (req, res) => {
 
 //       await Promise.allSettled(notifications);
 
-//       console.log('=== FINANCE APPROVAL COMPLETED ===\n');
+//       console.log('\n=== FINANCE APPROVAL COMPLETED ===\n');
 
-//       return res.json({
+//       // ============================================
+//       // STEP 7: RETURN RESPONSE
+//       // ============================================
+//       await request.populate('employee', 'fullName email department');
+
+//       res.json({
 //         success: true,
-//         message: `Request ${decision} by finance and budget ${disbursementAmount ? 'disbursed' : 'reserved'} from ${budgetCode.code}`,
-//         data: {
-//           request,
-//           budgetAllocation: {
-//             budgetCode: budgetCode.code,
-//             budgetName: budgetCode.name,
-//             allocatedAmount: parseFloat(finalAmount),
-//             remainingBudget: budgetCode.remaining,
-//             status: disbursementAmount ? 'disbursed' : 'reserved'
-//           }
-//         }
+//         message: `Request ${isReApproval ? 're-' : ''}approved${disbursementAmount ? ' and funds disbursed' : ' (awaiting disbursement)'}`,
+//         data: request,
+//         budgetAllocation: {
+//           budgetCode: budgetCode.code,
+//           budgetName: budgetCode.name,
+//           allocatedAmount: finalAmount,
+//           remainingBudget: budgetCode.remaining,
+//           status: disbursementAmount ? 'disbursed' : 'reserved',
+//           isReApproval
+//         },
+//         disbursement: disbursementAmount ? {
+//           amount: parseFloat(disbursementAmount),
+//           disbursementNumber: request.disbursements.length,
+//           totalDisbursed: request.totalDisbursed,
+//           remainingBalance: request.remainingBalance,
+//           progress: Math.round((request.totalDisbursed / finalAmount) * 100),
+//           status: request.status
+//         } : null
 //       });
 
 //     } else {
-//       // Handle rejection
+//       // ============================================
+//       // HANDLE REJECTION
+//       // ============================================
 //       console.log('❌ Request REJECTED by finance');
       
 //       request.status = 'denied';
@@ -818,6 +953,7 @@ const getFinanceRequests = async (req, res) => {
 //       ).catch(err => console.error('Failed to send denial email:', err));
 
 //       console.log('=== REQUEST DENIED ===\n');
+      
 //       return res.json({
 //         success: true,
 //         message: 'Request rejected by finance',
@@ -826,7 +962,9 @@ const getFinanceRequests = async (req, res) => {
 //     }
 
 //   } catch (error) {
-//     console.error('Process finance decision error:', error);
+//     console.error('❌ Process finance decision error:', error);
+//     console.error('Stack trace:', error.stack);
+    
 //     res.status(500).json({
 //       success: false,
 //       message: 'Failed to process finance decision',
@@ -845,7 +983,6 @@ const processFinanceDecision = async (req, res) => {
     console.log('Request ID:', requestId);
     console.log('Decision:', decision);
     console.log('Budget Code ID:', budgetCodeId);
-    console.log('Amount Approved:', amountApproved);
     console.log('Disbursement Amount:', disbursementAmount);
 
     const user = await User.findById(req.user.userId);
@@ -894,127 +1031,65 @@ const processFinanceDecision = async (req, res) => {
       console.log(`Final approved amount: XAF ${finalAmount.toLocaleString()}`);
 
       // ============================================
-      // STEP 1: GET OR ASSIGN BUDGET CODE
+      // BUDGET CODE ASSIGNMENT (happens during approval, not disbursement)
       // ============================================
       let budgetCode = null;
-      let isReApproval = false; // ✅ Track if this is a re-approval
       
-      // ✅ Check if this is a re-approval with existing allocation
-      if (request.budgetAllocation && request.budgetAllocation.budgetCodeId) {
-        console.log('⚠️  Existing budget allocation found');
-        budgetCode = await BudgetCode.findById(request.budgetAllocation.budgetCodeId);
+      if (budgetCodeId) {
+        console.log(`💼 Finance assigning budget code: ${budgetCodeId}`);
+        budgetCode = await BudgetCode.findById(budgetCodeId);
         
-        if (budgetCode) {
-          // ✅ Check if allocation exists for this request
-          const existingAllocation = budgetCode.allocations.find(
-            a => a.requisitionId && a.requisitionId.toString() === requestId.toString()
-          );
-
-          if (existingAllocation) {
-            console.log(`   Existing allocation status: ${existingAllocation.status}`);
-            
-            // ✅ If allocation exists with any status, this is a re-approval
-            if (['spent', 'released', 'allocated'].includes(existingAllocation.status)) {
-              isReApproval = true;
-              
-              // ✅ If allocation was spent or allocated, release it first
-              if (existingAllocation.status === 'spent' || existingAllocation.status === 'allocated') {
-                console.log(`   🔄 Releasing previous ${existingAllocation.status} allocation...`);
-                
-                // Manually release the allocation
-                existingAllocation.status = 'released';
-                existingAllocation.releaseDate = new Date();
-                existingAllocation.releaseReason = 'Re-approval after rejection';
-                
-                // If it was spent, return the funds
-                if (existingAllocation.status === 'spent') {
-                  budgetCode.used -= existingAllocation.amount;
-                }
-                
-                await budgetCode.save();
-                console.log('   ✅ Previous allocation released');
-              }
-            }
-          }
-        }
-      }
-      
-      // ✅ Get fresh budget code if not already loaded
-      if (!budgetCode) {
-        // Try project budget code
-        if (request.projectId && request.projectId.budgetCodeId) {
-          console.log('📦 Using project budget code');
-          budgetCode = await BudgetCode.findById(request.projectId.budgetCodeId);
-        }
-        // Use finance-assigned budget code
-        else if (budgetCodeId) {
-          console.log(`💼 Finance assigning budget code: ${budgetCodeId}`);
-          budgetCode = await BudgetCode.findById(budgetCodeId);
-        } else {
-          return res.status(400).json({
+        if (!budgetCode) {
+          return res.status(404).json({
             success: false,
-            message: 'Budget code must be assigned for approval'
+            message: 'Budget code not found'
           });
         }
-      }
 
-      if (!budgetCode) {
-        return res.status(404).json({
-          success: false,
-          message: 'Budget code not found'
-        });
-      }
+        console.log(`\n💰 Budget Code: ${budgetCode.code} - ${budgetCode.name}`);
+        console.log(`   Available: XAF ${budgetCode.remaining.toLocaleString()}`);
 
-      console.log(`\n💰 Budget Code: ${budgetCode.code} - ${budgetCode.name}`);
-      console.log(`   Current Budget: XAF ${budgetCode.budget.toLocaleString()}`);
-      console.log(`   Used: XAF ${budgetCode.used.toLocaleString()}`);
-      console.log(`   Available: XAF ${budgetCode.remaining.toLocaleString()}`);
-      console.log(`   Is Re-Approval: ${isReApproval ? 'YES' : 'NO'}`);
+        // Check budget sufficiency
+        if (budgetCode.remaining < finalAmount) {
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient budget. Available: XAF ${budgetCode.remaining.toLocaleString()}, Required: XAF ${finalAmount.toLocaleString()}`
+          });
+        }
 
-      // Check budget sufficiency
-      if (budgetCode.remaining < finalAmount) {
+        console.log(`✅ Budget check passed`);
+
+        // Reserve budget
+        try {
+          console.log(`\n💰 RESERVING budget...`);
+          await budgetCode.reserveBudget(request._id, finalAmount, req.user.userId);
+          console.log('✅ Budget reserved successfully');
+
+          // Update request allocation info
+          request.budgetAllocation = {
+            budgetCodeId: budgetCode._id,
+            budgetCode: budgetCode.code,
+            allocatedAmount: finalAmount,
+            allocationStatus: 'allocated',
+            assignedBy: req.user.userId,
+            assignedAt: new Date()
+          };
+
+        } catch (budgetError) {
+          console.error('❌ Budget reservation failed:', budgetError);
+          return res.status(500).json({
+            success: false,
+            message: `Failed to reserve budget: ${budgetError.message}`
+          });
+        }
+      } else {
         return res.status(400).json({
           success: false,
-          message: `Insufficient budget. Available: XAF ${budgetCode.remaining.toLocaleString()}, Required: XAF ${finalAmount.toLocaleString()}`
+          message: 'Budget code must be assigned for approval'
         });
       }
 
-      console.log(`✅ Budget check passed`);
-
-      // ============================================
-      // STEP 2: RESERVE BUDGET (Fresh or Re-reserve)
-      // ============================================
-      try {
-        console.log(`\n💰 ${isReApproval ? 'RE-RESERVING' : 'RESERVING'} budget...`);
-        
-        await budgetCode.reserveBudget(
-          request._id, 
-          finalAmount, 
-          req.user.userId
-        );
-        console.log('✅ Budget reserved successfully');
-
-        // Update request allocation info
-        request.budgetAllocation = {
-          budgetCodeId: budgetCode._id,
-          budgetCode: budgetCode.code,
-          allocatedAmount: finalAmount,
-          allocationStatus: 'allocated', // ✅ RESERVED
-          assignedBy: req.user.userId,
-          assignedAt: new Date()
-        };
-
-      } catch (budgetError) {
-        console.error('❌ Budget reservation failed:', budgetError);
-        return res.status(500).json({
-          success: false,
-          message: `Failed to reserve budget: ${budgetError.message}`
-        });
-      }
-
-      // ============================================
-      // STEP 3: UPDATE APPROVAL CHAIN
-      // ============================================
+      // Update approval chain
       request.approvalChain[financeStepIndex].status = 'approved';
       request.approvalChain[financeStepIndex].comments = comments;
       request.approvalChain[financeStepIndex].actionDate = new Date();
@@ -1031,15 +1106,14 @@ const processFinanceDecision = async (req, res) => {
       request.financeOfficer = req.user.userId;
 
       // ============================================
-      // STEP 4: HANDLE DISBURSEMENT (if provided)
+      // HANDLE DISBURSEMENT (if provided immediately)
       // ============================================
       if (disbursementAmount) {
         const disbursedAmount = parseFloat(disbursementAmount);
         
-        console.log(`\n💸 Processing disbursement...`);
-        console.log(`   Disbursement amount: XAF ${disbursedAmount.toLocaleString()}`);
+        console.log(`\n💸 Processing immediate disbursement...`);
+        console.log(`   Amount: XAF ${disbursedAmount.toLocaleString()}`);
 
-        // Validate disbursement amount
         if (disbursedAmount > finalAmount) {
           // Rollback reservation
           try {
@@ -1050,21 +1124,21 @@ const processFinanceDecision = async (req, res) => {
 
           return res.status(400).json({
             success: false,
-            message: `Disbursement amount (XAF ${disbursedAmount.toLocaleString()}) cannot exceed approved amount (XAF ${finalAmount.toLocaleString()})`
+            message: `Disbursement amount cannot exceed approved amount`
           });
         }
 
         try {
-          // ✅ DEDUCT from budget
+          // Deduct from budget
           await budgetCode.deductBudget(request._id, disbursedAmount);
           console.log('✅ Budget deducted successfully');
 
-          // ✅ Initialize disbursements array if needed
+          // Initialize disbursements array
           if (!request.disbursements) {
             request.disbursements = [];
           }
 
-          // ✅ Add disbursement record
+          // Add disbursement record
           request.disbursements.push({
             amount: disbursedAmount,
             date: new Date(),
@@ -1073,27 +1147,27 @@ const processFinanceDecision = async (req, res) => {
             disbursementNumber: request.disbursements.length + 1
           });
 
-          // ✅ Update disbursement tracking
+          // Update disbursement tracking
           request.totalDisbursed = disbursedAmount;
           request.remainingBalance = finalAmount - disbursedAmount;
 
-          // ✅ Set appropriate status
+          // Set appropriate status
           if (request.remainingBalance === 0) {
             request.status = 'fully_disbursed';
             console.log('✅ Request FULLY DISBURSED');
           } else {
             request.status = 'partially_disbursed';
-            console.log(`✅ Request PARTIALLY DISBURSED (${Math.round((disbursedAmount / finalAmount) * 100)}% complete)`);
+            console.log(`✅ Request PARTIALLY DISBURSED (${Math.round((disbursedAmount / finalAmount) * 100)}%)`);
           }
 
-          // ✅ Update budget allocation status
+          // Update budget allocation status
           request.budgetAllocation.allocationStatus = 'spent';
           request.budgetAllocation.actualSpent = disbursedAmount;
 
         } catch (deductError) {
           console.error('❌ Budget deduction failed:', deductError);
           
-          // ✅ ROLLBACK: Release the reservation
+          // Rollback reservation
           try {
             await budgetCode.releaseReservation(request._id, 'Disbursement failed');
             console.log('✅ Budget reservation rolled back');
@@ -1106,104 +1180,66 @@ const processFinanceDecision = async (req, res) => {
             message: `Budget deduction failed: ${deductError.message}`
           });
         }
-
       } else {
-        // ✅ Approved but not disbursed yet
+        // Approved but not yet disbursed
         request.status = 'approved';
         console.log('✅ Request APPROVED (budget reserved, awaiting disbursement)');
       }
 
-      // ============================================
-      // STEP 5: SAVE REQUEST
-      // ============================================
       await request.save();
       console.log('✅ Request saved successfully');
 
-      // ============================================
-      // STEP 6: SEND NOTIFICATIONS
-      // ============================================
-      const notifications = [];
+      // Send notifications
+      const isFullyDisbursed = request.status === 'fully_disbursed';
+      
+      await sendEmail({
+        to: request.employee.email,
+        subject: isFullyDisbursed ? 
+          '✅ Reimbursement Approved and Disbursed' : 
+          '✅ Reimbursement Approved',
+        html: `
+          <h3>${isFullyDisbursed ? 'Your Reimbursement Has Been Disbursed! 🎉' : 'Your Reimbursement Has Been Approved! 🎉'}</h3>
+          <p>Dear ${request.employee.fullName},</p>
 
-      const budgetInfo = `
-        <div style="background-color: #e6f7ff; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #1890ff;">
-          <p><strong>💰 Budget Allocation:</strong></p>
-          <ul>
-            <li><strong>Budget Code:</strong> ${budgetCode.code} - ${budgetCode.name}</li>
-            <li><strong>Amount Approved:</strong> XAF ${finalAmount.toLocaleString()}</li>
-            ${disbursementAmount ? `<li><strong>Amount Disbursed:</strong> XAF ${parseFloat(disbursementAmount).toLocaleString()}</li>` : ''}
-            ${disbursementAmount && request.remainingBalance > 0 ? `<li><strong>Remaining to Disburse:</strong> XAF ${request.remainingBalance.toLocaleString()}</li>` : ''}
-            <li><strong>Budget Remaining:</strong> XAF ${budgetCode.remaining.toLocaleString()}</li>
-            <li><strong>Status:</strong> ${disbursementAmount ? '💸 Funds Disbursed' : '💰 Funds Reserved'}</li>
-          </ul>
-        </div>
-      `;
+          <p>Great news! Your reimbursement request has been approved by finance${disbursementAmount ? ' and funds have been disbursed' : ''}.</p>
 
-      // Notify employee
-      notifications.push(
-        sendEmail({
-          to: request.employee.email,
-          subject: `Cash Request ${disbursementAmount ? 'Approved & Disbursed' : 'Approved'} - ${request.employee.fullName}`,
-          html: `
-            <h3>Cash Request ${disbursementAmount ? 'Approved & Disbursed' : 'Approved'}</h3>
-            <p>Dear ${request.employee.fullName},</p>
-            
-            <p>Your cash request has been ${disbursementAmount ? 'approved and funds have been disbursed' : 'approved by the finance team'}.</p>
+          <div style="background-color: #d4edda; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #28a745;">
+            <p><strong>Approval Details:</strong></p>
+            <ul>
+              <li><strong>Request ID:</strong> REQ-${requestId.toString().slice(-6).toUpperCase()}</li>
+              <li><strong>Amount Approved:</strong> XAF ${finalAmount.toLocaleString()}</li>
+              ${disbursementAmount ? `<li><strong>Amount Disbursed:</strong> XAF ${parseFloat(disbursementAmount).toLocaleString()}</li>` : ''}
+              ${request.remainingBalance > 0 ? `<li><strong>Remaining:</strong> XAF ${request.remainingBalance.toLocaleString()}</li>` : ''}
+              <li><strong>Budget Code:</strong> ${budgetCode.code} - ${budgetCode.name}</li>
+              <li><strong>Approved by:</strong> ${user.fullName} (Finance)</li>
+            </ul>
+          </div>
 
-            <div style="background-color: #d4edda; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #28a745;">
-              <p><strong>Approval Details:</strong></p>
-              <ul>
-                <li><strong>Request ID:</strong> REQ-${requestId.toString().slice(-6).toUpperCase()}</li>
-                <li><strong>Amount Approved:</strong> XAF ${finalAmount.toLocaleString()}</li>
-                <li><strong>Approved by:</strong> ${user.fullName} (Finance Officer)</li>
-                <li><strong>Date:</strong> ${new Date().toLocaleDateString('en-GB')}</li>
-              </ul>
-            </div>
+          ${disbursementAmount ? 
+            (isFullyDisbursed ?
+              '<p><strong>Status:</strong> Your reimbursement has been fully processed and you should receive your funds soon.</p>' :
+              `<p><strong>Status:</strong> Partial payment processed (${Math.round((parseFloat(disbursementAmount) / finalAmount) * 100)}%). More payments may follow.</p>`
+            ) :
+            '<p><strong>Next Step:</strong> Disbursement will be processed by the Finance team.</p>'
+          }
 
-            ${budgetInfo}
+          <p>Thank you for following the proper reimbursement process!</p>
+        `
+      }).catch(err => console.error('Failed to send notification:', err));
 
-            ${disbursementAmount ? 
-              request.status === 'fully_disbursed' ?
-                `<div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #ffc107;">
-                  <p><strong>⚠️ Next Step: Submit Justification</strong></p>
-                  <p>Your funds have been fully disbursed. Please submit your justification with receipts within the required timeframe.</p>
-                </div>` :
-                `<div style="background-color: #e6f7ff; padding: 10px; border-radius: 5px; margin: 10px 0;">
-                  <p><em>💡 Partial disbursement (${Math.round((parseFloat(disbursementAmount) / finalAmount) * 100)}% of approved amount). More disbursements may follow.</em></p>
-                </div>`
-              : 
-              `<div style="background-color: #e6f7ff; padding: 10px; border-radius: 5px; margin: 10px 0;">
-                <p><em>💰 Budget has been reserved. Please wait for disbursement processing by the Finance team.</em></p>
-              </div>`
-            }
+      console.log('=== FINANCE APPROVAL COMPLETED ===\n');
 
-            <p>Thank you!</p>
-          `
-        }).catch(error => {
-          console.error('Failed to send employee notification:', error);
-          return { error, type: 'employee' };
-        })
-      );
-
-      await Promise.allSettled(notifications);
-
-      console.log('\n=== FINANCE APPROVAL COMPLETED ===\n');
-
-      // ============================================
-      // STEP 7: RETURN RESPONSE
-      // ============================================
       await request.populate('employee', 'fullName email department');
 
       res.json({
         success: true,
-        message: `Request ${isReApproval ? 're-' : ''}approved${disbursementAmount ? ' and funds disbursed' : ' (awaiting disbursement)'}`,
+        message: `Reimbursement approved${disbursementAmount ? ' and funds disbursed' : ' (awaiting disbursement)'}`,
         data: request,
         budgetAllocation: {
           budgetCode: budgetCode.code,
           budgetName: budgetCode.name,
           allocatedAmount: finalAmount,
-          remainingBudget: budgetCode.remaining,
-          status: disbursementAmount ? 'disbursed' : 'reserved',
-          isReApproval
+          remainingBudget: budgetCode.remaining
         },
         disbursement: disbursementAmount ? {
           amount: parseFloat(disbursementAmount),
@@ -1216,10 +1252,8 @@ const processFinanceDecision = async (req, res) => {
       });
 
     } else {
-      // ============================================
-      // HANDLE REJECTION
-      // ============================================
-      console.log('❌ Request REJECTED by finance');
+      // Handle rejection
+      console.log('❌ Reimbursement REJECTED by finance');
       
       request.status = 'denied';
       request.financeDecision = {
@@ -1236,18 +1270,30 @@ const processFinanceDecision = async (req, res) => {
 
       await request.save();
 
-      await sendCashRequestEmail.denialToEmployee(
-        request.employee.email,
-        comments || 'Request denied by finance team',
-        requestId,
-        user.fullName
-      ).catch(err => console.error('Failed to send denial email:', err));
+      await sendEmail({
+        to: request.employee.email,
+        subject: '⚠️ Reimbursement Request Denied',
+        html: `
+          <h3>Reimbursement Request Denied</h3>
+          <p>Dear ${request.employee.fullName},</p>
 
-      console.log('=== REQUEST DENIED ===\n');
+          <p>Your reimbursement request has been denied by the finance team.</p>
+
+          <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <p><strong>Request ID:</strong> REQ-${requestId.toString().slice(-6).toUpperCase()}</p>
+            <p><strong>Amount:</strong> XAF ${request.amountRequested.toLocaleString()}</p>
+            ${comments ? `<p><strong>Reason:</strong> ${comments}</p>` : ''}
+          </div>
+
+          <p>If you have questions, please contact the finance team.</p>
+        `
+      }).catch(err => console.error('Failed to send denial email:', err));
+
+      console.log('=== REIMBURSEMENT DENIED ===\n');
       
       return res.json({
         success: true,
-        message: 'Request rejected by finance',
+        message: 'Reimbursement rejected by finance',
         data: request
       });
     }
@@ -1263,7 +1309,6 @@ const processFinanceDecision = async (req, res) => {
     });
   }
 };
-
 
 // Get approval chain preview (for form preview)
 const getApprovalChainPreview = async (req, res) => {
@@ -2235,677 +2280,6 @@ const getSupervisorJustification = async (req, res) => {
   }
 };
 
-
-// const createRequest = async (req, res) => {
-//   try {
-//     console.log('=== CREATE CASH REQUEST ===');
-//     console.log('Request body:', JSON.stringify(req.body, null, 2));
-//     console.log('Files received:', req.files?.length || 0);
-
-//     const {
-//       requestType,
-//       amountRequested,
-//       purpose,
-//       businessJustification,
-//       urgency,
-//       requiredDate,
-//       projectCode,
-//       projectId, // ✅ NEW: Project integration
-//       itemizedBreakdown
-//     } = req.body;
-
-//     // Get user details
-//     const employee = await User.findById(req.user.userId);
-//     if (!employee) {
-//       return res.status(404).json({ 
-//         success: false, 
-//         message: 'Employee not found' 
-//       });
-//     }
-
-//     console.log(`Creating cash request for: ${employee.fullName} (${employee.email})`);
-
-//     // Parse itemized breakdown
-//     let parsedBreakdown = null;
-//     if (itemizedBreakdown) {
-//       try {
-//         parsedBreakdown = typeof itemizedBreakdown === 'string' 
-//           ? JSON.parse(itemizedBreakdown) 
-//           : itemizedBreakdown;
-
-//         if (Array.isArray(parsedBreakdown) && parsedBreakdown.length > 0) {
-//           const breakdownTotal = parsedBreakdown.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
-//           const discrepancy = Math.abs(breakdownTotal - parseFloat(amountRequested));
-
-//           if (discrepancy > 1) {
-//             return res.status(400).json({
-//               success: false,
-//               message: `Itemized breakdown total (XAF ${breakdownTotal.toFixed(2)}) must match requested amount (XAF ${parseFloat(amountRequested).toFixed(2)})`
-//             });
-//           }
-
-//           console.log(`✓ Itemized breakdown validated: ${parsedBreakdown.length} items, total XAF ${breakdownTotal.toLocaleString()}`);
-//         } else {
-//           parsedBreakdown = null;
-//         }
-//       } catch (parseError) {
-//         console.error('Error parsing itemized breakdown:', parseError);
-//         return res.status(400).json({
-//           success: false,
-//           message: 'Invalid itemized breakdown format'
-//         });
-//       }
-//     }
-
-//     // ✅ NEW: Validate and get project with budget code
-//     let selectedProject = null;
-//     let projectBudgetCode = null;
-
-//     if (projectId) {
-//       console.log(`\n🎯 Project ID provided: ${projectId}`);
-
-//       selectedProject = await Project.findById(projectId)
-//         .populate('budgetCodeId', 'code name budget used remaining');
-
-//       if (!selectedProject) {
-//         return res.status(404).json({
-//           success: false,
-//           message: 'Selected project not found'
-//         });
-//       }
-
-//       console.log(`✅ Project found: ${selectedProject.name} (${selectedProject.code})`);
-
-//       // Check if project has budget code
-//       if (selectedProject.budgetCodeId) {
-//         projectBudgetCode = selectedProject.budgetCodeId;
-//         console.log(`💰 Project has budget code: ${projectBudgetCode.code} - ${projectBudgetCode.name}`);
-//         console.log(`   Available: XAF ${projectBudgetCode.remaining.toLocaleString()}`);
-
-//         // Validate budget sufficiency
-//         if (projectBudgetCode.remaining < parseFloat(amountRequested)) {
-//           return res.status(400).json({
-//             success: false,
-//             message: `Insufficient budget in project. Available: XAF ${projectBudgetCode.remaining.toLocaleString()}, Requested: XAF ${parseFloat(amountRequested).toLocaleString()}`
-//           });
-//         }
-
-//         console.log(`✅ Budget check passed`);
-//       } else {
-//         console.log(`⚠️  Project has no budget code assigned - will need manual budget assignment`);
-//       }
-//     }
-
-//     // Generate approval chain
-//     console.log('\n📋 Generating approval chain...');
-//     const approvalChain = getCashRequestApprovalChain(employee.email);
-
-//     if (!approvalChain || approvalChain.length === 0) {
-//       console.error('❌ Failed to generate approval chain');
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Unable to determine approval chain. Please contact HR for assistance.'
-//       });
-//     }
-
-//     console.log(`✓ Approval chain generated with ${approvalChain.length} levels`);
-
-//     // Verify Finance Officer is final approver
-//     const lastApprover = approvalChain[approvalChain.length - 1];
-//     if (!lastApprover || lastApprover.approver.role !== 'Finance Officer') {
-//       console.error('❌ Finance Officer is not the final approver');
-//       return res.status(500).json({
-//         success: false,
-//         message: 'System error: Invalid approval chain configuration.'
-//       });
-//     }
-
-//     console.log(`✅ Finance Officer (${lastApprover.approver.name}) is final approver at Level ${lastApprover.level}`);
-
-//     // Process attachments
-//     let attachments = [];
-//     if (req.files && req.files.length > 0) {
-//       console.log(`\n📎 Processing ${req.files.length} attachment(s)...`);
-
-//       const uploadDir = path.join(__dirname, '../uploads/attachments');
-
-//       try {
-//         await fs.promises.mkdir(uploadDir, { recursive: true, mode: 0o755 });
-//         console.log(`✓ Attachments directory ready: ${uploadDir}`);
-//       } catch (dirError) {
-//         console.error('❌ Failed to create attachments directory:', dirError);
-//         throw new Error('Failed to prepare upload directory');
-//       }
-
-//       for (let i = 0; i < req.files.length; i++) {
-//         const file = req.files[i];
-        
-//         try {
-//           console.log(`\n   Processing file ${i + 1}/${req.files.length}: ${file.originalname}`);
-          
-//           if (!file.path || !fs.existsSync(file.path)) {
-//             console.error(`   ❌ Temp file not found: ${file.path}`);
-//             continue;
-//           }
-
-//           const timestamp = Date.now();
-//           const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
-//           const fileName = `${timestamp}-${i}-${sanitizedName}`;
-//           const destinationPath = path.join(uploadDir, fileName);
-
-//           await fs.promises.rename(file.path, destinationPath);
-          
-//           // Verify file
-//           if (!fs.existsSync(destinationPath)) {
-//             throw new Error(`File was not moved: ${fileName}`);
-//           }
-
-//           attachments.push({
-//             name: file.originalname,
-//             publicId: fileName,
-//             url: `/uploads/attachments/${fileName}`,
-//             size: file.size,
-//             mimetype: file.mimetype,
-//             uploadedAt: new Date()
-//           });
-
-//           console.log(`   ✅ Attachment ${i + 1} processed successfully`);
-
-//         } catch (fileError) {
-//           console.error(`   ❌ Error processing file ${file.originalname}:`, fileError);
-//           continue;
-//         }
-//       }
-
-//       console.log(`\n✅ ${attachments.length} attachment(s) processed successfully`);
-//     }
-
-//     // ✅ Create cash request with project budget integration
-//     console.log('\n💾 Creating CashRequest document...');
-//     const cashRequest = new CashRequest({
-//       employee: req.user.userId,
-//       requestMode: 'advance',
-//       requestType,
-//       amountRequested: parseFloat(amountRequested),
-//       purpose,
-//       businessJustification,
-//       urgency,
-//       requiredDate: new Date(requiredDate),
-//       projectCode,
-//       attachments,
-//       itemizedBreakdown: parsedBreakdown || [],
-//       status: 'pending_supervisor',
-//       approvalChain: approvalChain,
-      
-//       // ✅ NEW: Project integration
-//       projectId: selectedProject ? selectedProject._id : null,
-      
-//       // ✅ NEW: Auto-assign project budget code if available
-//       budgetAllocation: projectBudgetCode ? {
-//         budgetCodeId: projectBudgetCode._id,
-//         budgetCode: projectBudgetCode.code,
-//         allocatedAmount: parseFloat(amountRequested),
-//         allocationStatus: 'pending',
-//         assignedBy: null, 
-//         assignedAt: null
-//       } : null
-//     });
-
-//     console.log('Saving cash request...');
-//     await cashRequest.save();
-//     console.log(`✅ Cash request created with ID: ${cashRequest._id}`);
-
-//     // Populate employee details
-//     await cashRequest.populate('employee', 'fullName email department');
-//     if (selectedProject) {
-//       await cashRequest.populate('projectId', 'name code department');
-//     }
-
-//     // Send notifications
-//     console.log('\n📧 Sending notifications...');
-//     const notifications = [];
-
-//     // Notify first approver
-//     const firstApprover = approvalChain[0];
-//     if (firstApprover && firstApprover.approver.email) {
-//       notifications.push(
-//         sendCashRequestEmail.newRequestToSupervisor(
-//           firstApprover.approver.email,
-//           employee.fullName,
-//           parseFloat(amountRequested),
-//           cashRequest._id,
-//           purpose
-//         ).catch(error => {
-//           console.error('Failed to send supervisor notification:', error);
-//           return { error, type: 'supervisor' };
-//         })
-//       );
-//     }
-
-//     // Enhanced notification for admins (include project info)
-//     const admins = await User.find({ role: 'admin' }).select('email fullName');
-//     if (admins.length > 0) {
-//       const projectInfo = selectedProject 
-//         ? `<li><strong>Project:</strong> ${selectedProject.name} (${selectedProject.code})</li>
-//            <li><strong>Budget Code:</strong> ${projectBudgetCode ? projectBudgetCode.code : 'To be assigned'}</li>`
-//         : '<li><strong>Project:</strong> Not specified</li>';
-
-//       notifications.push(
-//         sendEmail({
-//           to: admins.map(a => a.email),
-//           subject: `New Cash Request from ${employee.fullName}`,
-//           html: `
-//             <h3>New Cash Request Submitted</h3>
-//             <p>A new cash request has been submitted by <strong>${employee.fullName}</strong></p>
-
-//             <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
-//               <ul>
-//                 <li><strong>Request ID:</strong> REQ-${cashRequest._id.toString().slice(-6).toUpperCase()}</li>
-//                 <li><strong>Employee:</strong> ${employee.fullName} (${employee.department})</li>
-//                 <li><strong>Amount:</strong> XAF ${parseFloat(amountRequested).toLocaleString()}</li>
-//                 <li><strong>Type:</strong> ${requestType}</li>
-//                 <li><strong>Urgency:</strong> ${urgency}</li>
-//                 ${projectInfo}
-//                 ${attachments.length > 0 ? `<li><strong>Attachments:</strong> ${attachments.length} file(s)</li>` : ''}
-//                 <li><strong>Approval Levels:</strong> ${approvalChain.length}</li>
-//               </ul>
-//             </div>
-//           `
-//         }).catch(error => {
-//           console.error('Failed to send admin notification:', error);
-//           return { error, type: 'admin' };
-//         })
-//       );
-//     }
-
-//     await Promise.allSettled(notifications);
-
-//     console.log('\n=== REQUEST CREATED SUCCESSFULLY ===');
-//     console.log(`Request ID: ${cashRequest._id}`);
-//     console.log(`Attachments: ${attachments.length}`);
-//     if (selectedProject) {
-//       console.log(`Project: ${selectedProject.name}`);
-//       console.log(`Budget Code: ${projectBudgetCode ? projectBudgetCode.code : 'None'}`);
-//     }
-//     console.log('=====================================\n');
-
-//     res.status(201).json({
-//       success: true,
-//       message: 'Cash request created successfully',
-//       data: cashRequest,
-//       metadata: {
-//         attachmentsUploaded: attachments.length,
-//         hasItemizedBreakdown: !!(parsedBreakdown && parsedBreakdown.length > 0),
-//         approvalLevels: approvalChain.length,
-//         finalApprover: lastApprover.approver.name,
-//         projectBudgetAssigned: !!projectBudgetCode
-//       }
-//     });
-
-//   } catch (error) {
-//     console.error('❌ Create cash request error:', error);
-//     console.error('Stack trace:', error.stack);
-
-//     // Clean up uploaded files on error
-//     if (req.files && req.files.length > 0) {
-//       await Promise.allSettled(
-//         req.files.map(file => {
-//           if (file.path && fs.existsSync(file.path)) {
-//             return fs.promises.unlink(file.path).catch(e => 
-//               console.error('File cleanup failed:', e.message)
-//             );
-//           }
-//         })
-//       );
-//     }
-
-//     res.status(500).json({
-//       success: false,
-//       message: error.message || 'Failed to create cash request',
-//       error: process.env.NODE_ENV === 'development' ? error.message : 'An error occurred'
-//     });
-//   }
-// };
-
-
-// const createRequest = async (req, res) => {
-//   try {
-//     console.log('=== CREATE CASH REQUEST ===');
-//     console.log('Request body:', JSON.stringify(req.body, null, 2));
-//     console.log('Files received:', req.files?.length || 0);
-
-//     const {
-//       requestType,
-//       amountRequested,
-//       purpose,
-//       businessJustification,
-//       urgency,
-//       requiredDate,
-//       projectCode,
-//       projectId,
-//       itemizedBreakdown
-//     } = req.body;
-
-//     // Get user details
-//     const employee = await User.findById(req.user.userId);
-//     if (!employee) {
-//       return res.status(404).json({ 
-//         success: false, 
-//         message: 'Employee not found' 
-//       });
-//     }
-
-//     console.log(`Creating cash request for: ${employee.fullName} (${employee.email})`);
-
-//     // Parse itemized breakdown
-//     let parsedBreakdown = null;
-//     if (itemizedBreakdown) {
-//       try {
-//         parsedBreakdown = typeof itemizedBreakdown === 'string' 
-//           ? JSON.parse(itemizedBreakdown) 
-//           : itemizedBreakdown;
-
-//         if (Array.isArray(parsedBreakdown) && parsedBreakdown.length > 0) {
-//           const breakdownTotal = parsedBreakdown.reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
-//           const discrepancy = Math.abs(breakdownTotal - parseFloat(amountRequested));
-
-//           if (discrepancy > 1) {
-//             return res.status(400).json({
-//               success: false,
-//               message: `Itemized breakdown total (XAF ${breakdownTotal.toFixed(2)}) must match requested amount (XAF ${parseFloat(amountRequested).toFixed(2)})`
-//             });
-//           }
-
-//           console.log(`✓ Itemized breakdown validated: ${parsedBreakdown.length} items, total XAF ${breakdownTotal.toLocaleString()}`);
-//         } else {
-//           parsedBreakdown = null;
-//         }
-//       } catch (parseError) {
-//         console.error('Error parsing itemized breakdown:', parseError);
-//         return res.status(400).json({
-//           success: false,
-//           message: 'Invalid itemized breakdown format'
-//         });
-//       }
-//     }
-
-//     // ✅ NEW: Validate and get project with budget code
-//     let selectedProject = null;
-//     let projectBudgetCode = null;
-
-//     if (projectId) {
-//       console.log(`\n🎯 Project ID provided: ${projectId}`);
-
-//       selectedProject = await Project.findById(projectId)
-//         .populate('budgetCodeId', 'code name budget used remaining');
-
-//       if (!selectedProject) {
-//         return res.status(404).json({
-//           success: false,
-//           message: 'Selected project not found'
-//         });
-//       }
-
-//       console.log(`✅ Project found: ${selectedProject.name} (${selectedProject.code})`);
-
-//       // Check if project has budget code
-//       if (selectedProject.budgetCodeId) {
-//         projectBudgetCode = selectedProject.budgetCodeId;
-//         console.log(`💰 Project has budget code: ${projectBudgetCode.code} - ${projectBudgetCode.name}`);
-//         console.log(`   Available: XAF ${projectBudgetCode.remaining.toLocaleString()}`);
-
-//         // Validate budget sufficiency
-//         if (projectBudgetCode.remaining < parseFloat(amountRequested)) {
-//           return res.status(400).json({
-//             success: false,
-//             message: `Insufficient budget in project. Available: XAF ${projectBudgetCode.remaining.toLocaleString()}, Requested: XAF ${parseFloat(amountRequested).toLocaleString()}`
-//           });
-//         }
-
-//         console.log(`✅ Budget check passed`);
-//       } else {
-//         console.log(`⚠️  Project has no budget code assigned - will need manual budget assignment`);
-//       }
-//     }
-
-//     // Generate approval chain
-//     console.log('\n📋 Generating approval chain...');
-//     const approvalChain = getCashRequestApprovalChain(employee.email);
-
-//     if (!approvalChain || approvalChain.length === 0) {
-//       console.error('❌ Failed to generate approval chain');
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Unable to determine approval chain. Please contact HR for assistance.'
-//       });
-//     }
-
-//     console.log(`✓ Approval chain generated with ${approvalChain.length} levels`);
-
-//     // Map approval chain to proper format
-//     const mappedApprovalChain = mapApprovalChainForCashRequest(approvalChain);
-//     console.log(`✓ Approval chain mapped for CashRequest schema`);
-
-//     // Verify Finance Officer is final approver
-//     const lastApprover = approvalChain[approvalChain.length - 1];
-//     if (!lastApprover || lastApprover.approver.role !== 'Finance Officer') {
-//       console.error('❌ Finance Officer is not the final approver');
-//       return res.status(500).json({
-//         success: false,
-//         message: 'System error: Invalid approval chain configuration.'
-//       });
-//     }
-
-//     console.log(`✅ Finance Officer (${lastApprover.approver.name}) is final approver at Level ${lastApprover.level}`);
-
-//     // ✅ UPDATED: Process attachments using local storage
-//     let attachments = [];
-//     if (req.files && req.files.length > 0) {
-//       console.log(`\n📎 Processing ${req.files.length} attachment(s)...`);
-
-//       for (let i = 0; i < req.files.length; i++) {
-//         const file = req.files[i];
-        
-//         try {
-//           console.log(`   Processing file ${i + 1}/${req.files.length}: ${file.originalname}`);
-          
-//           // Save file using local storage
-//           const fileMetadata = await saveFile(
-//             file,
-//             STORAGE_CATEGORIES.CASH_REQUESTS,
-//             'attachments', // subfolder
-//             null // auto-generate filename
-//           );
-
-//           attachments.push({
-//             name: file.originalname,
-//             publicId: fileMetadata.publicId,
-//             url: fileMetadata.url,
-//             localPath: fileMetadata.localPath, // ✅ Store local path
-//             size: file.size,
-//             mimetype: file.mimetype,
-//             uploadedAt: new Date()
-//           });
-
-//           console.log(`   ✅ Saved: ${fileMetadata.publicId}`);
-
-//         } catch (fileError) {
-//           console.error(`   ❌ Error processing ${file.originalname}:`, fileError);
-//           continue;
-//         }
-//       }
-
-//       console.log(`\n✅ ${attachments.length} attachment(s) processed successfully`);
-//     }
-
-//     // ✅ Create cash request with project budget integration
-//     console.log('\n💾 Creating CashRequest document...');
-//     const cashRequest = new CashRequest({
-//       employee: req.user.userId,
-//       requestMode: 'advance',
-//       requestType,
-//       amountRequested: parseFloat(amountRequested),
-//       purpose,
-//       businessJustification,
-//       urgency,
-//       requiredDate: new Date(requiredDate),
-//       projectCode,
-//       attachments,
-//       itemizedBreakdown: parsedBreakdown || [],
-//       status: 'pending_supervisor',
-//       approvalChain: mappedApprovalChain,
-      
-//       // ✅ NEW: Project integration
-//       projectId: selectedProject ? selectedProject._id : null,
-      
-//       // ✅ NEW: Auto-assign project budget code if available
-//       budgetAllocation: projectBudgetCode ? {
-//         budgetCodeId: projectBudgetCode._id,
-//         budgetCode: projectBudgetCode.code,
-//         allocatedAmount: parseFloat(amountRequested),
-//         allocationStatus: 'pending',
-//         assignedBy: null, 
-//         assignedAt: null
-//       } : null
-//     });
-
-//     console.log('Saving cash request...');
-//     await cashRequest.save();
-//     console.log(`✅ Cash request created with ID: ${cashRequest._id}`);
-
-//     // Populate employee details
-//     await cashRequest.populate('employee', 'fullName email department');
-//     if (selectedProject) {
-//       await cashRequest.populate('projectId', 'name code department');
-//     }
-
-//     // Send notifications
-//     console.log('\n📧 Sending notifications...');
-//     const notifications = [];
-
-//     // Notify first approver
-//     const firstApprover = approvalChain[0];
-//     if (firstApprover && firstApprover.approver.email) {
-//       notifications.push(
-//         sendCashRequestEmail.newRequestToSupervisor(
-//           firstApprover.approver.email,
-//           employee.fullName,
-//           parseFloat(amountRequested),
-//           cashRequest._id,
-//           purpose
-//         ).catch(error => {
-//           console.error('Failed to send supervisor notification:', error);
-//           return { error, type: 'supervisor' };
-//         })
-//       );
-//     }
-
-//     // Enhanced notification for admins (include project info)
-//     const admins = await User.find({ role: 'admin' }).select('email fullName');
-//     if (admins.length > 0) {
-//       const projectInfo = selectedProject 
-//         ? `<li><strong>Project:</strong> ${selectedProject.name} (${selectedProject.code})</li>
-//            <li><strong>Budget Code:</strong> ${projectBudgetCode ? projectBudgetCode.code : 'To be assigned'}</li>`
-//         : '<li><strong>Project:</strong> Not specified</li>';
-
-//       const itemizedInfo = parsedBreakdown && parsedBreakdown.length > 0
-//         ? `<li><strong>Itemized Breakdown:</strong> ${parsedBreakdown.length} expense items</li>`
-//         : '';
-
-//       notifications.push(
-//         sendEmail({
-//           to: admins.map(a => a.email),
-//           subject: `New Cash Request from ${employee.fullName}`,
-//           html: `
-//             <h3>New Cash Request Submitted</h3>
-//             <p>A new cash request has been submitted by <strong>${employee.fullName}</strong></p>
-
-//             <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0;">
-//               <ul>
-//                 <li><strong>Request ID:</strong> REQ-${cashRequest._id.toString().slice(-6).toUpperCase()}</li>
-//                 <li><strong>Employee:</strong> ${employee.fullName} (${employee.department})</li>
-//                 <li><strong>Amount:</strong> XAF ${parseFloat(amountRequested).toLocaleString()}</li>
-//                 <li><strong>Type:</strong> ${requestType}</li>
-//                 <li><strong>Urgency:</strong> ${urgency}</li>
-//                 ${projectInfo}
-//                 ${itemizedInfo}
-//                 ${attachments.length > 0 ? `<li><strong>Attachments:</strong> ${attachments.length} file(s)</li>` : ''}
-//                 <li><strong>Approval Levels:</strong> ${approvalChain.length}</li>
-//               </ul>
-//             </div>
-
-//             ${parsedBreakdown && parsedBreakdown.length > 0 ? `
-//             <div style="background-color: #e6f7ff; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #1890ff;">
-//               <p><strong>📋 Itemized Expenses (Top 5):</strong></p>
-//               <ul>
-//                 ${parsedBreakdown.slice(0, 5).map(item => `
-//                   <li>${item.description}: XAF ${parseFloat(item.amount).toLocaleString()}${item.category ? ` (${item.category})` : ''}</li>
-//                 `).join('')}
-//                 ${parsedBreakdown.length > 5 ? `<li><em>...and ${parsedBreakdown.length - 5} more items</em></li>` : ''}
-//               </ul>
-//             </div>
-//             ` : ''}
-//           `
-//         }).catch(error => {
-//           console.error('Failed to send admin notification:', error);
-//           return { error, type: 'admin' };
-//         })
-//       );
-//     }
-
-//     await Promise.allSettled(notifications);
-
-//     console.log('\n=== REQUEST CREATED SUCCESSFULLY ===');
-//     console.log(`Request ID: ${cashRequest._id}`);
-//     console.log(`Attachments: ${attachments.length}`);
-//     if (parsedBreakdown) {
-//       console.log(`Itemized Breakdown: ${parsedBreakdown.length} items`);
-//     }
-//     if (selectedProject) {
-//       console.log(`Project: ${selectedProject.name}`);
-//       console.log(`Budget Code: ${projectBudgetCode ? projectBudgetCode.code : 'None'}`);
-//     }
-//     console.log('=====================================\n');
-
-//     res.status(201).json({
-//       success: true,
-//       message: 'Cash request created successfully',
-//       data: cashRequest,
-//       metadata: {
-//         attachmentsUploaded: attachments.length,
-//         hasItemizedBreakdown: !!(parsedBreakdown && parsedBreakdown.length > 0),
-//         itemizedExpenseCount: parsedBreakdown ? parsedBreakdown.length : 0,
-//         approvalLevels: approvalChain.length,
-//         finalApprover: lastApprover.approver.name,
-//         projectBudgetAssigned: !!projectBudgetCode
-//       }
-//     });
-
-//   } catch (error) {
-//     console.error('❌ Create cash request error:', error);
-//     console.error('Stack trace:', error.stack);
-
-//     // ✅ UPDATED: Clean up uploaded files on error
-//     if (req.files && req.files.length > 0) {
-//       console.log('Cleaning up uploaded files due to error...');
-//       await Promise.allSettled(
-//         req.files.map(file => {
-//           if (file.path && fsSync.existsSync(file.path)) {
-//             return fs.promises.unlink(file.path).catch(e => 
-//               console.error('File cleanup failed:', e.message)
-//             );
-//           }
-//         })
-//       );
-//     }
-
-//     res.status(500).json({
-//       success: false,
-//       message: error.message || 'Failed to create cash request',
-//       error: process.env.NODE_ENV === 'development' ? error.message : 'An error occurred'
-//     });
-//   }
-// };
 
 
 const createRequest = async (req, res) => {
@@ -4904,6 +4278,373 @@ const savePDFDownloadAudit = async (requestId, userId, filename) => {
 };
 
 
+// const createReimbursementRequest = async (req, res) => {
+//   try {
+//     console.log('=== CREATE REIMBURSEMENT REQUEST ===');
+//     console.log('Request body:', JSON.stringify(req.body, null, 2));
+//     console.log('Files received:', req.files?.length || 0);
+
+//     const {
+//       requestType,
+//       amountRequested,
+//       purpose,
+//       businessJustification,
+//       urgency,
+//       requiredDate,
+//       itemizedBreakdown
+//     } = req.body;
+
+//     // STEP 1: Validate user
+//     const employee = await User.findById(req.user.userId);
+//     if (!employee) {
+//       return res.status(404).json({ 
+//         success: false, 
+//         message: 'Employee not found' 
+//       });
+//     }
+
+//     console.log(`Creating reimbursement request for: ${employee.fullName}`);
+
+//     // STEP 2: Check monthly reimbursement limit
+//     const CashRequest = require('../models/CashRequest');
+//     const limitCheck = await CashRequest.checkMonthlyReimbursementLimit(req.user.userId);
+    
+//     if (!limitCheck.canSubmit) {
+//       return res.status(400).json({
+//         success: false,
+//         message: `Monthly reimbursement limit reached. You have submitted ${limitCheck.count} reimbursement requests this month (limit: 5)`,
+//         limitInfo: limitCheck
+//       });
+//     }
+
+//     console.log(`✓ Monthly limit check passed: ${limitCheck.count}/5 used, ${limitCheck.remaining} remaining`);
+
+//     // STEP 3: Validate amount
+//     const amount = parseFloat(amountRequested);
+//     if (isNaN(amount) || amount <= 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Please enter a valid amount greater than 0'
+//       });
+//     }
+
+//     if (amount > 100000) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Reimbursement amount cannot exceed XAF 100,000'
+//       });
+//     }
+
+//     console.log(`✓ Amount validated: XAF ${amount.toLocaleString()}`);
+
+//     // STEP 4: Validate required fields
+//     if (!purpose || purpose.trim().length < 10) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Purpose must be at least 10 characters long'
+//       });
+//     }
+
+//     if (!businessJustification || businessJustification.trim().length < 20) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Business justification must be at least 20 characters long'
+//       });
+//     }
+
+//     console.log('✓ Required text fields validated');
+
+//     // STEP 5: Validate itemized breakdown
+//     let parsedBreakdown = [];
+//     try {
+//       if (!itemizedBreakdown) {
+//         throw new Error('Itemized breakdown is required');
+//       }
+
+//       parsedBreakdown = typeof itemizedBreakdown === 'string' 
+//         ? JSON.parse(itemizedBreakdown) 
+//         : itemizedBreakdown;
+      
+//       console.log('Parsed breakdown:', parsedBreakdown);
+//     } catch (error) {
+//       console.error('Breakdown parsing error:', error);
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid itemized breakdown format. Please ensure all expenses are properly detailed.',
+//         error: error.message
+//       });
+//     }
+
+//     if (!Array.isArray(parsedBreakdown) || parsedBreakdown.length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'At least one itemized expense is required for reimbursement'
+//       });
+//     }
+
+//     // Validate each breakdown item
+//     for (let i = 0; i < parsedBreakdown.length; i++) {
+//       const item = parsedBreakdown[i];
+//       if (!item.description || !item.amount) {
+//         return res.status(400).json({
+//           success: false,
+//           message: `Expense item ${i + 1} is missing description or amount`
+//         });
+//       }
+//       if (parseFloat(item.amount) <= 0) {
+//         return res.status(400).json({
+//           success: false,
+//           message: `Expense item ${i + 1} must have an amount greater than 0`
+//         });
+//       }
+//     }
+
+//     // Validate total matches breakdown
+//     const breakdownTotal = parsedBreakdown.reduce((sum, item) => 
+//       sum + parseFloat(item.amount || 0), 0
+//     );
+    
+//     const discrepancy = Math.abs(breakdownTotal - amount);
+//     if (discrepancy > 0.01) {
+//       return res.status(400).json({
+//         success: false,
+//         message: `Itemized breakdown total (XAF ${breakdownTotal.toFixed(2)}) must match reimbursement amount (XAF ${amount.toFixed(2)}). Difference: XAF ${discrepancy.toFixed(2)}`
+//       });
+//     }
+
+//     console.log(`✓ Itemized breakdown validated: ${parsedBreakdown.length} items, total XAF ${breakdownTotal.toLocaleString()}`);
+
+//     // STEP 6: Validate receipt documents (MANDATORY)
+//     console.log('Checking for receipt documents...');
+//     console.log('req.files:', req.files);
+//     console.log('Files count:', req.files?.length);
+
+//     if (!req.files || req.files.length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Receipt documents are mandatory for reimbursement requests. Please upload at least one receipt.',
+//         hint: 'Accepted formats: PDF, JPG, PNG, JPEG (max 10 files, 10MB each)'
+//       });
+//     }
+
+//     let receiptDocuments = [];
+//     const uploadDir = path.join(__dirname, '../uploads/reimbursements');
+    
+//     try {
+//       await fs.promises.mkdir(uploadDir, { recursive: true });
+//       console.log(`✓ Upload directory ready: ${uploadDir}`);
+//     } catch (dirError) {
+//       console.error('Failed to create upload directory:', dirError);
+//       throw new Error('Failed to prepare upload directory');
+//     }
+
+//     // Process files
+//     console.log(`Processing ${req.files.length} receipt document(s)...`);
+    
+//     for (let i = 0; i < req.files.length; i++) {
+//       const file = req.files[i];
+//       try {
+//         console.log(`  Processing file ${i + 1}: ${file.originalname} (${file.size} bytes)`);
+        
+//         const timestamp = Date.now();
+//         const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+//         const fileName = `${timestamp}-${i}-${sanitizedName}`;
+//         const filePath = path.join(uploadDir, fileName);
+
+//         if (!file.path || !fs.existsSync(file.path)) {
+//           console.error(`  ✗ Temp file not found: ${file.path}`);
+//           continue;
+//         }
+
+//         await fs.promises.rename(file.path, filePath);
+//         console.log(`  ✓ Saved as: ${fileName}`);
+
+//         receiptDocuments.push({
+//           name: file.originalname,
+//           url: `/uploads/reimbursements/${fileName}`,
+//           publicId: fileName,
+//           size: file.size,
+//           mimetype: file.mimetype,
+//           uploadedAt: new Date()
+//         });
+//       } catch (fileError) {
+//         console.error(`  ✗ Error processing file ${file.originalname}:`, fileError);
+//         continue;
+//       }
+//     }
+
+//     if (receiptDocuments.length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Failed to upload receipt documents. Please try again.'
+//       });
+//     }
+
+//     console.log(`✓ Successfully processed ${receiptDocuments.length} receipt document(s)`);
+
+//     // STEP 7: Generate approval chain
+//     const approvalChain = getCashRequestApprovalChain(employee.fullName, employee.department);
+
+//     if (!approvalChain || approvalChain.length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Unable to determine approval chain. Please contact HR.'
+//       });
+//     }
+
+//     console.log(`✓ Approval chain generated with ${approvalChain.length} levels`);
+
+//     const mappedApprovalChain = mapApprovalChainForCashRequest(approvalChain);
+//     console.log(`✓ Approval chain mapped for CashRequest schema`);
+
+//     // STEP 8: Create reimbursement request
+//     const reimbursementRequest = new CashRequest({
+//       employee: req.user.userId,
+//       requestMode: 'reimbursement',
+//       requestType,
+//       amountRequested: amount,
+//       purpose: purpose.trim(),
+//       businessJustification: businessJustification.trim(),
+//       urgency,
+//       requiredDate: new Date(requiredDate),
+//       status: 'pending_supervisor',
+//       approvalChain: mappedApprovalChain,  // ✅ Use mapped chain
+//       reimbursementDetails: {
+//         amountSpent: amount,
+//         receiptDocuments,
+//         itemizedBreakdown: parsedBreakdown,
+//         submittedDate: new Date(),
+//         receiptVerified: false
+//       }
+//     });
+
+
+//     await reimbursementRequest.save();
+//     console.log(`✓ Reimbursement request created: ${reimbursementRequest._id}`);
+
+//     // Populate employee details
+//     await reimbursementRequest.populate('employee', 'fullName email department');
+
+//     // STEP 9: Send notifications
+//     const notifications = [];
+
+//     // Notify first approver (supervisor)
+//     const firstApprover = approvalChain[0];
+//     if (firstApprover) {
+//       notifications.push(
+//         sendEmail({
+//           to: firstApprover.approver.email,
+//           subject: `💰 Reimbursement Request Requires Approval - ${employee.fullName}`,
+//           html: `
+//             <h3>Reimbursement Request Requires Your Approval</h3>
+//             <p>Dear ${firstApprover.approver.name},</p>
+
+//             <p><strong>${employee.fullName}</strong> has submitted a reimbursement request for your approval.</p>
+
+//             <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #ffc107;">
+//               <p><strong>Reimbursement Details:</strong></p>
+//               <ul>
+//                 <li><strong>Request ID:</strong> REQ-${reimbursementRequest._id.toString().slice(-6).toUpperCase()}</li>
+//                 <li><strong>Amount:</strong> XAF ${amount.toLocaleString()}</li>
+//                 <li><strong>Type:</strong> ${requestType.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</li>
+//                 <li><strong>Purpose:</strong> ${purpose}</li>
+//                 <li><strong>Receipt Documents:</strong> ${receiptDocuments.length}</li>
+//                 <li><strong>Itemized Expenses:</strong> ${parsedBreakdown.length}</li>
+//                 <li><strong>Urgency:</strong> ${urgency.toUpperCase()}</li>
+//               </ul>
+//             </div>
+
+//             <div style="background-color: #d1ecf1; padding: 10px; border-radius: 5px; margin: 10px 0;">
+//               <p><em>💡 This is a <strong>reimbursement request</strong> - the employee has already spent their personal funds and is requesting reimbursement.</em></p>
+//             </div>
+
+//             <p>Please review the attached receipts and approve or reject this request in the system.</p>
+//           `
+//         }).catch(error => {
+//           console.error('Failed to send supervisor notification:', error);
+//           return { error, type: 'supervisor' };
+//         })
+//       );
+//     }
+
+//     // Notify employee
+//     notifications.push(
+//       sendEmail({
+//         to: employee.email,
+//         subject: '✅ Reimbursement Request Submitted Successfully',
+//         html: `
+//           <h3>Your Reimbursement Request Has Been Submitted</h3>
+//           <p>Dear ${employee.fullName},</p>
+
+//           <p>Your reimbursement request has been successfully submitted and is being reviewed.</p>
+
+//           <div style="background-color: #d1ecf1; padding: 15px; border-radius: 5px; margin: 15px 0;">
+//             <p><strong>Submission Summary:</strong></p>
+//             <ul>
+//               <li><strong>Request ID:</strong> REQ-${reimbursementRequest._id.toString().slice(-6).toUpperCase()}</li>
+//               <li><strong>Amount:</strong> XAF ${amount.toLocaleString()}</li>
+//               <li><strong>Type:</strong> ${requestType.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</li>
+//               <li><strong>Receipt Documents:</strong> ${receiptDocuments.length}</li>
+//               <li><strong>Itemized Expenses:</strong> ${parsedBreakdown.length}</li>
+//               <li><strong>Monthly Limit:</strong> ${limitCheck.count + 1}/5 used this month</li>
+//             </ul>
+//           </div>
+
+//           <div style="background-color: #d4edda; padding: 10px; border-radius: 5px; margin: 10px 0;">
+//             <p><strong>Next Step:</strong> Your request will be reviewed by ${firstApprover.approver.name} (${firstApprover.approver.role}).</p>
+//           </div>
+
+//           <p>You will receive email notifications as your request progresses through the approval chain.</p>
+
+//           <p>Thank you for following the proper reimbursement process!</p>
+//         `
+//       }).catch(error => {
+//         console.error('Failed to send employee notification:', error);
+//         return { error, type: 'employee' };
+//       })
+//     );
+
+//     await Promise.allSettled(notifications);
+
+//     console.log('=== REIMBURSEMENT REQUEST CREATED SUCCESSFULLY ===');
+//     res.status(201).json({
+//       success: true,
+//       message: 'Reimbursement request submitted successfully',
+//       data: reimbursementRequest,
+//       limitInfo: {
+//         monthlyUsed: limitCheck.count + 1,
+//         monthlyLimit: 5,
+//         remaining: limitCheck.remaining - 1
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('❌ Create reimbursement request error:', error);
+//     console.error('Stack trace:', error.stack);
+
+//     // Clean up uploaded files on error
+//     if (req.files && req.files.length > 0) {
+//       console.log('Cleaning up uploaded files due to error...');
+//       await Promise.allSettled(
+//         req.files.map(file => {
+//           if (file.path && fs.existsSync(file.path)) {
+//             return fs.promises.unlink(file.path).catch(e => 
+//               console.error('File cleanup failed:', e)
+//             );
+//           }
+//         })
+//       );
+//     }
+
+//     res.status(500).json({
+//       success: false,
+//       message: error.message || 'Failed to create reimbursement request',
+//       error: process.env.NODE_ENV === 'development' ? error.message : 'An error occurred'
+//     });
+//   }
+// };
+
+
 const createReimbursementRequest = async (req, res) => {
   try {
     console.log('=== CREATE REIMBURSEMENT REQUEST ===');
@@ -4931,7 +4672,7 @@ const createReimbursementRequest = async (req, res) => {
 
     console.log(`Creating reimbursement request for: ${employee.fullName}`);
 
-    // STEP 2: Check monthly reimbursement limit
+    // STEP 2: Check monthly limit (5 requests)
     const CashRequest = require('../models/CashRequest');
     const limitCheck = await CashRequest.checkMonthlyReimbursementLimit(req.user.userId);
     
@@ -4980,121 +4721,101 @@ const createReimbursementRequest = async (req, res) => {
 
     console.log('✓ Required text fields validated');
 
-    // STEP 5: Validate itemized breakdown
+    // STEP 5: Validate itemized breakdown (if provided)
     let parsedBreakdown = [];
-    try {
-      if (!itemizedBreakdown) {
-        throw new Error('Itemized breakdown is required');
-      }
-
-      parsedBreakdown = typeof itemizedBreakdown === 'string' 
-        ? JSON.parse(itemizedBreakdown) 
-        : itemizedBreakdown;
-      
-      console.log('Parsed breakdown:', parsedBreakdown);
-    } catch (error) {
-      console.error('Breakdown parsing error:', error);
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid itemized breakdown format. Please ensure all expenses are properly detailed.',
-        error: error.message
-      });
-    }
-
-    if (!Array.isArray(parsedBreakdown) || parsedBreakdown.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'At least one itemized expense is required for reimbursement'
-      });
-    }
-
-    // Validate each breakdown item
-    for (let i = 0; i < parsedBreakdown.length; i++) {
-      const item = parsedBreakdown[i];
-      if (!item.description || !item.amount) {
-        return res.status(400).json({
-          success: false,
-          message: `Expense item ${i + 1} is missing description or amount`
-        });
-      }
-      if (parseFloat(item.amount) <= 0) {
-        return res.status(400).json({
-          success: false,
-          message: `Expense item ${i + 1} must have an amount greater than 0`
-        });
-      }
-    }
-
-    // Validate total matches breakdown
-    const breakdownTotal = parsedBreakdown.reduce((sum, item) => 
-      sum + parseFloat(item.amount || 0), 0
-    );
     
-    const discrepancy = Math.abs(breakdownTotal - amount);
-    if (discrepancy > 0.01) {
-      return res.status(400).json({
-        success: false,
-        message: `Itemized breakdown total (XAF ${breakdownTotal.toFixed(2)}) must match reimbursement amount (XAF ${amount.toFixed(2)}). Difference: XAF ${discrepancy.toFixed(2)}`
-      });
-    }
+    if (itemizedBreakdown) {
+      try {
+        parsedBreakdown = typeof itemizedBreakdown === 'string' 
+          ? JSON.parse(itemizedBreakdown) 
+          : itemizedBreakdown;
+        
+        if (Array.isArray(parsedBreakdown) && parsedBreakdown.length > 0) {
+          // Validate each item has required fields
+          for (let i = 0; i < parsedBreakdown.length; i++) {
+            const item = parsedBreakdown[i];
+            if (!item.description || !item.amount || !item.category) {
+              return res.status(400).json({
+                success: false,
+                message: `Expense item ${i + 1} is missing description, amount, or category`
+              });
+            }
+            if (parseFloat(item.amount) <= 0) {
+              return res.status(400).json({
+                success: false,
+                message: `Expense item ${i + 1} must have an amount greater than 0`
+              });
+            }
+          }
 
-    console.log(`✓ Itemized breakdown validated: ${parsedBreakdown.length} items, total XAF ${breakdownTotal.toLocaleString()}`);
+          // Validate total matches
+          const breakdownTotal = parsedBreakdown.reduce((sum, item) => 
+            sum + parseFloat(item.amount || 0), 0
+          );
+          
+          const discrepancy = Math.abs(breakdownTotal - amount);
+          if (discrepancy > 0.01) {
+            return res.status(400).json({
+              success: false,
+              message: `Itemized breakdown total (XAF ${breakdownTotal.toFixed(2)}) must match reimbursement amount (XAF ${amount.toFixed(2)})`
+            });
+          }
+
+          console.log(`✓ Itemized breakdown validated: ${parsedBreakdown.length} items, total XAF ${breakdownTotal.toLocaleString()}`);
+        }
+      } catch (parseError) {
+        console.error('Breakdown parsing error:', parseError);
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid itemized breakdown format',
+          error: parseError.message
+        });
+      }
+    } else {
+      console.log('⚠️  No itemized breakdown provided (single amount mode)');
+    }
 
     // STEP 6: Validate receipt documents (MANDATORY)
-    console.log('Checking for receipt documents...');
-    console.log('req.files:', req.files);
-    console.log('Files count:', req.files?.length);
-
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({
         success: false,
         message: 'Receipt documents are mandatory for reimbursement requests. Please upload at least one receipt.',
-        hint: 'Accepted formats: PDF, JPG, PNG, JPEG (max 10 files, 10MB each)'
+        hint: 'Accepted formats: PDF, JPG, PNG (max 10 files, 10MB each)'
       });
     }
 
-    let receiptDocuments = [];
-    const uploadDir = path.join(__dirname, '../uploads/reimbursements');
-    
-    try {
-      await fs.promises.mkdir(uploadDir, { recursive: true });
-      console.log(`✓ Upload directory ready: ${uploadDir}`);
-    } catch (dirError) {
-      console.error('Failed to create upload directory:', dirError);
-      throw new Error('Failed to prepare upload directory');
-    }
+    console.log(`✓ Receipts validated: ${req.files.length} file(s)`);
 
-    // Process files
-    console.log(`Processing ${req.files.length} receipt document(s)...`);
+    // STEP 7: Process receipt files using local storage
+    let receiptDocuments = [];
+    const { saveFile, STORAGE_CATEGORIES } = require('../utils/localFileStorage');
     
     for (let i = 0; i < req.files.length; i++) {
       const file = req.files[i];
       try {
-        console.log(`  Processing file ${i + 1}: ${file.originalname} (${file.size} bytes)`);
+        console.log(`  Processing receipt ${i + 1}: ${file.originalname}`);
         
-        const timestamp = Date.now();
-        const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const fileName = `${timestamp}-${i}-${sanitizedName}`;
-        const filePath = path.join(uploadDir, fileName);
-
-        if (!file.path || !fs.existsSync(file.path)) {
-          console.error(`  ✗ Temp file not found: ${file.path}`);
-          continue;
-        }
-
-        await fs.promises.rename(file.path, filePath);
-        console.log(`  ✓ Saved as: ${fileName}`);
+        const fileMetadata = await saveFile(
+          file,
+          STORAGE_CATEGORIES.REIMBURSEMENTS,
+          '', // no subfolder
+          null // auto-generate filename
+        );
 
         receiptDocuments.push({
           name: file.originalname,
-          url: `/uploads/reimbursements/${fileName}`,
-          publicId: fileName,
+          url: fileMetadata.url,
+          publicId: fileMetadata.publicId,
+          localPath: fileMetadata.localPath,
           size: file.size,
           mimetype: file.mimetype,
           uploadedAt: new Date()
         });
+
+        console.log(`  ✓ Saved: ${fileMetadata.publicId}`);
+        
       } catch (fileError) {
-        console.error(`  ✗ Error processing file ${file.originalname}:`, fileError);
+        console.error(`  ❌ Error processing ${file.originalname}:`, fileError);
         continue;
       }
     }
@@ -5108,8 +4829,9 @@ const createReimbursementRequest = async (req, res) => {
 
     console.log(`✓ Successfully processed ${receiptDocuments.length} receipt document(s)`);
 
-    // STEP 7: Generate approval chain
-    const approvalChain = getCashRequestApprovalChain(employee.fullName, employee.department);
+    // STEP 8: Generate approval chain
+    const { getCashRequestApprovalChain } = require('../config/cashRequestApprovalChain');
+    const approvalChain = getCashRequestApprovalChain(employee.email);
 
     if (!approvalChain || approvalChain.length === 0) {
       return res.status(400).json({
@@ -5121,9 +4843,8 @@ const createReimbursementRequest = async (req, res) => {
     console.log(`✓ Approval chain generated with ${approvalChain.length} levels`);
 
     const mappedApprovalChain = mapApprovalChainForCashRequest(approvalChain);
-    console.log(`✓ Approval chain mapped for CashRequest schema`);
 
-    // STEP 8: Create reimbursement request
+    // STEP 9: Create reimbursement request
     const reimbursementRequest = new CashRequest({
       employee: req.user.userId,
       requestMode: 'reimbursement',
@@ -5134,16 +4855,16 @@ const createReimbursementRequest = async (req, res) => {
       urgency,
       requiredDate: new Date(requiredDate),
       status: 'pending_supervisor',
-      approvalChain: mappedApprovalChain,  // ✅ Use mapped chain
+      approvalChain: mappedApprovalChain,
+      itemizedBreakdown: parsedBreakdown.length > 0 ? parsedBreakdown : null,
       reimbursementDetails: {
-        amountSpent: amount,
+        amountSpent: amount, // Employee already spent this
         receiptDocuments,
-        itemizedBreakdown: parsedBreakdown,
+        itemizedBreakdown: parsedBreakdown.length > 0 ? parsedBreakdown : null,
         submittedDate: new Date(),
         receiptVerified: false
       }
     });
-
 
     await reimbursementRequest.save();
     console.log(`✓ Reimbursement request created: ${reimbursementRequest._id}`);
@@ -5151,7 +4872,7 @@ const createReimbursementRequest = async (req, res) => {
     // Populate employee details
     await reimbursementRequest.populate('employee', 'fullName email department');
 
-    // STEP 9: Send notifications
+    // STEP 10: Send notifications
     const notifications = [];
 
     // Notify first approver (supervisor)
@@ -5165,7 +4886,7 @@ const createReimbursementRequest = async (req, res) => {
             <h3>Reimbursement Request Requires Your Approval</h3>
             <p>Dear ${firstApprover.approver.name},</p>
 
-            <p><strong>${employee.fullName}</strong> has submitted a reimbursement request for your approval.</p>
+            <p><strong>${employee.fullName}</strong> has submitted a reimbursement request for expenses already paid from personal funds.</p>
 
             <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #ffc107;">
               <p><strong>Reimbursement Details:</strong></p>
@@ -5175,13 +4896,13 @@ const createReimbursementRequest = async (req, res) => {
                 <li><strong>Type:</strong> ${requestType.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</li>
                 <li><strong>Purpose:</strong> ${purpose}</li>
                 <li><strong>Receipt Documents:</strong> ${receiptDocuments.length}</li>
-                <li><strong>Itemized Expenses:</strong> ${parsedBreakdown.length}</li>
+                ${parsedBreakdown.length > 0 ? `<li><strong>Itemized Expenses:</strong> ${parsedBreakdown.length}</li>` : ''}
                 <li><strong>Urgency:</strong> ${urgency.toUpperCase()}</li>
               </ul>
             </div>
 
             <div style="background-color: #d1ecf1; padding: 10px; border-radius: 5px; margin: 10px 0;">
-              <p><em>💡 This is a <strong>reimbursement request</strong> - the employee has already spent their personal funds and is requesting reimbursement.</em></p>
+              <p><em>💡 This is a <strong>reimbursement request</strong> - the employee has already spent their personal funds.</em></p>
             </div>
 
             <p>Please review the attached receipts and approve or reject this request in the system.</p>
@@ -5211,7 +4932,7 @@ const createReimbursementRequest = async (req, res) => {
               <li><strong>Amount:</strong> XAF ${amount.toLocaleString()}</li>
               <li><strong>Type:</strong> ${requestType.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</li>
               <li><strong>Receipt Documents:</strong> ${receiptDocuments.length}</li>
-              <li><strong>Itemized Expenses:</strong> ${parsedBreakdown.length}</li>
+              ${parsedBreakdown.length > 0 ? `<li><strong>Itemized Expenses:</strong> ${parsedBreakdown.length}</li>` : ''}
               <li><strong>Monthly Limit:</strong> ${limitCheck.count + 1}/5 used this month</li>
             </ul>
           </div>
@@ -5221,8 +4942,6 @@ const createReimbursementRequest = async (req, res) => {
           </div>
 
           <p>You will receive email notifications as your request progresses through the approval chain.</p>
-
-          <p>Thank you for following the proper reimbursement process!</p>
         `
       }).catch(error => {
         console.error('Failed to send employee notification:', error);
@@ -5249,12 +4968,13 @@ const createReimbursementRequest = async (req, res) => {
     console.error('Stack trace:', error.stack);
 
     // Clean up uploaded files on error
+    const fs = require('fs').promises;
     if (req.files && req.files.length > 0) {
       console.log('Cleaning up uploaded files due to error...');
       await Promise.allSettled(
         req.files.map(file => {
-          if (file.path && fs.existsSync(file.path)) {
-            return fs.promises.unlink(file.path).catch(e => 
+          if (file.path && require('fs').existsSync(file.path)) {
+            return fs.unlink(file.path).catch(e => 
               console.error('File cleanup failed:', e)
             );
           }
@@ -5270,7 +4990,27 @@ const createReimbursementRequest = async (req, res) => {
   }
 };
 
-// NEW: Get monthly reimbursement limit status
+// // NEW: Get monthly reimbursement limit status
+// const getReimbursementLimitStatus = async (req, res) => {
+//   try {
+//     const CashRequest = require('../models/CashRequest');
+//     const limitCheck = await CashRequest.checkMonthlyReimbursementLimit(req.user.userId);
+    
+//     res.json({
+//       success: true,
+//       data: limitCheck
+//     });
+//   } catch (error) {
+//     console.error('Get reimbursement limit status error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to check reimbursement limit',
+//       error: error.message
+//     });
+//   }
+// };
+
+
 const getReimbursementLimitStatus = async (req, res) => {
   try {
     const CashRequest = require('../models/CashRequest');
@@ -5289,8 +5029,6 @@ const getReimbursementLimitStatus = async (req, res) => {
     });
   }
 };
-
-
 
 
 // NEW: Get Finance Reports Data
