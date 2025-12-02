@@ -453,6 +453,8 @@ router.get(
   cashRequestController.getSupervisorJustifications
 );
 
+
+
 // ============================================
 // ADMIN ROUTES (SPECIFIC PATHS FIRST)
 // ============================================
@@ -512,29 +514,57 @@ router.post(
   requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   (req, res, next) => {
     console.log('=== JUSTIFICATION UPLOAD MIDDLEWARE ===');
+    console.log('Request ID:', req.params.requestId);
     console.log('Content-Type:', req.headers['content-type']);
     console.log('Request has files:', !!req.files);
+    console.log('User:', req.user?.userId);
     next();
   },
+  // ✅ Accept files from multiple possible field names
   upload.fields([
     { name: 'documents', maxCount: 10 },
     { name: 'attachments', maxCount: 10 },
     { name: 'justificationDocuments', maxCount: 10 }
   ]),
+  // ✅ Normalize file fields into a single array
   (req, res, next) => {
     if (req.files) {
       const allFiles = [];
-      if (req.files.documents) allFiles.push(...req.files.documents);
-      if (req.files.attachments) allFiles.push(...req.files.attachments);
-      if (req.files.justificationDocuments) allFiles.push(...req.files.justificationDocuments);
       
+      // Collect files from all possible fields
+      if (req.files.documents) {
+        console.log(`Found ${req.files.documents.length} files in 'documents'`);
+        allFiles.push(...req.files.documents);
+      }
+      if (req.files.attachments) {
+        console.log(`Found ${req.files.attachments.length} files in 'attachments'`);
+        allFiles.push(...req.files.attachments);
+      }
+      if (req.files.justificationDocuments) {
+        console.log(`Found ${req.files.justificationDocuments.length} files in 'justificationDocuments'`);
+        allFiles.push(...req.files.justificationDocuments);
+      }
+      
+      // Convert to simple array for downstream processing
       req.files = allFiles;
-      console.log(`Normalized ${allFiles.length} files for justification upload`);
+      console.log(`Normalized ${allFiles.length} total files for justification`);
+    } else {
+      console.log('⚠️ No files detected in request');
     }
     next();
   },
   handleMulterError,
   validateFiles,
+  (req, res, next) => {
+    console.log('Files after validation:', req.files?.length || 0);
+    if (req.files && req.files.length > 0) {
+      console.log('Justification documents:');
+      req.files.forEach(file => {
+        console.log(`  - ${file.originalname} (${file.size} bytes)`);
+      });
+    }
+    next();
+  },
   cashRequestController.submitJustification,
   cleanupTempFiles
 );

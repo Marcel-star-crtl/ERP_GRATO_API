@@ -1,8 +1,5 @@
 const mongoose = require('mongoose');
 
-// ============================================
-// ENHANCED FOLDER SCHEMA WITH GRANULAR ACCESS CONTROL
-// ============================================
 const SharePointFolderSchema = new mongoose.Schema({
   name: {
     type: String,

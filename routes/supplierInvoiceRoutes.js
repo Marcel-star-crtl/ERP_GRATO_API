@@ -15,6 +15,7 @@ const {
   combinedAuthMiddleware 
 } = require('../middlewares/supplierAuthMiddleware');
 const upload = require('../middlewares/uploadMiddleware');
+const User = require('../models/User');
 
 // ===============================
 // SUPPLIER REGISTRATION & AUTH

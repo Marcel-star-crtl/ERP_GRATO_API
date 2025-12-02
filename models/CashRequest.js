@@ -573,9 +573,19 @@ CashRequestSchema.methods.getApprovalProgress = function() {
   return Math.round((approvedSteps / this.approvalChain.length) * 100);
 };
 
+// // Method to check if request can be justified
+// CashRequestSchema.methods.canSubmitJustification = function() {
+//   return this.status === 'disbursed';
+// };
+
+// // Method to check if request can be justified
+// CashRequestSchema.methods.canSubmitJustification = function() {
+//   return ['disbursed', 'fully_disbursed', 'partially_disbursed'].includes(this.status);
+// };
+
 // Method to check if request can be justified
 CashRequestSchema.methods.canSubmitJustification = function() {
-  return this.status === 'disbursed';
+  return ['disbursed', 'fully_disbursed'].includes(this.status);
 };
 
 // Method to check if justification can be approved by supervisor

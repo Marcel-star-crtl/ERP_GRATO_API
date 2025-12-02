@@ -1478,29 +1478,29 @@ const submitJustification = async (req, res) => {
       });
     }
 
-    // Can only submit if request is disbursed or justification was rejected
-    const canResubmit = request.status === 'disbursed' || 
+    // ✅ UPDATED: Can only submit if request is fully_disbursed, partially_disbursed, or justification was rejected
+    const canResubmit = ['fully_disbursed', 'partially_disbursed', 'disbursed'].includes(request.status) || 
                         request.status.includes('justification_rejected');
 
     if (!canResubmit) {
       return res.status(400).json({
         success: false,
-        message: `Cannot submit justification. Request status is ${request.status}`
+        message: `Cannot submit justification. Request status is ${request.status}. Justification can only be submitted for fully disbursed requests.`
       });
     }
 
-    // Validate amounts match disbursed amount
-    const disbursedAmount = request.disbursementDetails?.amount || 0;
+    // ✅ UPDATED: Validate amounts match total disbursed amount (not approved amount)
+    const totalDisbursed = request.totalDisbursed || 0;
     const total = spentAmount + returnedAmount;
 
-    if (Math.abs(total - disbursedAmount) > 0.01) {
+    if (Math.abs(total - totalDisbursed) > 0.01) {
       throw new Error(
         `Total of amount spent (${spentAmount}) and balance returned (${returnedAmount}) ` +
-        `must equal disbursed amount (${disbursedAmount})`
+        `must equal total disbursed amount (${totalDisbursed})`
       );
     }
 
-    // ✅ UPDATED: Process documents using local storage
+    // ✅ Process documents using local storage
     let documents = [];
     if (req.files && req.files.length > 0) {
       console.log(`📎 Processing ${req.files.length} justification document(s)...`);
@@ -1521,7 +1521,7 @@ const submitJustification = async (req, res) => {
             name: file.originalname,
             url: fileMetadata.url,
             publicId: fileMetadata.publicId,
-            localPath: fileMetadata.localPath, // ✅ Store local path
+            localPath: fileMetadata.localPath,
             size: file.size,
             mimetype: file.mimetype,
             uploadedAt: new Date()
@@ -1538,7 +1538,7 @@ const submitJustification = async (req, res) => {
       console.log(`✅ ${documents.length} document(s) processed`);
     }
 
-    // ✅ NEW: Parse itemized breakdown if provided
+    // ✅ Parse itemized breakdown if provided
     let parsedBreakdown = null;
     if (itemizedBreakdown) {
       try {
@@ -1595,7 +1595,7 @@ const submitJustification = async (req, res) => {
       }
     }
 
-    // ✅ UPDATED: Update justification with itemized breakdown
+    // ✅ Update justification with itemized breakdown
     request.justification = {
       amountSpent: spentAmount,
       balanceReturned: returnedAmount,
@@ -1603,7 +1603,7 @@ const submitJustification = async (req, res) => {
       documents,
       justificationDate: new Date(),
       submittedBy: req.user.userId,
-      itemizedBreakdown: parsedBreakdown || [] // ✅ Add itemized breakdown
+      itemizedBreakdown: parsedBreakdown || []
     };
 
     // Create justification approval chain
@@ -1649,7 +1649,7 @@ const submitJustification = async (req, res) => {
             <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #ffc107;">
               <p><strong>Justification Summary:</strong></p>
               <ul>
-                <li><strong>Amount Disbursed:</strong> XAF ${disbursedAmount.toLocaleString()}</li>
+                <li><strong>Amount Disbursed:</strong> XAF ${totalDisbursed.toLocaleString()}</li>
                 <li><strong>Amount Spent:</strong> XAF ${spentAmount.toLocaleString()}</li>
                 <li><strong>Balance Returned:</strong> XAF ${returnedAmount.toLocaleString()}</li>
                 <li><strong>Documents:</strong> ${documents.length}</li>
@@ -1732,7 +1732,7 @@ const submitJustification = async (req, res) => {
   } catch (error) {
     console.error('Submit justification error:', error);
 
-    // ✅ UPDATED: Clean up uploaded files on error
+    // ✅ Clean up uploaded files on error
     if (req.files && req.files.length > 0) {
       console.log('Cleaning up uploaded files due to error...');
       await Promise.allSettled(
