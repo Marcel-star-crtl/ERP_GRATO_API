@@ -351,103 +351,9 @@ const createPurchaseOrder = async (req, res) => {
       totalAmount: purchaseOrder.totalAmount
     });
 
-    // Auto-send email to external suppliers
-    let emailSent = false;
-    if (supplierDetails.isExternal) {
-      try {
-        console.log('Sending automatic email to external supplier:', supplierDetails.email);
-        
-        const user = req.user;
-        const itemsHTML = purchaseOrder.items.map(item => `
-          <tr style="border-bottom: 1px solid #e8e8e8;">
-            <td style="padding: 8px; text-align: left;">${item.description}</td>
-            <td style="padding: 8px; text-align: center;">${item.quantity}</td>
-            <td style="padding: 8px; text-align: center;">${item.unitOfMeasure || 'Unit'}</td>
-            <td style="padding: 8px; text-align: right;">${purchaseOrder.currency} ${item.unitPrice.toLocaleString()}</td>
-            <td style="padding: 8px; text-align: right;">${purchaseOrder.currency} ${item.totalPrice.toLocaleString()}</td>
-          </tr>
-        `).join('');
-
-        await sendEmail({
-          to: supplierDetails.email,
-          subject: `New Purchase Order - ${purchaseOrder.poNumber}`,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
-              <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px; border-left: 4px solid #1890ff;">
-                <h2 style="color: #1890ff; margin-top: 0;">New Purchase Order</h2>
-                <p>Dear ${supplierDetails.name},</p>
-                <p>We have created a new purchase order for your services. Please find the details below:</p>
-              </div>
-
-              <div style="background-color: white; padding: 20px; border: 1px solid #e8e8e8; border-radius: 8px; margin: 20px 0;">
-                <h3 style="color: #333; margin-top: 0;">Purchase Order Details</h3>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
-                  <div>
-                    <p><strong>PO Number:</strong> ${purchaseOrder.poNumber}</p>
-                    <p><strong>Order Date:</strong> ${new Date(purchaseOrder.createdAt).toLocaleDateString('en-GB')}</p>
-                    <p><strong>Expected Delivery:</strong> ${new Date(purchaseOrder.expectedDeliveryDate).toLocaleDateString('en-GB')}</p>
-                  </div>
-                  <div>
-                    <p><strong>Total Amount:</strong> ${purchaseOrder.currency} ${purchaseOrder.totalAmount.toLocaleString()}</p>
-                    <p><strong>Payment Terms:</strong> ${purchaseOrder.paymentTerms}</p>
-                  </div>
-                </div>
-
-                <h4 style="color: #333;">Items Ordered:</h4>
-                <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
-                  <thead>
-                    <tr style="background-color: #f5f5f5;">
-                      <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Description</th>
-                      <th style="padding: 12px; text-align: center; border-bottom: 2px solid #ddd;">Qty</th>
-                      <th style="padding: 12px; text-align: center; border-bottom: 2px solid #ddd;">Unit</th>
-                      <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">Unit Price</th>
-                      <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${itemsHTML}
-                  </tbody>
-                </table>
-
-                ${purchaseOrder.deliveryAddress ? `
-                <h4 style="color: #333;">Delivery Information:</h4>
-                <p><strong>Delivery Address:</strong> ${purchaseOrder.deliveryAddress}</p>
-                ` : ''}
-
-                ${purchaseOrder.specialInstructions ? `
-                <h4 style="color: #333;">Special Instructions:</h4>
-                <p>${purchaseOrder.specialInstructions}</p>
-                ` : ''}
-
-                <div style="margin: 20px 0; padding: 15px; background-color: white; border-radius: 8px;">
-                  <p><strong>Next Steps:</strong></p>
-                  <ul>
-                    <li>Please confirm receipt of this purchase order</li>
-                    <li>Provide updated delivery timeline if different from expected date</li>
-                    <li>Notify us immediately of any issues or concerns</li>
-                    <li>Send delivery confirmation with tracking details when items are dispatched</li>
-                  </ul>
-                </div>
-
-                <p>Thank you for your service. We look forward to a successful delivery.</p>
-                <p>Best regards,<br>${user.fullName}<br>Procurement Team</p>
-              </div>
-            </div>
-          `
-        });
-
-        emailSent = true;
-        console.log('✅ Email sent successfully to external supplier:', supplierDetails.email);
-
-      } catch (emailError) {
-        console.error('❌ Failed to send email to external supplier:', emailError);
-        // Don't fail the PO creation if email fails
-      }
-    }
-
     res.json({
       success: true,
-      message: `Purchase order created successfully${emailSent ? ' and emailed to supplier' : ''}`,
+      message: 'Purchase order created successfully',
       data: {
         purchaseOrder: {
           id: purchaseOrder._id,
@@ -459,8 +365,7 @@ const createPurchaseOrder = async (req, res) => {
           creationDate: purchaseOrder.createdAt,
           expectedDeliveryDate: purchaseOrder.expectedDeliveryDate,
           items: purchaseOrder.items
-        },
-        emailSent
+        }
       }
     });
 
@@ -473,6 +378,324 @@ const createPurchaseOrder = async (req, res) => {
     });
   }
 };
+
+// // Create purchase order independently
+// const createPurchaseOrder = async (req, res) => {
+//   try {
+//     const {
+//       supplierDetails,
+//       items,
+//       totalAmount,
+//       currency = 'XAF',
+//       taxApplicable = false,
+//       taxRate = 19.2,
+//       deliveryAddress,
+//       expectedDeliveryDate,
+//       paymentTerms,
+//       specialInstructions,
+//       notes
+//     } = req.body;
+
+//     console.log('Creating PO with data:', {
+//       supplierType: supplierDetails?.isExternal ? 'External' : 'Registered',
+//       supplierId: supplierDetails?.id,
+//       supplierName: supplierDetails?.name,
+//       supplierEmail: supplierDetails?.email,
+//       itemsCount: items?.length,
+//       totalAmount
+//     });
+
+//     // Validation
+//     if (!supplierDetails || !supplierDetails.name || !supplierDetails.email) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Supplier details (name and email) are required'
+//       });
+//     }
+
+//     // For external suppliers, we don't need a supplierId, but for registered suppliers we do
+//     if (!supplierDetails.isExternal && !supplierDetails.id) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Registered supplier must have an ID'
+//       });
+//     }
+
+//     if (!items || items.length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'At least one item is required'
+//       });
+//     }
+
+//     if (!deliveryAddress || !expectedDeliveryDate || !paymentTerms) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Delivery address, expected delivery date, and payment terms are required'
+//       });
+//     }
+
+//     // Validate supplier exists in Supplier model (only for registered suppliers)
+//     let supplier = null;
+//     if (!supplierDetails.isExternal) {
+//       supplier = await Supplier.findById(supplierDetails.id);
+//       if (!supplier) {
+//         return res.status(400).json({
+//           success: false,
+//           message: 'Invalid supplier selected - supplier not found in database'
+//         });
+//       }
+
+//       if (supplier.status !== 'approved') {
+//         return res.status(400).json({
+//           success: false,
+//           message: 'Selected supplier is not approved for orders'
+//         });
+//       }
+//     }
+
+//     // Validate and process items
+//     let calculatedTotal = 0;
+//     const processedItems = await Promise.all(
+//       items.map(async (item, index) => {
+//         if (!item.description || !item.quantity || item.quantity <= 0 || !item.unitPrice || item.unitPrice <= 0) {
+//           throw new Error(`Item ${index + 1}: Description, valid quantity, and unit price are required`);
+//         }
+
+//         const itemTotal = item.quantity * item.unitPrice;
+//         calculatedTotal += itemTotal;
+
+//         // If itemId is provided, fetch additional details from database
+//         let itemDetails = {
+//           description: item.description,
+//           quantity: item.quantity,
+//           unitPrice: item.unitPrice,
+//           totalPrice: itemTotal,
+//           specifications: item.specifications || ''
+//         };
+
+//         if (item.itemId) {
+//           const dbItem = await Item.findById(item.itemId);
+//           if (dbItem) {
+//             itemDetails = {
+//               ...itemDetails,
+//               itemId: item.itemId,
+//               itemCode: dbItem.code,
+//               category: dbItem.category,
+//               unitOfMeasure: dbItem.unitOfMeasure
+//             };
+//           }
+//         }
+
+//         return itemDetails;
+//       })
+//     );
+
+//     // Validate dates
+//     const deliveryDate = new Date(expectedDeliveryDate);
+//     const today = new Date();
+
+//     if (deliveryDate <= today) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Expected delivery date must be in the future'
+//       });
+//     }
+
+//     // Generate PO number
+//     const now = new Date();
+//     const year = now.getFullYear();
+//     const count = await PurchaseOrder.countDocuments();
+//     const poNumber = `PO-${year}-${String(count + 1).padStart(6, '0')}`;
+
+//     // Create purchase order with proper supplier reference
+//     const purchaseOrder = new PurchaseOrder({
+//       poNumber,
+//       supplierId: supplier?._id || null, // Use Supplier model ID for registered suppliers, null for external
+//       buyerId: req.user.userId,
+
+//       // Order details
+//       items: processedItems,
+//       totalAmount: calculatedTotal,
+//       currency,
+//       taxApplicable,
+//       taxRate,
+
+//       // Delivery and payment
+//       deliveryAddress,
+//       expectedDeliveryDate: deliveryDate,
+//       paymentTerms,
+
+//       // Additional details
+//       specialInstructions,
+//       notes,
+
+//       // Status
+//       status: 'draft',
+//       progress: 5,
+//       currentStage: 'created',
+
+//       // Activities
+//       activities: [{
+//         type: 'created',
+//         description: 'Purchase order created',
+//         user: req.user.fullName || 'Buyer',
+//         timestamp: new Date()
+//       }],
+
+//       // Supplier details (snapshot from Supplier model or external supplier details)
+//       supplierDetails: supplier ? {
+//         name: supplier.name,
+//         email: supplier.email,
+//         phone: supplier.phone,
+//         address: typeof supplier.address === 'object' 
+//           ? `${supplier.address.street || ''}, ${supplier.address.city || ''}, ${supplier.address.state || ''}`.trim()
+//           : supplier.address || '',
+//         businessType: supplier.businessType,
+//         registrationNumber: supplier.registrationNumber
+//       } : {
+//         name: supplierDetails.name,
+//         email: supplierDetails.email,
+//         phone: supplierDetails.phone || '',
+//         address: supplierDetails.address || '',
+//         businessType: 'External Supplier',
+//         registrationNumber: null
+//       },
+
+//       createdBy: req.user.userId
+//     });
+
+//     await purchaseOrder.save();
+
+//     console.log('Created purchase order:', {
+//       id: purchaseOrder._id,
+//       poNumber: purchaseOrder.poNumber,
+//       supplierId: purchaseOrder.supplierId,
+//       totalAmount: purchaseOrder.totalAmount
+//     });
+
+//     // Auto-send email to external suppliers
+//     let emailSent = false;
+//     if (supplierDetails.isExternal) {
+//       try {
+//         console.log('Sending automatic email to external supplier:', supplierDetails.email);
+        
+//         const user = req.user;
+//         const itemsHTML = purchaseOrder.items.map(item => `
+//           <tr style="border-bottom: 1px solid #e8e8e8;">
+//             <td style="padding: 8px; text-align: left;">${item.description}</td>
+//             <td style="padding: 8px; text-align: center;">${item.quantity}</td>
+//             <td style="padding: 8px; text-align: center;">${item.unitOfMeasure || 'Unit'}</td>
+//             <td style="padding: 8px; text-align: right;">${purchaseOrder.currency} ${item.unitPrice.toLocaleString()}</td>
+//             <td style="padding: 8px; text-align: right;">${purchaseOrder.currency} ${item.totalPrice.toLocaleString()}</td>
+//           </tr>
+//         `).join('');
+
+//         await sendEmail({
+//           to: supplierDetails.email,
+//           subject: `New Purchase Order - ${purchaseOrder.poNumber}`,
+//           html: `
+//             <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
+//               <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px; border-left: 4px solid #1890ff;">
+//                 <h2 style="color: #1890ff; margin-top: 0;">New Purchase Order</h2>
+//                 <p>Dear ${supplierDetails.name},</p>
+//                 <p>We have created a new purchase order for your services. Please find the details below:</p>
+//               </div>
+
+//               <div style="background-color: white; padding: 20px; border: 1px solid #e8e8e8; border-radius: 8px; margin: 20px 0;">
+//                 <h3 style="color: #333; margin-top: 0;">Purchase Order Details</h3>
+//                 <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+//                   <div>
+//                     <p><strong>PO Number:</strong> ${purchaseOrder.poNumber}</p>
+//                     <p><strong>Order Date:</strong> ${new Date(purchaseOrder.createdAt).toLocaleDateString('en-GB')}</p>
+//                     <p><strong>Expected Delivery:</strong> ${new Date(purchaseOrder.expectedDeliveryDate).toLocaleDateString('en-GB')}</p>
+//                   </div>
+//                   <div>
+//                     <p><strong>Total Amount:</strong> ${purchaseOrder.currency} ${purchaseOrder.totalAmount.toLocaleString()}</p>
+//                     <p><strong>Payment Terms:</strong> ${purchaseOrder.paymentTerms}</p>
+//                   </div>
+//                 </div>
+
+//                 <h4 style="color: #333;">Items Ordered:</h4>
+//                 <table style="width: 100%; border-collapse: collapse; margin: 15px 0;">
+//                   <thead>
+//                     <tr style="background-color: #f5f5f5;">
+//                       <th style="padding: 12px; text-align: left; border-bottom: 2px solid #ddd;">Description</th>
+//                       <th style="padding: 12px; text-align: center; border-bottom: 2px solid #ddd;">Qty</th>
+//                       <th style="padding: 12px; text-align: center; border-bottom: 2px solid #ddd;">Unit</th>
+//                       <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">Unit Price</th>
+//                       <th style="padding: 12px; text-align: right; border-bottom: 2px solid #ddd;">Total</th>
+//                     </tr>
+//                   </thead>
+//                   <tbody>
+//                     ${itemsHTML}
+//                   </tbody>
+//                 </table>
+
+//                 ${purchaseOrder.deliveryAddress ? `
+//                 <h4 style="color: #333;">Delivery Information:</h4>
+//                 <p><strong>Delivery Address:</strong> ${purchaseOrder.deliveryAddress}</p>
+//                 ` : ''}
+
+//                 ${purchaseOrder.specialInstructions ? `
+//                 <h4 style="color: #333;">Special Instructions:</h4>
+//                 <p>${purchaseOrder.specialInstructions}</p>
+//                 ` : ''}
+
+//                 <div style="margin: 20px 0; padding: 15px; background-color: white; border-radius: 8px;">
+//                   <p><strong>Next Steps:</strong></p>
+//                   <ul>
+//                     <li>Please confirm receipt of this purchase order</li>
+//                     <li>Provide updated delivery timeline if different from expected date</li>
+//                     <li>Notify us immediately of any issues or concerns</li>
+//                     <li>Send delivery confirmation with tracking details when items are dispatched</li>
+//                   </ul>
+//                 </div>
+
+//                 <p>Thank you for your service. We look forward to a successful delivery.</p>
+//                 <p>Best regards,<br>${user.fullName}<br>Procurement Team</p>
+//               </div>
+//             </div>
+//           `
+//         });
+
+//         emailSent = true;
+//         console.log('✅ Email sent successfully to external supplier:', supplierDetails.email);
+
+//       } catch (emailError) {
+//         console.error('❌ Failed to send email to external supplier:', emailError);
+//         // Don't fail the PO creation if email fails
+//       }
+//     }
+
+//     res.json({
+//       success: true,
+//       message: `Purchase order created successfully${emailSent ? ' and emailed to supplier' : ''}`,
+//       data: {
+//         purchaseOrder: {
+//           id: purchaseOrder._id,
+//           poNumber: purchaseOrder.poNumber,
+//           totalAmount: purchaseOrder.totalAmount,
+//           currency: purchaseOrder.currency,
+//           status: purchaseOrder.status,
+//           supplierName: purchaseOrder.supplierDetails.name,
+//           creationDate: purchaseOrder.createdAt,
+//           expectedDeliveryDate: purchaseOrder.expectedDeliveryDate,
+//           items: purchaseOrder.items
+//         },
+//         emailSent
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('Create purchase order error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: error.message || 'Failed to create purchase order',
+//       error: error.message
+//     });
+//   }
+// };
 
 // Create purchase order from selected quote
 const createPurchaseOrderFromQuote = async (req, res) => {
