@@ -464,29 +464,100 @@ budgetCodeSchema.statics.getRequiringAttention = async function(threshold = 75) 
  * PHASE 1: Reserve budget on approval (don't deduct yet)
  * Creates allocation with 'allocated' status
  */
+// budgetCodeSchema.methods.reserveBudget = async function(requestId, amount, userId = null) {
+//   console.log(`\n💰 RESERVING Budget: ${this.code}`);
+//   console.log(`   Amount: XAF ${amount.toLocaleString()}`);
+//   console.log(`   Available: XAF ${this.remaining.toLocaleString()}`);
+
+//   // Check if already reserved
+//   const existingAllocation = this.allocations.find(
+//     a => a.requisitionId && a.requisitionId.toString() === requestId.toString()
+//   );
+
+//   if (existingAllocation) {
+//     console.log(`   ⚠️  Already reserved: ${existingAllocation.status}`);
+//     return this;
+//   }
+
+//   // Check availability
+//   if (this.remaining < amount) {
+//     throw new Error(
+//       `Insufficient budget. Available: XAF ${this.remaining.toLocaleString()}, Required: XAF ${amount.toLocaleString()}`
+//     );
+//   }
+
+//   // Create reservation (DON'T update 'used' yet)
+//   this.allocations.push({
+//     requisitionId: requestId,
+//     amount: amount,
+//     allocatedBy: userId,
+//     allocatedDate: new Date(),
+//     status: 'allocated' // Reserved, not spent
+//   });
+
+//   await this.save();
+//   console.log(`   ✅ Budget reserved successfully`);
+//   console.log(`   New remaining: XAF ${this.remaining.toLocaleString()}\n`);
+  
+//   return this;
+// };
+
+/**
+ * PHASE 1: Reserve budget on approval (don't deduct yet)
+ * Creates allocation with 'allocated' status
+ */
 budgetCodeSchema.methods.reserveBudget = async function(requestId, amount, userId = null) {
-  console.log(`\n💰 RESERVING Budget: ${this.code}`);
-  console.log(`   Amount: XAF ${amount.toLocaleString()}`);
-  console.log(`   Available: XAF ${this.remaining.toLocaleString()}`);
-
-  // Check if already reserved
-  const existingAllocation = this.allocations.find(
-    a => a.requisitionId && a.requisitionId.toString() === requestId.toString()
-  );
-
-  if (existingAllocation) {
-    console.log(`   ⚠️  Already reserved: ${existingAllocation.status}`);
-    return this;
+  if (amount <= 0) {
+    throw new Error('Amount must be greater than 0');
   }
 
-  // Check availability
-  if (this.remaining < amount) {
+  if (amount > this.remaining) {
     throw new Error(
       `Insufficient budget. Available: XAF ${this.remaining.toLocaleString()}, Required: XAF ${amount.toLocaleString()}`
     );
   }
 
-  // Create reservation (DON'T update 'used' yet)
+  console.log(`\n💰 RESERVING Budget: ${this.code}`);
+  console.log(`   Amount: XAF ${amount.toLocaleString()}`);
+  console.log(`   Available: XAF ${this.remaining.toLocaleString()}`);
+
+  // ✅ Check if already reserved
+  const existingAllocationIndex = this.allocations.findIndex(
+    a => a.requisitionId && a.requisitionId.toString() === requestId.toString()
+  );
+
+  if (existingAllocationIndex !== -1) {
+    const existingAllocation = this.allocations[existingAllocationIndex];
+    console.log(`   ⚠️  Existing allocation found: ${existingAllocation.status}`);
+    
+    // ✅ If it's already allocated with same amount, no need to do anything
+    if (existingAllocation.status === 'allocated' && existingAllocation.amount === amount) {
+      console.log(`   ℹ️  Already reserved with same amount\n`);
+      return this;
+    }
+    
+    // ✅ If it was released or spent, we can update it
+    if (existingAllocation.status === 'released' || existingAllocation.status === 'spent') {
+      console.log(`   🔄 Updating ${existingAllocation.status} allocation to allocated`);
+      
+      // Update the existing allocation
+      this.allocations[existingAllocationIndex] = {
+        requisitionId: requestId,
+        amount: amount,
+        allocatedBy: userId,
+        allocatedDate: new Date(),
+        status: 'allocated'
+      };
+      
+      await this.save();
+      console.log(`   ✅ Allocation updated successfully\n`);
+      return this;
+    }
+  }
+
+  // ✅ Create new reservation (DON'T update 'used' yet)
+  console.log(`   Creating new allocation...`);
+  
   this.allocations.push({
     requisitionId: requestId,
     amount: amount,
@@ -496,6 +567,7 @@ budgetCodeSchema.methods.reserveBudget = async function(requestId, amount, userI
   });
 
   await this.save();
+  
   console.log(`   ✅ Budget reserved successfully`);
   console.log(`   New remaining: XAF ${this.remaining.toLocaleString()}\n`);
   
