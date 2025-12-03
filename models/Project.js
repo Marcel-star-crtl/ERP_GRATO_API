@@ -221,13 +221,18 @@ const projectSchema = new mongoose.Schema({
     },
     enum: [
       'Site Build',
+      'Roll Out',
       'Colocation',
       'Power Projects',
       'Tower Maintenance',
       'Refurbishment (Gen)',
       'Kiosk',
       'Managed Service',
-      'IT Implementation', 
+      'IT', 
+      'Finance',
+      'Public Relations',
+      'CEO office',
+      'Supply Chain',
       'Process Improvement',
       'Product Development',
       'Training Program',
@@ -258,6 +263,7 @@ const projectSchema = new mongoose.Schema({
       return !this.isDraft;
     },
     enum: [
+      'Roll Out',
       'Technical Roll Out', 
       'Operations', 
       'IT', 
