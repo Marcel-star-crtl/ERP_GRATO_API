@@ -36,7 +36,7 @@ const ItemSchema = new mongoose.Schema({
   },
   imageUrl: {
     type: String,
-    trim: true
+    // trim: true
   },
   standardPrice: {
     type: Number,
