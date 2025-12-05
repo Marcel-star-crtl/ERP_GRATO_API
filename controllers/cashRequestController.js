@@ -2516,6 +2516,44 @@ const processFinanceJustificationDecision = async (req, res) => {
 };
 
 
+// const getRequestForJustification = async (req, res) => {
+//   try {
+//     const { requestId } = req.params;
+    
+//     const request = await CashRequest.findById(requestId)
+//       .populate('employee', 'fullName email department');
+
+//     if (!request) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Request not found'
+//       });
+//     }
+
+//     // Check permissions
+//     if (!request.employee.equals(req.user.userId) && !['admin', 'finance'].includes(req.user.role)) {
+//       return res.status(403).json({
+//         success: false,
+//         message: 'Access denied'
+//       });
+//     }
+
+//     res.json({
+//       success: true,
+//       data: request
+//     });
+
+//   } catch (error) {
+//     console.error('Get request for justification error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch request',
+//       error: error.message
+//     });
+//   }
+// };
+
+
 const getRequestForJustification = async (req, res) => {
   try {
     const { requestId } = req.params;
@@ -2535,6 +2573,32 @@ const getRequestForJustification = async (req, res) => {
       return res.status(403).json({
         success: false,
         message: 'Access denied'
+      });
+    }
+
+    // ✅ FIXED: Allow justification for both disbursed states
+    const canSubmitJustification = [
+      'disbursed', 
+      'fully_disbursed',           // ✅ Added
+      'partially_disbursed',        // ✅ Added (if you use this status)
+      'justification_pending',
+      'justification_pending_supervisor',
+      'justification_pending_finance',
+      'justification_rejected_supervisor',
+      'justification_rejected_finance'
+    ].includes(request.status);
+
+    if (!canSubmitJustification) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot submit justification for request with status: ${request.status}`,
+        allowedStatuses: [
+          'disbursed',
+          'fully_disbursed',
+          'partially_disbursed',
+          'justification_pending',
+          'justification_rejected'
+        ]
       });
     }
 

@@ -17,7 +17,6 @@ const ItemSchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true
-    // Removed enum restriction to allow custom categories
   },
   subcategory: {
     type: String,
