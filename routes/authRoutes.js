@@ -201,7 +201,7 @@ router.get('/departments', authMiddleware, async (req, res) => {
 // ==========================================
 
 // Get all users (Admin only)
-router.get('/users', authMiddleware, requireRoles('admin'), async (req, res) => {
+router.get('/users', authMiddleware, async (req, res) => {
     try {
         const { role, department, page = 1, limit = 50, search } = req.query;
 

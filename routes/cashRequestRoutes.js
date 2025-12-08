@@ -1121,6 +1121,13 @@ router.get(
   cashRequestController.getDisbursementHistory
 );
 
+router.get(
+  '/finance/pending-disbursements',
+  authMiddleware,
+  requireRoles('finance', 'admin'),
+  cashRequestController.getPendingDisbursements
+);
+
 // Export routes
 router.get(
   '/export',

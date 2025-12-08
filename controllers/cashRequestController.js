@@ -353,6 +353,198 @@ const getAllRequests = async (req, res) => {
 };
 
 
+// const getFinanceRequests = async (req, res) => {
+//   try {
+//     const user = await User.findById(req.user.userId);
+    
+//     console.log('=== FETCHING FINANCE REQUESTS ===');
+//     console.log(`User: ${user.fullName} (${user.email})`);
+//     console.log(`Role: ${user.role}`);
+    
+//     let query = {};
+    
+//     // Helper function to check if all previous levels are approved
+//     const isPreviousLevelApproved = (request, currentLevel) => {
+//       const previousLevels = request.approvalChain.filter(step => step.level < currentLevel);
+//       return previousLevels.length === 0 || previousLevels.every(step => step.status === 'approved');
+//     };
+    
+//     if (user.role === 'finance') {
+//       // Finance users see:
+//       // 1. Requests pending their approval (ANY level, not just 4)
+//       // 2. Requests they've already approved
+//       // 3. All approved/disbursed/completed requests
+//       query = {
+//         $or: [
+//           { 
+//             // Requests waiting for this finance officer's approval (ANY level)
+//             'approvalChain': {
+//               $elemMatch: {
+//                 'approver.email': user.email,
+//                 'approver.role': 'Finance Officer',
+//                 'status': 'pending'
+//               }
+//             }
+//           },
+//           { 
+//             // Requests approved by this finance officer
+//             'approvalChain': {
+//               $elemMatch: {
+//                 'approver.email': user.email,
+//                 'approver.role': 'Finance Officer',
+//                 'status': 'approved'
+//               }
+//             }
+//           },
+//           { 
+//             // Requests rejected by this finance officer (for visibility)
+//             'approvalChain': {
+//               $elemMatch: {
+//                 'approver.email': user.email,
+//                 'approver.role': 'Finance Officer',
+//                 'status': 'rejected'
+//               }
+//             }
+//           },
+//           // Direct status checks
+//           { status: 'pending_finance' },
+//           { status: 'approved' },
+//           { status: 'disbursed' },
+//           { status: 'completed' },
+//           { status: 'justification_pending_finance' }
+//         ]
+//       };
+//     } else if (user.role === 'admin') {
+//       // Admins see all finance-related requests
+//       query = {
+//         $or: [
+//           { 
+//             // All requests with Finance Officer in chain
+//             'approvalChain.approver.role': 'Finance Officer'
+//           },
+//           { 
+//             status: { 
+//               $in: [
+//                 'pending_finance', 
+//                 'approved', 
+//                 'disbursed', 
+//                 'completed', 
+//                 'justification_pending_finance'
+//               ] 
+//             } 
+//           }
+//         ]
+//       };
+//     }
+
+//     console.log('Query:', JSON.stringify(query, null, 2));
+
+//     const requests = await CashRequest.find(query)
+//       .populate('employee', 'fullName email department')
+//       .sort({ createdAt: -1 });
+
+//     console.log(`Finance requests found: ${requests.length}`);
+
+//     // Filter requests to ensure proper approval hierarchy with enhanced logging
+//     const validRequests = requests.filter(req => {
+//       const financeStep = req.approvalChain.find(s => 
+//         s.approver.email === user.email && s.approver.role === 'Finance Officer'
+//       );
+      
+//       console.log(`\n🔍 Checking request ${req._id}:`);
+//       console.log(`  Current status: ${req.status}`);
+//       console.log(`  Finance step found: ${!!financeStep}`);
+      
+//       if (financeStep) {
+//         console.log(`  Finance step level: ${financeStep.level}, status: ${financeStep.status}`);
+//       }
+      
+//       // If no finance step for this user, check if it's a general finance status
+//       if (!financeStep) {
+//         const isGeneralFinanceStatus = ['approved', 'disbursed', 'completed', 'justification_pending_finance'].includes(req.status);
+//         console.log(`  No finance step for user, general finance status: ${isGeneralFinanceStatus}`);
+//         return isGeneralFinanceStatus;
+//       }
+      
+//       // For requests with pending finance step, ensure all previous levels are approved
+//       if (financeStep.status === 'pending') {
+//         const allPreviousApproved = isPreviousLevelApproved(req, financeStep.level);
+//         const previousSteps = req.approvalChain.filter(s => s.level < financeStep.level);
+        
+//         console.log(`  Previous steps (${previousSteps.length}):`);
+//         previousSteps.forEach(step => {
+//           console.log(`    Level ${step.level}: ${step.approver.role} - ${step.status}`);
+//         });
+        
+//         if (!allPreviousApproved) {
+//           console.log(`  ❌ FILTERED OUT: Previous levels not all approved`);
+//           return false;
+//         }
+//         console.log(`  ✅ INCLUDED: All previous levels approved`);
+//       } else {
+//         console.log(`  ✅ INCLUDED: Finance step status is ${financeStep.status}`);
+//       }
+      
+//       return true;
+//     });
+    
+//     console.log(`Valid requests after hierarchy check: ${validRequests.length}`);
+
+//     // Add detailed debug info for each request
+//     const requestsWithDebug = validRequests.map(req => {
+//       const financeStep = req.approvalChain.find(s => 
+//         s.approver.email === user.email && s.approver.role === 'Finance Officer'
+//       );
+      
+//       const allPreviousLevels = req.approvalChain.filter(s => 
+//         financeStep ? s.level < financeStep.level : true
+//       );
+      
+//       return {
+//         ...req.toObject(),
+//         _debug: {
+//           status: req.status,
+//           financeStepLevel: financeStep ? financeStep.level : 'Not found',
+//           financeStepStatus: financeStep ? financeStep.status : 'N/A',
+//           financeStepEmail: financeStep ? financeStep.approver.email : 'N/A',
+//           previousLevelsApproved: financeStep ? isPreviousLevelApproved(req, financeStep.level) : 'N/A',
+//           allLevels: req.approvalChain.map(s => ({
+//             level: s.level,
+//             role: s.approver.role,
+//             email: s.approver.email,
+//             status: s.status
+//           }))
+//         }
+//       };
+//     });
+
+//     // Log first request details if available
+//     if (requestsWithDebug.length > 0) {
+//       console.log('First request debug info:', JSON.stringify(requestsWithDebug[0]._debug, null, 2));
+//     }
+
+//     res.json({
+//       success: true,
+//       data: requestsWithDebug,
+//       count: requestsWithDebug.length,
+//       userInfo: {
+//         name: user.fullName,
+//         email: user.email,
+//         role: user.role
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('Get finance requests error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch finance requests',
+//       error: error.message
+//     });
+//   }
+// };
+
+
 const getFinanceRequests = async (req, res) => {
   try {
     const user = await User.findById(req.user.userId);
@@ -370,14 +562,10 @@ const getFinanceRequests = async (req, res) => {
     };
     
     if (user.role === 'finance') {
-      // Finance users see:
-      // 1. Requests pending their approval (ANY level, not just 4)
-      // 2. Requests they've already approved
-      // 3. All approved/disbursed/completed requests
       query = {
         $or: [
           { 
-            // Requests waiting for this finance officer's approval (ANY level)
+            // Requests waiting for this finance officer's approval
             'approvalChain': {
               $elemMatch: {
                 'approver.email': user.email,
@@ -397,7 +585,7 @@ const getFinanceRequests = async (req, res) => {
             }
           },
           { 
-            // Requests rejected by this finance officer (for visibility)
+            // Requests rejected by this finance officer
             'approvalChain': {
               $elemMatch: {
                 'approver.email': user.email,
@@ -410,16 +598,16 @@ const getFinanceRequests = async (req, res) => {
           { status: 'pending_finance' },
           { status: 'approved' },
           { status: 'disbursed' },
+          { status: 'partially_disbursed' },  // ✅ ADDED
+          { status: 'fully_disbursed' },      // ✅ ADDED
           { status: 'completed' },
           { status: 'justification_pending_finance' }
         ]
       };
     } else if (user.role === 'admin') {
-      // Admins see all finance-related requests
       query = {
         $or: [
           { 
-            // All requests with Finance Officer in chain
             'approvalChain.approver.role': 'Finance Officer'
           },
           { 
@@ -427,7 +615,9 @@ const getFinanceRequests = async (req, res) => {
               $in: [
                 'pending_finance', 
                 'approved', 
-                'disbursed', 
+                'disbursed',
+                'partially_disbursed',    // ✅ ADDED
+                'fully_disbursed',        // ✅ ADDED
                 'completed', 
                 'justification_pending_finance'
               ] 
@@ -445,7 +635,7 @@ const getFinanceRequests = async (req, res) => {
 
     console.log(`Finance requests found: ${requests.length}`);
 
-    // Filter requests to ensure proper approval hierarchy with enhanced logging
+    // ✅ FIXED: Filter requests with better logic for approved/disbursed states
     const validRequests = requests.filter(req => {
       const financeStep = req.approvalChain.find(s => 
         s.approver.email === user.email && s.approver.role === 'Finance Officer'
@@ -455,18 +645,24 @@ const getFinanceRequests = async (req, res) => {
       console.log(`  Current status: ${req.status}`);
       console.log(`  Finance step found: ${!!financeStep}`);
       
-      if (financeStep) {
-        console.log(`  Finance step level: ${financeStep.level}, status: ${financeStep.status}`);
-      }
-      
-      // If no finance step for this user, check if it's a general finance status
+      // ✅ CASE 1: No finance step for this user - check if it's a general finance-visible status
       if (!financeStep) {
-        const isGeneralFinanceStatus = ['approved', 'disbursed', 'completed', 'justification_pending_finance'].includes(req.status);
+        const isGeneralFinanceStatus = [
+          'approved', 
+          'disbursed', 
+          'partially_disbursed',
+          'fully_disbursed',
+          'completed', 
+          'justification_pending_finance'
+        ].includes(req.status);
+        
         console.log(`  No finance step for user, general finance status: ${isGeneralFinanceStatus}`);
         return isGeneralFinanceStatus;
       }
       
-      // For requests with pending finance step, ensure all previous levels are approved
+      console.log(`  Finance step level: ${financeStep.level}, status: ${financeStep.status}`);
+      
+      // ✅ CASE 2: Finance step is PENDING - verify hierarchy
       if (financeStep.status === 'pending') {
         const allPreviousApproved = isPreviousLevelApproved(req, financeStep.level);
         const previousSteps = req.approvalChain.filter(s => s.level < financeStep.level);
@@ -481,52 +677,39 @@ const getFinanceRequests = async (req, res) => {
           return false;
         }
         console.log(`  ✅ INCLUDED: All previous levels approved`);
-      } else {
-        console.log(`  ✅ INCLUDED: Finance step status is ${financeStep.status}`);
+        return true;
       }
       
+      // ✅ CASE 3: Finance step is APPROVED or REJECTED - always include
+      if (['approved', 'rejected'].includes(financeStep.status)) {
+        console.log(`  ✅ INCLUDED: Finance step ${financeStep.status}`);
+        return true;
+      }
+      
+      // ✅ CASE 4: Any other finance step status - include by default
+      console.log(`  ✅ INCLUDED: Finance step exists with status ${financeStep.status}`);
       return true;
     });
     
     console.log(`Valid requests after hierarchy check: ${validRequests.length}`);
 
-    // Add detailed debug info for each request
-    const requestsWithDebug = validRequests.map(req => {
-      const financeStep = req.approvalChain.find(s => 
-        s.approver.email === user.email && s.approver.role === 'Finance Officer'
-      );
-      
-      const allPreviousLevels = req.approvalChain.filter(s => 
-        financeStep ? s.level < financeStep.level : true
-      );
-      
-      return {
-        ...req.toObject(),
-        _debug: {
-          status: req.status,
-          financeStepLevel: financeStep ? financeStep.level : 'Not found',
-          financeStepStatus: financeStep ? financeStep.status : 'N/A',
-          financeStepEmail: financeStep ? financeStep.approver.email : 'N/A',
-          previousLevelsApproved: financeStep ? isPreviousLevelApproved(req, financeStep.level) : 'N/A',
-          allLevels: req.approvalChain.map(s => ({
-            level: s.level,
-            role: s.approver.role,
-            email: s.approver.email,
-            status: s.status
-          }))
-        }
-      };
-    });
-
-    // Log first request details if available
-    if (requestsWithDebug.length > 0) {
-      console.log('First request debug info:', JSON.stringify(requestsWithDebug[0]._debug, null, 2));
-    }
-
     res.json({
       success: true,
-      data: requestsWithDebug,
-      count: requestsWithDebug.length,
+      data: validRequests,
+      count: validRequests.length,
+      stats: {
+        total: validRequests.length,
+        pending: validRequests.filter(r => r.status === 'pending_finance').length,
+        approved: validRequests.filter(r => ['approved', 'disbursed', 'partially_disbursed', 'fully_disbursed', 'completed'].includes(r.status)).length,
+        byStatus: {
+          pending_finance: validRequests.filter(r => r.status === 'pending_finance').length,
+          approved: validRequests.filter(r => r.status === 'approved').length,
+          disbursed: validRequests.filter(r => r.status === 'disbursed').length,
+          partially_disbursed: validRequests.filter(r => r.status === 'partially_disbursed').length,
+          fully_disbursed: validRequests.filter(r => r.status === 'fully_disbursed').length,
+          completed: validRequests.filter(r => r.status === 'completed').length
+        }
+      },
       userInfo: {
         name: user.fullName,
         email: user.email,
@@ -544,6 +727,7 @@ const getFinanceRequests = async (req, res) => {
   }
 };
 
+
 const processFinanceDecision = async (req, res) => {
   try {
     const { requestId } = req.params;
@@ -552,8 +736,9 @@ const processFinanceDecision = async (req, res) => {
     console.log('\n=== FINANCE DECISION PROCESSING ===');
     console.log('Request ID:', requestId);
     console.log('Decision:', decision);
-    console.log('Budget Code ID:', budgetCodeId);
+    console.log('Amount Approved:', amountApproved);
     console.log('Disbursement Amount:', disbursementAmount);
+    console.log('Budget Code ID:', budgetCodeId);
 
     const user = await User.findById(req.user.userId);
     const request = await CashRequest.findById(requestId)
@@ -566,10 +751,6 @@ const processFinanceDecision = async (req, res) => {
         message: 'Request not found'
       });
     }
-
-    // ✅ DETECT REQUEST MODE
-    const isReimbursement = request.requestMode === 'reimbursement';
-    console.log(`Request mode: ${request.requestMode} (isReimbursement: ${isReimbursement})`);
 
     // Find finance step
     const financeStepIndex = request.approvalChain.findIndex(step => 
@@ -600,98 +781,22 @@ const processFinanceDecision = async (req, res) => {
     }
 
     if (decision === 'approved') {
-      // Determine final amount
+      // ============================================
+      // APPROVAL PATH
+      // ============================================
+      
       const finalAmount = parseFloat(amountApproved || request.amountRequested);
       console.log(`Final approved amount: XAF ${finalAmount.toLocaleString()}`);
 
       // ============================================
-      // REIMBURSEMENT PATH: Skip budget assignment during approval
+      // BUDGET CODE ASSIGNMENT
       // ============================================
-      if (isReimbursement) {
-        console.log('\n💰 REIMBURSEMENT APPROVAL PATH');
-        console.log('   Skipping budget assignment (will be done during disbursement)');
-
-        // Update approval chain
-        request.approvalChain[financeStepIndex].status = 'approved';
-        request.approvalChain[financeStepIndex].comments = comments;
-        request.approvalChain[financeStepIndex].actionDate = new Date();
-        request.approvalChain[financeStepIndex].actionTime = new Date().toLocaleTimeString('en-GB');
-        request.approvalChain[financeStepIndex].decidedBy = req.user.userId;
-
-        request.financeDecision = {
-          decision: 'approved',
-          comments,
-          decisionDate: new Date()
-        };
-
-        request.amountApproved = finalAmount;
-        request.financeOfficer = req.user.userId;
-        request.status = 'approved'; // ✅ Ready for disbursement (no budget assigned yet)
-
-        await request.save();
-        console.log('✅ Reimbursement APPROVED - ready for disbursement');
-
-        // Notify employee
-        await sendEmail({
-          to: request.employee.email,
-          subject: '✅ Reimbursement Request Approved',
-          html: `
-            <h3>Your Reimbursement Has Been Approved! 🎉</h3>
-            <p>Dear ${request.employee.fullName},</p>
-
-            <p>Great news! Your reimbursement request has been approved by finance.</p>
-
-            <div style="background-color: #d4edda; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #28a745;">
-              <p><strong>Approval Details:</strong></p>
-              <ul>
-                <li><strong>Request ID:</strong> REQ-${requestId.toString().slice(-6).toUpperCase()}</li>
-                <li><strong>Amount Approved:</strong> XAF ${finalAmount.toLocaleString()}</li>
-                <li><strong>Type:</strong> ${request.requestType.replace(/-/g, ' ').toUpperCase()}</li>
-                <li><strong>Receipt Documents:</strong> ${request.reimbursementDetails?.receiptDocuments?.length || 0}</li>
-                ${request.itemizedBreakdown?.length > 0 ? 
-                  `<li><strong>Itemized Expenses:</strong> ${request.itemizedBreakdown.length} items</li>` : 
-                  ''
-                }
-                <li><strong>Approved by:</strong> ${user.fullName} (Finance Officer)</li>
-              </ul>
-            </div>
-
-            <div style="background-color: #e6f7ff; padding: 10px; border-radius: 5px; margin: 10px 0;">
-              <p><strong>Next Step:</strong> Your reimbursement will be processed by the Finance team. You will receive your funds soon.</p>
-            </div>
-
-            <p>Thank you for following the proper reimbursement process!</p>
-          `
-        }).catch(err => console.error('Failed to send approval notification:', err));
-
-        console.log('=== REIMBURSEMENT APPROVAL COMPLETED ===\n');
-
-        await request.populate('employee', 'fullName email department');
-
-        return res.json({
-          success: true,
-          message: 'Reimbursement approved - ready for disbursement',
-          data: request,
-          metadata: {
-            requestMode: 'reimbursement',
-            budgetAssignmentPending: true,
-            receiptDocuments: request.reimbursementDetails?.receiptDocuments?.length || 0,
-            itemizedExpenses: request.itemizedBreakdown?.length || 0
-          }
-        });
-      }
-
-      // ============================================
-      // CASH ADVANCE PATH: Existing flow with budget assignment
-      // ============================================
-      console.log('\n💵 CASH ADVANCE APPROVAL PATH');
-      
       let budgetCode = null;
       
       if (!budgetCodeId) {
         return res.status(400).json({
           success: false,
-          message: 'Budget code must be assigned for cash advance approval'
+          message: 'Budget code must be assigned for approval'
         });
       }
 
@@ -706,7 +811,6 @@ const processFinanceDecision = async (req, res) => {
       }
 
       console.log(`\n💰 Budget Code: ${budgetCode.code} - ${budgetCode.name}`);
-      console.log(`   Department: ${budgetCode.department}`);
       console.log(`   Available: XAF ${budgetCode.remaining.toLocaleString()}`);
 
       // Check budget sufficiency
@@ -724,25 +828,20 @@ const processFinanceDecision = async (req, res) => {
         a => a.requisitionId && a.requisitionId.toString() === requestId.toString()
       );
 
-      if (existingAllocation) {
-        console.log(`\n🔄 Found existing allocation (${existingAllocation.status})`);
+      if (existingAllocation && existingAllocation.status !== 'released') {
+        console.log(`\n🔄 Found existing allocation - releasing...`);
         
-        if (existingAllocation.status !== 'released') {
-          console.log(`   Releasing previous allocation...`);
+        try {
+          await budgetCode.releaseReservation(requestId, 'Re-approval - releasing old allocation');
+          console.log(`   ✅ Previous allocation released`);
           
-          try {
-            await budgetCode.releaseReservation(requestId, 'Re-approval - releasing old allocation');
-            console.log(`   ✅ Previous allocation released`);
-            
-            // Refresh budget code after release
-            budgetCode = await BudgetCode.findById(budgetCodeId);
-          } catch (releaseError) {
-            console.error(`   ❌ Failed to release: ${releaseError.message}`);
-          }
+          budgetCode = await BudgetCode.findById(budgetCodeId);
+        } catch (releaseError) {
+          console.error(`   ❌ Failed to release: ${releaseError.message}`);
         }
       }
 
-      // ✅ Reserve budget (for cash advance)
+      // ✅ Reserve budget
       try {
         console.log(`\n💰 RESERVING budget...`);
         
@@ -784,8 +883,15 @@ const processFinanceDecision = async (req, res) => {
       request.amountApproved = finalAmount;
       request.financeOfficer = req.user.userId;
 
+      // ✅ INITIALIZE DISBURSEMENT TRACKING
+      request.remainingBalance = finalAmount;
+      request.totalDisbursed = 0;
+      if (!request.disbursements) {
+        request.disbursements = [];
+      }
+
       // ============================================
-      // HANDLE DISBURSEMENT (optional for cash advance)
+      // HANDLE DISBURSEMENT (if provided immediately)
       // ============================================
       if (disbursementAmount) {
         const disbursedAmount = parseFloat(disbursementAmount);
@@ -812,18 +918,13 @@ const processFinanceDecision = async (req, res) => {
           await budgetCode.deductBudget(request._id, disbursedAmount);
           console.log('✅ Budget deducted successfully');
 
-          // Initialize disbursements array
-          if (!request.disbursements) {
-            request.disbursements = [];
-          }
-
           // Add disbursement record
           request.disbursements.push({
             amount: disbursedAmount,
             date: new Date(),
             disbursedBy: req.user.userId,
-            notes: comments || '',
-            disbursementNumber: request.disbursements.length + 1
+            notes: comments || 'Initial disbursement by Finance',
+            disbursementNumber: 1
           });
 
           // Update disbursement tracking
@@ -833,10 +934,10 @@ const processFinanceDecision = async (req, res) => {
           // Set appropriate status
           if (request.remainingBalance === 0) {
             request.status = 'fully_disbursed';
-            console.log('✅ Cash advance FULLY DISBURSED');
+            console.log('✅ Request FULLY DISBURSED');
           } else {
             request.status = 'partially_disbursed';
-            console.log(`✅ Cash advance PARTIALLY DISBURSED (${Math.round((disbursedAmount / finalAmount) * 100)}%)`);
+            console.log(`✅ Request PARTIALLY DISBURSED (${Math.round((disbursedAmount / finalAmount) * 100)}%)`);
           }
 
           // Update budget allocation status
@@ -860,33 +961,39 @@ const processFinanceDecision = async (req, res) => {
           });
         }
       } else {
-        // Approved but not yet disbursed
+        // ✅ Approved but not yet disbursed
         request.status = 'approved';
-        console.log('✅ Cash advance APPROVED (budget reserved, awaiting disbursement)');
+        console.log('✅ Request APPROVED (budget reserved, awaiting disbursement)');
       }
 
       await request.save();
       console.log('✅ Request saved successfully');
 
-      // Send notifications for cash advance
+      // ============================================
+      // SEND NOTIFICATIONS
+      // ============================================
+      const isReimbursement = request.requestMode === 'reimbursement';
       const isFullyDisbursed = request.status === 'fully_disbursed';
+      const isPartiallyDisbursed = request.status === 'partially_disbursed';
+      const isReducedAmount = finalAmount < request.amountRequested;
       
       await sendEmail({
         to: request.employee.email,
         subject: isFullyDisbursed ? 
-          '✅ Cash Request Approved and Disbursed' : 
-          '✅ Cash Request Approved',
+          `✅ ${isReimbursement ? 'Reimbursement' : 'Cash Request'} Approved and Disbursed` : 
+          `✅ ${isReimbursement ? 'Reimbursement' : 'Cash Request'} Approved`,
         html: `
-          <h3>${isFullyDisbursed ? 'Your Cash Request Has Been Disbursed! 🎉' : 'Your Cash Request Has Been Approved! 🎉'}</h3>
+          <h3>${isFullyDisbursed ? `Your ${isReimbursement ? 'Reimbursement' : 'Cash Request'} Has Been Disbursed! 🎉` : `Your ${isReimbursement ? 'Reimbursement' : 'Cash Request'} Has Been Approved! 🎉`}</h3>
           <p>Dear ${request.employee.fullName},</p>
 
-          <p>Great news! Your cash request has been approved by finance${disbursementAmount ? ' and funds have been disbursed' : ''}.</p>
+          <p>Great news! Your ${isReimbursement ? 'reimbursement' : 'cash'} request has been approved by finance${disbursementAmount ? ' and funds have been disbursed' : ''}.</p>
 
           <div style="background-color: #d4edda; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #28a745;">
             <p><strong>Approval Details:</strong></p>
             <ul>
               <li><strong>Request ID:</strong> REQ-${requestId.toString().slice(-6).toUpperCase()}</li>
-              <li><strong>Amount Approved:</strong> XAF ${finalAmount.toLocaleString()}</li>
+              <li><strong>Amount Requested:</strong> XAF ${request.amountRequested.toLocaleString()}</li>
+              <li><strong>Amount Approved:</strong> XAF ${finalAmount.toLocaleString()} ${isReducedAmount ? `(${Math.round((finalAmount / request.amountRequested) * 100)}% of requested)` : ''}</li>
               ${disbursementAmount ? `<li><strong>Amount Disbursed:</strong> XAF ${parseFloat(disbursementAmount).toLocaleString()}</li>` : ''}
               ${request.remainingBalance > 0 ? `<li><strong>Remaining:</strong> XAF ${request.remainingBalance.toLocaleString()}</li>` : ''}
               <li><strong>Budget Code:</strong> ${budgetCode.code} - ${budgetCode.name}</li>
@@ -894,25 +1001,40 @@ const processFinanceDecision = async (req, res) => {
             </ul>
           </div>
 
+          ${isReducedAmount ? `
+          <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #ffc107;">
+            <p><strong>ℹ️ Note:</strong></p>
+            <p>The approved amount (XAF ${finalAmount.toLocaleString()}) is ${Math.round(((request.amountRequested - finalAmount) / request.amountRequested) * 100)}% less than your requested amount (XAF ${request.amountRequested.toLocaleString()}).</p>
+            ${comments ? `<p><strong>Reason:</strong> ${comments}</p>` : ''}
+          </div>
+          ` : ''}
+
           ${disbursementAmount ? 
             (isFullyDisbursed ?
-              '<div style="background-color: #fff3cd; padding: 10px; border-radius: 5px; margin: 10px 0;"><p><strong>⚠️ Next Step:</strong> Submit justification with receipts after spending.</p></div>' :
-              `<p><strong>Status:</strong> Partial payment (${Math.round((parseFloat(disbursementAmount) / finalAmount) * 100)}%). More payments may follow.</p>`
+              '<p><strong>Status:</strong> Your request has been fully processed and funds should be in your account soon.</p>' :
+              `<p><strong>Status:</strong> Partial payment processed (${Math.round((parseFloat(disbursementAmount) / finalAmount) * 100)}%). Remaining payments will follow.</p>`
             ) :
-            '<p><strong>Next Step:</strong> Disbursement will be processed by Finance.</p>'
+            '<p><strong>Next Step:</strong> Disbursement will be processed by the Finance team soon.</p>'
           }
 
-          <p>Thank you!</p>
+          ${isFullyDisbursed ? `
+          <div style="background-color: #e6f7ff; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #1890ff;">
+            <p><strong>📝 Action Required:</strong></p>
+            <p>Please submit your justification with receipts within the required timeframe.</p>
+          </div>
+          ` : ''}
+
+          <p>Thank you for following the proper ${isReimbursement ? 'reimbursement' : 'cash request'} process!</p>
         `
       }).catch(err => console.error('Failed to send notification:', err));
 
-      console.log('=== CASH ADVANCE APPROVAL COMPLETED ===\n');
+      console.log('=== FINANCE APPROVAL COMPLETED ===\n');
 
       await request.populate('employee', 'fullName email department');
 
       res.json({
         success: true,
-        message: `Cash advance approved${disbursementAmount ? ' and funds disbursed' : ' (awaiting disbursement)'}`,
+        message: `${isReimbursement ? 'Reimbursement' : 'Request'} approved${disbursementAmount ? ' and funds disbursed' : ' (awaiting disbursement)'}`,
         data: request,
         budgetAllocation: {
           budgetCode: budgetCode.code,
@@ -927,14 +1049,19 @@ const processFinanceDecision = async (req, res) => {
           remainingBalance: request.remainingBalance,
           progress: Math.round((request.totalDisbursed / finalAmount) * 100),
           status: request.status
+        } : null,
+        approvalNote: isReducedAmount ? {
+          requestedAmount: request.amountRequested,
+          approvedAmount: finalAmount,
+          reductionPercentage: Math.round(((request.amountRequested - finalAmount) / request.amountRequested) * 100)
         } : null
       });
 
     } else {
       // ============================================
-      // HANDLE REJECTION (same for both modes)
+      // REJECTION PATH
       // ============================================
-      console.log(`❌ ${isReimbursement ? 'Reimbursement' : 'Cash advance'} REJECTED by finance`);
+      console.log('❌ Request REJECTED by finance');
       
       request.status = 'denied';
       request.financeDecision = {
@@ -950,6 +1077,8 @@ const processFinanceDecision = async (req, res) => {
       request.approvalChain[financeStepIndex].decidedBy = req.user.userId;
 
       await request.save();
+
+      const isReimbursement = request.requestMode === 'reimbursement';
 
       await sendEmail({
         to: request.employee.email,
@@ -970,11 +1099,11 @@ const processFinanceDecision = async (req, res) => {
         `
       }).catch(err => console.error('Failed to send denial email:', err));
 
-      console.log(`=== ${isReimbursement ? 'REIMBURSEMENT' : 'CASH ADVANCE'} DENIED ===\n`);
+      console.log('=== REQUEST DENIED ===\n');
       
       return res.json({
         success: true,
-        message: `${isReimbursement ? 'Reimbursement' : 'Cash advance'} rejected by finance`,
+        message: `${isReimbursement ? 'Reimbursement' : 'Request'} rejected by finance`,
         data: request
       });
     }
@@ -990,6 +1119,453 @@ const processFinanceDecision = async (req, res) => {
     });
   }
 };
+
+// const processFinanceDecision = async (req, res) => {
+//   try {
+//     const { requestId } = req.params;
+//     const { decision, comments, amountApproved, disbursementAmount, budgetCodeId } = req.body;
+
+//     console.log('\n=== FINANCE DECISION PROCESSING ===');
+//     console.log('Request ID:', requestId);
+//     console.log('Decision:', decision);
+//     console.log('Budget Code ID:', budgetCodeId);
+//     console.log('Disbursement Amount:', disbursementAmount);
+
+//     const user = await User.findById(req.user.userId);
+//     const request = await CashRequest.findById(requestId)
+//       .populate('employee', 'fullName email department')
+//       .populate('projectId', 'name code budgetCodeId');
+
+//     if (!request) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Request not found'
+//       });
+//     }
+
+//     // ✅ DETECT REQUEST MODE
+//     const isReimbursement = request.requestMode === 'reimbursement';
+//     console.log(`Request mode: ${request.requestMode} (isReimbursement: ${isReimbursement})`);
+
+//     // Find finance step
+//     const financeStepIndex = request.approvalChain.findIndex(step => 
+//       step.approver.email === user.email && 
+//       step.approver.role === 'Finance Officer' &&
+//       step.status === 'pending'
+//     );
+
+//     if (financeStepIndex === -1) {
+//       return res.status(403).json({
+//         success: false,
+//         message: 'This request is not pending your approval'
+//       });
+//     }
+
+//     const financeStep = request.approvalChain[financeStepIndex];
+
+//     // Verify previous approvals
+//     const allPreviousApproved = request.approvalChain
+//       .filter(s => s.level < financeStep.level)
+//       .every(s => s.status === 'approved');
+
+//     if (!allPreviousApproved) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Cannot process finance approval until all previous levels are approved'
+//       });
+//     }
+
+//     if (decision === 'approved') {
+//       // Determine final amount
+//       const finalAmount = parseFloat(amountApproved || request.amountRequested);
+//       console.log(`Final approved amount: XAF ${finalAmount.toLocaleString()}`);
+
+//       // ============================================
+//       // REIMBURSEMENT PATH: Skip budget assignment during approval
+//       // ============================================
+//       if (isReimbursement) {
+//         console.log('\n💰 REIMBURSEMENT APPROVAL PATH');
+//         console.log('   Skipping budget assignment (will be done during disbursement)');
+
+//         // Update approval chain
+//         request.approvalChain[financeStepIndex].status = 'approved';
+//         request.approvalChain[financeStepIndex].comments = comments;
+//         request.approvalChain[financeStepIndex].actionDate = new Date();
+//         request.approvalChain[financeStepIndex].actionTime = new Date().toLocaleTimeString('en-GB');
+//         request.approvalChain[financeStepIndex].decidedBy = req.user.userId;
+
+//         request.financeDecision = {
+//           decision: 'approved',
+//           comments,
+//           decisionDate: new Date()
+//         };
+
+//         request.amountApproved = finalAmount;
+//         request.financeOfficer = req.user.userId;
+//         request.status = 'approved'; // ✅ Ready for disbursement (no budget assigned yet)
+
+//         await request.save();
+//         console.log('✅ Reimbursement APPROVED - ready for disbursement');
+
+//         // Notify employee
+//         await sendEmail({
+//           to: request.employee.email,
+//           subject: '✅ Reimbursement Request Approved',
+//           html: `
+//             <h3>Your Reimbursement Has Been Approved! 🎉</h3>
+//             <p>Dear ${request.employee.fullName},</p>
+
+//             <p>Great news! Your reimbursement request has been approved by finance.</p>
+
+//             <div style="background-color: #d4edda; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #28a745;">
+//               <p><strong>Approval Details:</strong></p>
+//               <ul>
+//                 <li><strong>Request ID:</strong> REQ-${requestId.toString().slice(-6).toUpperCase()}</li>
+//                 <li><strong>Amount Approved:</strong> XAF ${finalAmount.toLocaleString()}</li>
+//                 <li><strong>Type:</strong> ${request.requestType.replace(/-/g, ' ').toUpperCase()}</li>
+//                 <li><strong>Receipt Documents:</strong> ${request.reimbursementDetails?.receiptDocuments?.length || 0}</li>
+//                 ${request.itemizedBreakdown?.length > 0 ? 
+//                   `<li><strong>Itemized Expenses:</strong> ${request.itemizedBreakdown.length} items</li>` : 
+//                   ''
+//                 }
+//                 <li><strong>Approved by:</strong> ${user.fullName} (Finance Officer)</li>
+//               </ul>
+//             </div>
+
+//             <div style="background-color: #e6f7ff; padding: 10px; border-radius: 5px; margin: 10px 0;">
+//               <p><strong>Next Step:</strong> Your reimbursement will be processed by the Finance team. You will receive your funds soon.</p>
+//             </div>
+
+//             <p>Thank you for following the proper reimbursement process!</p>
+//           `
+//         }).catch(err => console.error('Failed to send approval notification:', err));
+
+//         console.log('=== REIMBURSEMENT APPROVAL COMPLETED ===\n');
+
+//         await request.populate('employee', 'fullName email department');
+
+//         return res.json({
+//           success: true,
+//           message: 'Reimbursement approved - ready for disbursement',
+//           data: request,
+//           metadata: {
+//             requestMode: 'reimbursement',
+//             budgetAssignmentPending: true,
+//             receiptDocuments: request.reimbursementDetails?.receiptDocuments?.length || 0,
+//             itemizedExpenses: request.itemizedBreakdown?.length || 0
+//           }
+//         });
+//       }
+
+//       // ============================================
+//       // CASH ADVANCE PATH: Existing flow with budget assignment
+//       // ============================================
+//       console.log('\n💵 CASH ADVANCE APPROVAL PATH');
+      
+//       let budgetCode = null;
+      
+//       if (!budgetCodeId) {
+//         return res.status(400).json({
+//           success: false,
+//           message: 'Budget code must be assigned for cash advance approval'
+//         });
+//       }
+
+//       console.log(`💼 Finance assigning budget code: ${budgetCodeId}`);
+//       budgetCode = await BudgetCode.findById(budgetCodeId);
+      
+//       if (!budgetCode) {
+//         return res.status(404).json({
+//           success: false,
+//           message: 'Budget code not found'
+//         });
+//       }
+
+//       console.log(`\n💰 Budget Code: ${budgetCode.code} - ${budgetCode.name}`);
+//       console.log(`   Department: ${budgetCode.department}`);
+//       console.log(`   Available: XAF ${budgetCode.remaining.toLocaleString()}`);
+
+//       // Check budget sufficiency
+//       if (budgetCode.remaining < finalAmount) {
+//         return res.status(400).json({
+//           success: false,
+//           message: `Insufficient budget. Available: XAF ${budgetCode.remaining.toLocaleString()}, Required: XAF ${finalAmount.toLocaleString()}`
+//         });
+//       }
+
+//       console.log(`✅ Budget check passed`);
+
+//       // ✅ HANDLE RE-APPROVAL: Release any existing allocation first
+//       const existingAllocation = budgetCode.allocations.find(
+//         a => a.requisitionId && a.requisitionId.toString() === requestId.toString()
+//       );
+
+//       if (existingAllocation) {
+//         console.log(`\n🔄 Found existing allocation (${existingAllocation.status})`);
+        
+//         if (existingAllocation.status !== 'released') {
+//           console.log(`   Releasing previous allocation...`);
+          
+//           try {
+//             await budgetCode.releaseReservation(requestId, 'Re-approval - releasing old allocation');
+//             console.log(`   ✅ Previous allocation released`);
+            
+//             // Refresh budget code after release
+//             budgetCode = await BudgetCode.findById(budgetCodeId);
+//           } catch (releaseError) {
+//             console.error(`   ❌ Failed to release: ${releaseError.message}`);
+//           }
+//         }
+//       }
+
+//       // ✅ Reserve budget (for cash advance)
+//       try {
+//         console.log(`\n💰 RESERVING budget...`);
+        
+//         await budgetCode.reserveBudget(request._id, finalAmount, req.user.userId);
+        
+//         console.log('✅ Budget reserved successfully');
+
+//         // Update request allocation info
+//         request.budgetAllocation = {
+//           budgetCodeId: budgetCode._id,
+//           budgetCode: budgetCode.code,
+//           allocatedAmount: finalAmount,
+//           allocationStatus: 'allocated',
+//           assignedBy: req.user.userId,
+//           assignedAt: new Date()
+//         };
+
+//       } catch (budgetError) {
+//         console.error('❌ Budget reservation failed:', budgetError);
+//         return res.status(500).json({
+//           success: false,
+//           message: `Failed to reserve budget: ${budgetError.message}`
+//         });
+//       }
+
+//       // Update approval chain
+//       request.approvalChain[financeStepIndex].status = 'approved';
+//       request.approvalChain[financeStepIndex].comments = comments;
+//       request.approvalChain[financeStepIndex].actionDate = new Date();
+//       request.approvalChain[financeStepIndex].actionTime = new Date().toLocaleTimeString('en-GB');
+//       request.approvalChain[financeStepIndex].decidedBy = req.user.userId;
+
+//       request.financeDecision = {
+//         decision: 'approved',
+//         comments,
+//         decisionDate: new Date()
+//       };
+
+//       request.amountApproved = finalAmount;
+//       request.financeOfficer = req.user.userId;
+
+//       // ============================================
+//       // HANDLE DISBURSEMENT (optional for cash advance)
+//       // ============================================
+//       if (disbursementAmount) {
+//         const disbursedAmount = parseFloat(disbursementAmount);
+        
+//         console.log(`\n💸 Processing immediate disbursement...`);
+//         console.log(`   Amount: XAF ${disbursedAmount.toLocaleString()}`);
+
+//         if (disbursedAmount > finalAmount) {
+//           // Rollback reservation
+//           try {
+//             await budgetCode.releaseReservation(request._id, 'Disbursement amount exceeds approved amount');
+//           } catch (rollbackError) {
+//             console.error('Failed to rollback reservation:', rollbackError);
+//           }
+
+//           return res.status(400).json({
+//             success: false,
+//             message: `Disbursement amount cannot exceed approved amount`
+//           });
+//         }
+
+//         try {
+//           // Deduct from budget
+//           await budgetCode.deductBudget(request._id, disbursedAmount);
+//           console.log('✅ Budget deducted successfully');
+
+//           // Initialize disbursements array
+//           if (!request.disbursements) {
+//             request.disbursements = [];
+//           }
+
+//           // Add disbursement record
+//           request.disbursements.push({
+//             amount: disbursedAmount,
+//             date: new Date(),
+//             disbursedBy: req.user.userId,
+//             notes: comments || '',
+//             disbursementNumber: request.disbursements.length + 1
+//           });
+
+//           // Update disbursement tracking
+//           request.totalDisbursed = disbursedAmount;
+//           request.remainingBalance = finalAmount - disbursedAmount;
+
+//           // Set appropriate status
+//           if (request.remainingBalance === 0) {
+//             request.status = 'fully_disbursed';
+//             console.log('✅ Cash advance FULLY DISBURSED');
+//           } else {
+//             request.status = 'partially_disbursed';
+//             console.log(`✅ Cash advance PARTIALLY DISBURSED (${Math.round((disbursedAmount / finalAmount) * 100)}%)`);
+//           }
+
+//           // Update budget allocation status
+//           request.budgetAllocation.allocationStatus = 'spent';
+//           request.budgetAllocation.actualSpent = disbursedAmount;
+
+//         } catch (deductError) {
+//           console.error('❌ Budget deduction failed:', deductError);
+          
+//           // Rollback reservation
+//           try {
+//             await budgetCode.releaseReservation(request._id, 'Disbursement failed');
+//             console.log('✅ Budget reservation rolled back');
+//           } catch (rollbackError) {
+//             console.error('❌ Failed to rollback reservation:', rollbackError);
+//           }
+
+//           return res.status(500).json({
+//             success: false,
+//             message: `Budget deduction failed: ${deductError.message}`
+//           });
+//         }
+//       } else {
+//         // Approved but not yet disbursed
+//         request.status = 'approved';
+//         console.log('✅ Cash advance APPROVED (budget reserved, awaiting disbursement)');
+//       }
+
+//       await request.save();
+//       console.log('✅ Request saved successfully');
+
+//       // Send notifications for cash advance
+//       const isFullyDisbursed = request.status === 'fully_disbursed';
+      
+//       await sendEmail({
+//         to: request.employee.email,
+//         subject: isFullyDisbursed ? 
+//           '✅ Cash Request Approved and Disbursed' : 
+//           '✅ Cash Request Approved',
+//         html: `
+//           <h3>${isFullyDisbursed ? 'Your Cash Request Has Been Disbursed! 🎉' : 'Your Cash Request Has Been Approved! 🎉'}</h3>
+//           <p>Dear ${request.employee.fullName},</p>
+
+//           <p>Great news! Your cash request has been approved by finance${disbursementAmount ? ' and funds have been disbursed' : ''}.</p>
+
+//           <div style="background-color: #d4edda; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #28a745;">
+//             <p><strong>Approval Details:</strong></p>
+//             <ul>
+//               <li><strong>Request ID:</strong> REQ-${requestId.toString().slice(-6).toUpperCase()}</li>
+//               <li><strong>Amount Approved:</strong> XAF ${finalAmount.toLocaleString()}</li>
+//               ${disbursementAmount ? `<li><strong>Amount Disbursed:</strong> XAF ${parseFloat(disbursementAmount).toLocaleString()}</li>` : ''}
+//               ${request.remainingBalance > 0 ? `<li><strong>Remaining:</strong> XAF ${request.remainingBalance.toLocaleString()}</li>` : ''}
+//               <li><strong>Budget Code:</strong> ${budgetCode.code} - ${budgetCode.name}</li>
+//               <li><strong>Approved by:</strong> ${user.fullName} (Finance)</li>
+//             </ul>
+//           </div>
+
+//           ${disbursementAmount ? 
+//             (isFullyDisbursed ?
+//               '<div style="background-color: #fff3cd; padding: 10px; border-radius: 5px; margin: 10px 0;"><p><strong>⚠️ Next Step:</strong> Submit justification with receipts after spending.</p></div>' :
+//               `<p><strong>Status:</strong> Partial payment (${Math.round((parseFloat(disbursementAmount) / finalAmount) * 100)}%). More payments may follow.</p>`
+//             ) :
+//             '<p><strong>Next Step:</strong> Disbursement will be processed by Finance.</p>'
+//           }
+
+//           <p>Thank you!</p>
+//         `
+//       }).catch(err => console.error('Failed to send notification:', err));
+
+//       console.log('=== CASH ADVANCE APPROVAL COMPLETED ===\n');
+
+//       await request.populate('employee', 'fullName email department');
+
+//       res.json({
+//         success: true,
+//         message: `Cash advance approved${disbursementAmount ? ' and funds disbursed' : ' (awaiting disbursement)'}`,
+//         data: request,
+//         budgetAllocation: {
+//           budgetCode: budgetCode.code,
+//           budgetName: budgetCode.name,
+//           allocatedAmount: finalAmount,
+//           remainingBudget: budgetCode.remaining
+//         },
+//         disbursement: disbursementAmount ? {
+//           amount: parseFloat(disbursementAmount),
+//           disbursementNumber: request.disbursements.length,
+//           totalDisbursed: request.totalDisbursed,
+//           remainingBalance: request.remainingBalance,
+//           progress: Math.round((request.totalDisbursed / finalAmount) * 100),
+//           status: request.status
+//         } : null
+//       });
+
+//     } else {
+//       // ============================================
+//       // HANDLE REJECTION (same for both modes)
+//       // ============================================
+//       console.log(`❌ ${isReimbursement ? 'Reimbursement' : 'Cash advance'} REJECTED by finance`);
+      
+//       request.status = 'denied';
+//       request.financeDecision = {
+//         decision: 'rejected',
+//         comments,
+//         decisionDate: new Date()
+//       };
+
+//       request.approvalChain[financeStepIndex].status = 'rejected';
+//       request.approvalChain[financeStepIndex].comments = comments;
+//       request.approvalChain[financeStepIndex].actionDate = new Date();
+//       request.approvalChain[financeStepIndex].actionTime = new Date().toLocaleTimeString('en-GB');
+//       request.approvalChain[financeStepIndex].decidedBy = req.user.userId;
+
+//       await request.save();
+
+//       await sendEmail({
+//         to: request.employee.email,
+//         subject: `⚠️ ${isReimbursement ? 'Reimbursement' : 'Cash'} Request Denied`,
+//         html: `
+//           <h3>${isReimbursement ? 'Reimbursement' : 'Cash'} Request Denied</h3>
+//           <p>Dear ${request.employee.fullName},</p>
+
+//           <p>Your ${isReimbursement ? 'reimbursement' : 'cash'} request has been denied by the finance team.</p>
+
+//           <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0;">
+//             <p><strong>Request ID:</strong> REQ-${requestId.toString().slice(-6).toUpperCase()}</p>
+//             <p><strong>Amount:</strong> XAF ${request.amountRequested.toLocaleString()}</p>
+//             ${comments ? `<p><strong>Reason:</strong> ${comments}</p>` : ''}
+//           </div>
+
+//           <p>If you have questions, please contact the finance team.</p>
+//         `
+//       }).catch(err => console.error('Failed to send denial email:', err));
+
+//       console.log(`=== ${isReimbursement ? 'REIMBURSEMENT' : 'CASH ADVANCE'} DENIED ===\n`);
+      
+//       return res.json({
+//         success: true,
+//         message: `${isReimbursement ? 'Reimbursement' : 'Cash advance'} rejected by finance`,
+//         data: request
+//       });
+//     }
+
+//   } catch (error) {
+//     console.error('❌ Process finance decision error:', error);
+//     console.error('Stack trace:', error.stack);
+    
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to process finance decision',
+//       error: error.message
+//     });
+//   }
+// };
 
 // const processFinanceDecision = async (req, res) => {
 //   try {
@@ -6160,6 +6736,7 @@ const canRequestBeEdited = (request) => {
 };
 
 
+
 /**
  * Process partial/full disbursement
  * POST /api/cash-requests/:requestId/disburse
@@ -6196,7 +6773,7 @@ const processDisbursement = async (req, res) => {
     }
 
     // Verify request can be disbursed
-    if (!request.canDisburseFurther()) {
+    if (!['approved', 'partially_disbursed'].includes(request.status)) {
       return res.status(400).json({
         success: false,
         message: `Cannot disburse. Current status: ${request.status}`
@@ -6237,9 +6814,30 @@ const processDisbursement = async (req, res) => {
     }
 
     // Add disbursement
-    await request.addDisbursement(disbursementAmount, req.user.userId, notes);
+    const disbursementNumber = (request.disbursements?.length || 0) + 1;
+    
+    request.disbursements.push({
+      amount: disbursementAmount,
+      date: new Date(),
+      disbursedBy: req.user.userId,
+      notes: notes || '',
+      disbursementNumber
+    });
 
-    console.log(`✅ Disbursement #${request.disbursements.length} processed`);
+    // Update totals
+    request.totalDisbursed = (request.totalDisbursed || 0) + disbursementAmount;
+    request.remainingBalance = request.amountApproved - request.totalDisbursed;
+
+    // Update status
+    if (request.remainingBalance === 0) {
+      request.status = 'fully_disbursed';
+    } else {
+      request.status = 'partially_disbursed';
+    }
+
+    await request.save();
+
+    console.log(`✅ Disbursement #${disbursementNumber} processed`);
     console.log(`   Amount: XAF ${disbursementAmount.toLocaleString()}`);
     console.log(`   Total Disbursed: XAF ${request.totalDisbursed.toLocaleString()}`);
     console.log(`   Remaining: XAF ${request.remainingBalance.toLocaleString()}`);
@@ -6251,18 +6849,18 @@ const processDisbursement = async (req, res) => {
     const user = await User.findById(req.user.userId);
     
     const isFullyDisbursed = request.status === 'fully_disbursed';
-    const disbursementNumber = request.disbursements.length;
+    const isReimbursement = request.requestMode === 'reimbursement';
 
     await sendEmail({
       to: request.employee.email,
       subject: isFullyDisbursed ? 
-        '✅ Cash Request Fully Disbursed' : 
+        `✅ ${isReimbursement ? 'Reimbursement' : 'Cash Request'} Fully Disbursed` : 
         `💰 Partial Disbursement #${disbursementNumber} Processed`,
       html: `
-        <h3>${isFullyDisbursed ? 'Cash Request Fully Disbursed' : `Partial Disbursement Processed`}</h3>
+        <h3>${isFullyDisbursed ? `${isReimbursement ? 'Reimbursement' : 'Cash Request'} Fully Disbursed` : `Partial Disbursement Processed`}</h3>
         <p>Dear ${request.employee.fullName},</p>
         
-        <p>A disbursement has been processed for your cash request.</p>
+        <p>A disbursement has been processed for your ${isReimbursement ? 'reimbursement' : 'cash'} request.</p>
 
         <div style="background-color: ${isFullyDisbursed ? '#d4edda' : '#d1ecf1'}; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid ${isFullyDisbursed ? '#28a745' : '#17a2b8'};">
           <p><strong>Disbursement Details:</strong></p>
@@ -6272,7 +6870,7 @@ const processDisbursement = async (req, res) => {
             <li><strong>Amount Disbursed:</strong> XAF ${disbursementAmount.toLocaleString()}</li>
             <li><strong>Total Disbursed:</strong> XAF ${request.totalDisbursed.toLocaleString()}</li>
             <li><strong>Remaining Balance:</strong> XAF ${request.remainingBalance.toLocaleString()}</li>
-            <li><strong>Progress:</strong> ${request.disbursementProgress}%</li>
+            <li><strong>Progress:</strong> ${Math.round((request.totalDisbursed / request.amountApproved) * 100)}%</li>
             <li><strong>Disbursed By:</strong> ${user.fullName} (Finance)</li>
             ${notes ? `<li><strong>Notes:</strong> ${notes}</li>` : ''}
           </ul>
@@ -6301,7 +6899,7 @@ const processDisbursement = async (req, res) => {
     res.json({
       success: true,
       message: isFullyDisbursed ? 
-        'Request fully disbursed' : 
+        `${isReimbursement ? 'Reimbursement' : 'Request'} fully disbursed` : 
         `Partial disbursement #${disbursementNumber} processed successfully`,
       data: request,
       disbursement: {
@@ -6309,7 +6907,7 @@ const processDisbursement = async (req, res) => {
         amount: disbursementAmount,
         totalDisbursed: request.totalDisbursed,
         remainingBalance: request.remainingBalance,
-        progress: request.disbursementProgress,
+        progress: Math.round((request.totalDisbursed / request.amountApproved) * 100),
         isFullyDisbursed
       }
     });
@@ -6351,7 +6949,7 @@ const getDisbursementHistory = async (req, res) => {
         amountApproved: request.amountApproved || request.amountRequested,
         totalDisbursed: request.totalDisbursed || 0,
         remainingBalance: request.remainingBalance || 0,
-        progress: request.disbursementProgress || 0,
+        progress: Math.round(((request.totalDisbursed || 0) / (request.amountApproved || request.amountRequested)) * 100),
         status: request.status,
         disbursements: request.disbursements || []
       }
@@ -6366,6 +6964,246 @@ const getDisbursementHistory = async (req, res) => {
     });
   }
 };
+
+/**
+ * Get all approved requests awaiting disbursement (Finance Dashboard)
+ * GET /api/cash-requests/finance/pending-disbursements
+ */
+const getPendingDisbursements = async (req, res) => {
+  try {
+    const requests = await CashRequest.find({
+      status: { $in: ['approved', 'partially_disbursed'] },
+      remainingBalance: { $gt: 0 }
+    })
+    .populate('employee', 'fullName email department')
+    .populate('budgetAllocation.budgetCodeId', 'code name')
+    .sort({ createdAt: -1 });
+
+    console.log(`Found ${requests.length} requests awaiting disbursement`);
+
+    res.json({
+      success: true,
+      data: requests,
+      count: requests.length
+    });
+
+  } catch (error) {
+    console.error('Get pending disbursements error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch pending disbursements',
+      error: error.message
+    });
+  }
+};
+
+
+// /**
+//  * Process partial/full disbursement
+//  * POST /api/cash-requests/:requestId/disburse
+//  */
+// const processDisbursement = async (req, res) => {
+//   try {
+//     const { requestId } = req.params;
+//     const { amount, notes } = req.body;
+
+//     console.log('=== PROCESS DISBURSEMENT ===');
+//     console.log('Request ID:', requestId);
+//     console.log('Amount:', amount);
+//     console.log('Disbursed by:', req.user.userId);
+
+//     // Validate amount
+//     const disbursementAmount = parseFloat(amount);
+//     if (isNaN(disbursementAmount) || disbursementAmount <= 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid disbursement amount'
+//       });
+//     }
+
+//     // Get request
+//     const request = await CashRequest.findById(requestId)
+//       .populate('employee', 'fullName email department')
+//       .populate('budgetAllocation.budgetCodeId', 'code name budget remaining');
+
+//     if (!request) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Request not found'
+//       });
+//     }
+
+//     // Verify request can be disbursed
+//     if (!request.canDisburseFurther()) {
+//       return res.status(400).json({
+//         success: false,
+//         message: `Cannot disburse. Current status: ${request.status}`
+//       });
+//     }
+
+//     // Verify amount doesn't exceed remaining balance
+//     if (disbursementAmount > request.remainingBalance) {
+//       return res.status(400).json({
+//         success: false,
+//         message: `Amount exceeds remaining balance. Available: XAF ${request.remainingBalance.toLocaleString()}`
+//       });
+//     }
+
+//     // ============================================
+//     // DEDUCT FROM BUDGET (Immediate)
+//     // ============================================
+//     if (request.budgetAllocation && request.budgetAllocation.budgetCodeId) {
+//       const budgetCode = await BudgetCode.findById(request.budgetAllocation.budgetCodeId);
+      
+//       if (budgetCode) {
+//         try {
+//           console.log(`Deducting XAF ${disbursementAmount.toLocaleString()} from budget ${budgetCode.code}`);
+//           await budgetCode.deductBudget(request._id, disbursementAmount);
+          
+//           // Update allocation tracking
+//           request.budgetAllocation.actualSpent = (request.budgetAllocation.actualSpent || 0) + disbursementAmount;
+          
+//           console.log(`✅ Budget deducted successfully`);
+//         } catch (budgetError) {
+//           console.error('❌ Budget deduction failed:', budgetError);
+//           return res.status(500).json({
+//             success: false,
+//             message: `Budget deduction failed: ${budgetError.message}`
+//           });
+//         }
+//       }
+//     }
+
+//     // Add disbursement
+//     await request.addDisbursement(disbursementAmount, req.user.userId, notes);
+
+//     console.log(`✅ Disbursement #${request.disbursements.length} processed`);
+//     console.log(`   Amount: XAF ${disbursementAmount.toLocaleString()}`);
+//     console.log(`   Total Disbursed: XAF ${request.totalDisbursed.toLocaleString()}`);
+//     console.log(`   Remaining: XAF ${request.remainingBalance.toLocaleString()}`);
+//     console.log(`   New Status: ${request.status}`);
+
+//     // ============================================
+//     // SEND NOTIFICATION TO EMPLOYEE
+//     // ============================================
+//     const user = await User.findById(req.user.userId);
+    
+//     const isFullyDisbursed = request.status === 'fully_disbursed';
+//     const disbursementNumber = request.disbursements.length;
+
+//     await sendEmail({
+//       to: request.employee.email,
+//       subject: isFullyDisbursed ? 
+//         '✅ Cash Request Fully Disbursed' : 
+//         `💰 Partial Disbursement #${disbursementNumber} Processed`,
+//       html: `
+//         <h3>${isFullyDisbursed ? 'Cash Request Fully Disbursed' : `Partial Disbursement Processed`}</h3>
+//         <p>Dear ${request.employee.fullName},</p>
+        
+//         <p>A disbursement has been processed for your cash request.</p>
+
+//         <div style="background-color: ${isFullyDisbursed ? '#d4edda' : '#d1ecf1'}; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid ${isFullyDisbursed ? '#28a745' : '#17a2b8'};">
+//           <p><strong>Disbursement Details:</strong></p>
+//           <ul>
+//             <li><strong>Request ID:</strong> REQ-${requestId.toString().slice(-6).toUpperCase()}</li>
+//             <li><strong>Disbursement #:</strong> ${disbursementNumber} of ${isFullyDisbursed ? disbursementNumber : '?'}</li>
+//             <li><strong>Amount Disbursed:</strong> XAF ${disbursementAmount.toLocaleString()}</li>
+//             <li><strong>Total Disbursed:</strong> XAF ${request.totalDisbursed.toLocaleString()}</li>
+//             <li><strong>Remaining Balance:</strong> XAF ${request.remainingBalance.toLocaleString()}</li>
+//             <li><strong>Progress:</strong> ${request.disbursementProgress}%</li>
+//             <li><strong>Disbursed By:</strong> ${user.fullName} (Finance)</li>
+//             ${notes ? `<li><strong>Notes:</strong> ${notes}</li>` : ''}
+//           </ul>
+//         </div>
+
+//         ${isFullyDisbursed ? `
+//           <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #ffc107;">
+//             <p><strong>⚠️ Next Step: Submit Justification</strong></p>
+//             <p>Your request has been fully disbursed. Please submit your justification with receipts within the required timeframe.</p>
+//           </div>
+//         ` : `
+//           <div style="background-color: #e7f3ff; padding: 10px; border-radius: 5px; margin: 10px 0;">
+//             <p><em>💡 More disbursements may follow. You will be notified on each payment.</em></p>
+//           </div>
+//         `}
+
+//         <p>Thank you!</p>
+//       `
+//     }).catch(err => console.error('Failed to send disbursement notification:', err));
+
+//     console.log('=== DISBURSEMENT COMPLETED ===\n');
+
+//     // Return updated request
+//     await request.populate('employee', 'fullName email department');
+
+//     res.json({
+//       success: true,
+//       message: isFullyDisbursed ? 
+//         'Request fully disbursed' : 
+//         `Partial disbursement #${disbursementNumber} processed successfully`,
+//       data: request,
+//       disbursement: {
+//         number: disbursementNumber,
+//         amount: disbursementAmount,
+//         totalDisbursed: request.totalDisbursed,
+//         remainingBalance: request.remainingBalance,
+//         progress: request.disbursementProgress,
+//         isFullyDisbursed
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('Process disbursement error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to process disbursement',
+//       error: error.message
+//     });
+//   }
+// };
+
+// /**
+//  * Get disbursement history for a request
+//  * GET /api/cash-requests/:requestId/disbursements
+//  */
+// const getDisbursementHistory = async (req, res) => {
+//   try {
+//     const { requestId } = req.params;
+
+//     const request = await CashRequest.findById(requestId)
+//       .populate('employee', 'fullName email department')
+//       .populate('disbursements.disbursedBy', 'fullName email');
+
+//     if (!request) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Request not found'
+//       });
+//     }
+
+//     res.json({
+//       success: true,
+//       data: {
+//         requestId: request._id,
+//         employee: request.employee,
+//         amountApproved: request.amountApproved || request.amountRequested,
+//         totalDisbursed: request.totalDisbursed || 0,
+//         remainingBalance: request.remainingBalance || 0,
+//         progress: request.disbursementProgress || 0,
+//         status: request.status,
+//         disbursements: request.disbursements || []
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('Get disbursement history error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch disbursement history',
+//       error: error.message
+//     });
+//   }
+// };
 
 /**
  * Export cash requests (CSV/Excel/PDF)
@@ -6496,6 +7334,7 @@ module.exports = {
   canRequestBeEdited,
   processDisbursement,
   getDisbursementHistory,
+  getPendingDisbursements,
   exportCashRequests
 };
 
