@@ -366,9 +366,17 @@ const DEPARTMENT_STRUCTURE = {
         canSupervise: [],
         approvalAuthority: 'staff'
       },
-      'Receptionist': {
+      'HR Assistant': {
         email: 'carmel.dafny@gratoglobal.com',
         name: 'Ms. Carmel Dafny',
+        reportsTo: 'bruiline.tsitoh@gratoglobal.com',
+        hierarchyLevel: 2,
+        canSupervise: [],
+        approvalAuthority: 'staff'
+      },
+      'Receptionist': {
+        email: 'esther.lum@gratoglobal.com',
+        name: 'Ms. Esther Lum',
         reportsTo: 'bruiline.tsitoh@gratoglobal.com',
         hierarchyLevel: 2,
         canSupervise: [],

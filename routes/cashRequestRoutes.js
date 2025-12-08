@@ -598,6 +598,8 @@ const router = express.Router();
 const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware');
 const upload = require('../middlewares/uploadMiddleware');
 const cashRequestController = require('../controllers/cashRequestController');
+// const CashRequest = require('../models/CashRequest')
+const CashRequest = require('../models/CashRequest');
 
 // Import error handlers from upload middleware
 const { handleMulterError, cleanupTempFiles, validateFiles } = require('../middlewares/uploadMiddleware');
@@ -719,86 +721,183 @@ router.get(
 );
 
 // Delete cash request (only if pending and no approvals)
-router.delete(
-  '/:requestId',
-  authMiddleware,
-  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
-  async (req, res) => {
-    try {
-      const { requestId } = req.params;
-      const request = await CashRequest.findById(requestId)
-        .populate('employee', 'fullName email');
+// router.delete(
+//   '/:requestId',
+//   authMiddleware,
+//   requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+//   async (req, res) => {
+//     try {
+//       const { requestId } = req.params;
+//       const request = await CashRequest.findById(requestId)
+//         .populate('employee', 'fullName email');
 
-      if (!request) {
-        return res.status(404).json({
-          success: false,
-          message: 'Request not found'
-        });
-      }
+//       if (!request) {
+//         return res.status(404).json({
+//           success: false,
+//           message: 'Request not found'
+//         });
+//       }
 
-      // Only owner can delete
-      if (!request.employee._id.equals(req.user.userId)) {
-        return res.status(403).json({
-          success: false,
-          message: 'Only the request owner can delete it'
-        });
-      }
+//       // Only owner can delete
+//       if (!request.employee._id.equals(req.user.userId)) {
+//         return res.status(403).json({
+//           success: false,
+//           message: 'Only the request owner can delete it'
+//         });
+//       }
 
-      // STRICT: Must be pending_supervisor
-      if (request.status !== 'pending_supervisor') {
-        return res.status(400).json({
-          success: false,
-          message: 'Cannot delete request after approval process has started. Only pending_supervisor requests can be deleted.',
-          currentStatus: request.status
-        });
-      }
+//       // STRICT: Must be pending_supervisor
+//       if (request.status !== 'pending_supervisor') {
+//         return res.status(400).json({
+//           success: false,
+//           message: 'Cannot delete request after approval process has started. Only pending_supervisor requests can be deleted.',
+//           currentStatus: request.status
+//         });
+//       }
 
-      // STRICT: First approver must not have acted
-      const firstStep = request.approvalChain?.[0];
-      if (!firstStep || firstStep.status !== 'pending') {
-        return res.status(400).json({
-          success: false,
-          message: 'Cannot delete request - approval process has already started. Once any approver takes action, deletion is no longer possible.'
-        });
-      }
+//       // STRICT: First approver must not have acted
+//       const firstStep = request.approvalChain?.[0];
+//       if (!firstStep || firstStep.status !== 'pending') {
+//         return res.status(400).json({
+//           success: false,
+//           message: 'Cannot delete request - approval process has already started. Once any approver takes action, deletion is no longer possible.'
+//         });
+//       }
 
-      // ADDITIONAL CHECK: Verify no other steps have been touched
-      const anyApprovalTaken = request.approvalChain.some(step => 
-        step.status !== 'pending'
-      );
+//       // ADDITIONAL CHECK: Verify no other steps have been touched
+//       const anyApprovalTaken = request.approvalChain.some(step => 
+//         step.status !== 'pending'
+//       );
 
-      if (anyApprovalTaken) {
-        return res.status(400).json({
-          success: false,
-          message: 'Cannot delete request - approvals have been recorded'
-        });
-      }
+//       if (anyApprovalTaken) {
+//         return res.status(400).json({
+//           success: false,
+//           message: 'Cannot delete request - approvals have been recorded'
+//         });
+//       }
 
-      // Delete associated files
-      if (request.attachments && request.attachments.length > 0) {
-        await deleteFiles(request.attachments);
-      }
+//       // Delete associated files
+//       if (request.attachments && request.attachments.length > 0) {
+//         await deleteFiles(request.attachments);
+//       }
 
-      // Delete request
-      await request.deleteOne();
+//       // Delete request
+//       await request.deleteOne();
 
-      console.log(`✓ Request ${requestId} deleted by ${request.employee.email}`);
+//       console.log(`✓ Request ${requestId} deleted by ${request.employee.email}`);
 
-      res.json({
-        success: true,
-        message: 'Request deleted successfully'
-      });
+//       res.json({
+//         success: true,
+//         message: 'Request deleted successfully'
+//       });
 
-    } catch (error) {
-      console.error('Delete request error:', error);
-      res.status(500).json({
+//     } catch (error) {
+//       console.error('Delete request error:', error);
+//       res.status(500).json({
+//         success: false,
+//         message: 'Failed to delete request',
+//         error: error.message
+//       });
+//     }
+//   }
+// );
+
+
+/**
+ * @route   DELETE /api/cash-requests/:id
+ * @desc    Delete a cash request (only if pending with no approvals)
+ * @access  Private (Employee)
+ */
+router.delete('/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    console.log('\n=== DELETE REQUEST ===');
+    console.log('Request ID:', id);
+    console.log('User ID:', req.user._id);
+
+    // Find the request
+    const request = await CashRequest.findById(id);
+
+    if (!request) {
+      return res.status(404).json({
         success: false,
-        message: 'Failed to delete request',
-        error: error.message
+        message: 'Request not found or already deleted'
       });
     }
+
+    console.log('Found request:', {
+      id: request._id,
+      status: request.status,
+      employee: request.employee
+    });
+
+    // Verify ownership
+    if (request.employee.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only delete your own requests'
+      });
+    }
+
+    // STRICT deletion rules
+    // Only allow deletion if:
+    // 1. Status is pending_supervisor AND
+    // 2. First approver hasn't taken any action yet
+    
+    if (request.status !== 'pending_supervisor') {
+      return res.status(400).json({
+        success: false,
+        message: 'Can only delete requests that are pending first approval',
+        details: `Current status: ${request.status}`
+      });
+    }
+
+    // Check if ANY approver has taken action
+    const hasApproverAction = request.approvalChain.some(step => 
+      step.status !== 'pending'
+    );
+
+    if (hasApproverAction) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete - approval process has already started',
+        details: 'At least one approver has taken action on this request'
+      });
+    }
+
+    // Check first approver specifically
+    const firstApprover = request.approvalChain[0];
+    if (!firstApprover || firstApprover.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete - first approver has already reviewed this request'
+      });
+    }
+
+    // All checks passed - delete the request
+    await CashRequest.findByIdAndDelete(id);
+
+    console.log('✅ Request deleted successfully');
+
+    return res.status(200).json({
+      success: true,
+      message: 'Request deleted successfully',
+      data: {
+        deletedId: id,
+        displayId: request.displayId
+      }
+    });
+
+  } catch (error) {
+    console.error('Delete request error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete request',
+      error: error.message
+    });
   }
-);
+});
 
 
 // Edit cash request
