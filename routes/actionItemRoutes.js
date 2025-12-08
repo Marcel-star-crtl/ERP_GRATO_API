@@ -272,7 +272,23 @@ router.post(
   actionItemController.processCreationApproval
 );
 
+// // Milestone-specific routes
+// router.get(
+//   '/milestone/:milestoneId',
+//   authMiddleware,
+//   actionItemController.getMilestoneTasks
+// );
+
+// router.post(
+//   '/milestone/task',
+//   authMiddleware,
+//   requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+//   actionItemController.createTaskUnderMilestone
+// );
+
+// ============================================
 // Milestone-specific routes
+// ============================================
 router.get(
   '/milestone/:milestoneId',
   authMiddleware,
@@ -284,6 +300,20 @@ router.post(
   authMiddleware,
   requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   actionItemController.createTaskUnderMilestone
+);
+
+// NEW: Sub-milestone routes
+router.post(
+  '/sub-milestone-task',
+  authMiddleware,
+  requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
+  actionItemController.createTaskUnderSubMilestone
+);
+
+router.get(
+  '/sub-milestone/:subMilestoneId',
+  authMiddleware,
+  actionItemController.getSubMilestoneTasks
 );
 
 // Personal task creation
