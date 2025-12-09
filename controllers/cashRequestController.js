@@ -562,10 +562,11 @@ const getFinanceRequests = async (req, res) => {
     };
     
     if (user.role === 'finance') {
+      // ✅ FIXED: Include ALL finance-relevant statuses
       query = {
         $or: [
           { 
-            // Requests waiting for this finance officer's approval
+            // Requests waiting for this finance officer's approval (ANY level)
             'approvalChain': {
               $elemMatch: {
                 'approver.email': user.email,
@@ -594,17 +595,25 @@ const getFinanceRequests = async (req, res) => {
               }
             }
           },
-          // Direct status checks
+          // ✅ FIXED: Include ALL finance-managed statuses
           { status: 'pending_finance' },
           { status: 'approved' },
-          { status: 'disbursed' },
-          { status: 'partially_disbursed' },  // ✅ ADDED
-          { status: 'fully_disbursed' },      // ✅ ADDED
+          { status: 'disbursed' },  // ⚠️ ADDED - was missing
+          { status: 'partially_disbursed' },
+          { status: 'fully_disbursed' },
           { status: 'completed' },
-          { status: 'justification_pending_finance' }
+          { status: 'justification_pending_supervisor' },
+          { status: 'justification_pending_departmental_head' },
+          { status: 'justification_pending_head_of_business' },
+          { status: 'justification_pending_finance' },
+          { status: 'justification_rejected_supervisor' },
+          { status: 'justification_rejected_departmental_head' },
+          { status: 'justification_rejected_head_of_business' },
+          { status: 'justification_rejected_finance' }
         ]
       };
     } else if (user.role === 'admin') {
+      // Admins see all finance-related requests
       query = {
         $or: [
           { 
@@ -614,12 +623,19 @@ const getFinanceRequests = async (req, res) => {
             status: { 
               $in: [
                 'pending_finance', 
-                'approved', 
+                'approved',
                 'disbursed',
-                'partially_disbursed',    // ✅ ADDED
-                'fully_disbursed',        // ✅ ADDED
-                'completed', 
-                'justification_pending_finance'
+                'partially_disbursed',
+                'fully_disbursed',
+                'completed',
+                'justification_pending_supervisor',
+                'justification_pending_departmental_head',
+                'justification_pending_head_of_business',
+                'justification_pending_finance',
+                'justification_rejected_supervisor',
+                'justification_rejected_departmental_head',
+                'justification_rejected_head_of_business',
+                'justification_rejected_finance'
               ] 
             } 
           }
@@ -635,7 +651,7 @@ const getFinanceRequests = async (req, res) => {
 
     console.log(`Finance requests found: ${requests.length}`);
 
-    // ✅ FIXED: Filter requests with better logic for approved/disbursed states
+    // Filter requests to ensure proper approval hierarchy
     const validRequests = requests.filter(req => {
       const financeStep = req.approvalChain.find(s => 
         s.approver.email === user.email && s.approver.role === 'Finance Officer'
@@ -645,24 +661,32 @@ const getFinanceRequests = async (req, res) => {
       console.log(`  Current status: ${req.status}`);
       console.log(`  Finance step found: ${!!financeStep}`);
       
-      // ✅ CASE 1: No finance step for this user - check if it's a general finance-visible status
+      if (financeStep) {
+        console.log(`  Finance step level: ${financeStep.level}, status: ${financeStep.status}`);
+      }
+      
+      // If no finance step for this user, check if it's a general finance status
       if (!financeStep) {
         const isGeneralFinanceStatus = [
           'approved', 
-          'disbursed', 
+          'disbursed',
           'partially_disbursed',
           'fully_disbursed',
-          'completed', 
-          'justification_pending_finance'
+          'completed',
+          'justification_pending_supervisor',
+          'justification_pending_departmental_head',
+          'justification_pending_head_of_business',
+          'justification_pending_finance',
+          'justification_rejected_supervisor',
+          'justification_rejected_departmental_head',
+          'justification_rejected_head_of_business',
+          'justification_rejected_finance'
         ].includes(req.status);
-        
         console.log(`  No finance step for user, general finance status: ${isGeneralFinanceStatus}`);
         return isGeneralFinanceStatus;
       }
       
-      console.log(`  Finance step level: ${financeStep.level}, status: ${financeStep.status}`);
-      
-      // ✅ CASE 2: Finance step is PENDING - verify hierarchy
+      // For requests with pending finance step, ensure all previous levels are approved
       if (financeStep.status === 'pending') {
         const allPreviousApproved = isPreviousLevelApproved(req, financeStep.level);
         const previousSteps = req.approvalChain.filter(s => s.level < financeStep.level);
@@ -677,17 +701,10 @@ const getFinanceRequests = async (req, res) => {
           return false;
         }
         console.log(`  ✅ INCLUDED: All previous levels approved`);
-        return true;
+      } else {
+        console.log(`  ✅ INCLUDED: Finance step status is ${financeStep.status}`);
       }
       
-      // ✅ CASE 3: Finance step is APPROVED or REJECTED - always include
-      if (['approved', 'rejected'].includes(financeStep.status)) {
-        console.log(`  ✅ INCLUDED: Finance step ${financeStep.status}`);
-        return true;
-      }
-      
-      // ✅ CASE 4: Any other finance step status - include by default
-      console.log(`  ✅ INCLUDED: Finance step exists with status ${financeStep.status}`);
       return true;
     });
     
@@ -697,19 +714,6 @@ const getFinanceRequests = async (req, res) => {
       success: true,
       data: validRequests,
       count: validRequests.length,
-      stats: {
-        total: validRequests.length,
-        pending: validRequests.filter(r => r.status === 'pending_finance').length,
-        approved: validRequests.filter(r => ['approved', 'disbursed', 'partially_disbursed', 'fully_disbursed', 'completed'].includes(r.status)).length,
-        byStatus: {
-          pending_finance: validRequests.filter(r => r.status === 'pending_finance').length,
-          approved: validRequests.filter(r => r.status === 'approved').length,
-          disbursed: validRequests.filter(r => r.status === 'disbursed').length,
-          partially_disbursed: validRequests.filter(r => r.status === 'partially_disbursed').length,
-          fully_disbursed: validRequests.filter(r => r.status === 'fully_disbursed').length,
-          completed: validRequests.filter(r => r.status === 'completed').length
-        }
-      },
       userInfo: {
         name: user.fullName,
         email: user.email,

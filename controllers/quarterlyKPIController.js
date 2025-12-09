@@ -26,185 +26,6 @@ const getQuarterDateRange = (quarter) => {
   return { startDate, endDate };
 };
 
-// Create or update quarterly KPIs
-// const createOrUpdateKPIs = async (req, res) => {
-//   try {
-//     const { quarter, kpis } = req.body;
-//     const userId = req.user.userId;
-
-//     console.log('=== CREATE/UPDATE KPIs ===');
-//     console.log('User:', userId);
-//     console.log('Quarter:', quarter);
-//     console.log('KPIs count:', kpis?.length);
-
-//     // Validate KPIs
-//     if (!kpis || !Array.isArray(kpis) || kpis.length < 3) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'At least 3 KPIs are required'
-//       });
-//     }
-
-//     // Validate total weight
-//     const totalWeight = kpis.reduce((sum, kpi) => sum + (kpi.weight || 0), 0);
-//     if (totalWeight !== 100) {
-//       return res.status(400).json({
-//         success: false,
-//         message: `Total KPI weight must equal 100%. Current total: ${totalWeight}%`
-//       });
-//     }
-
-//     // Validate individual KPIs
-//     for (const kpi of kpis) {
-//       if (!kpi.title || !kpi.description || !kpi.weight || !kpi.targetValue || !kpi.measurableOutcome) {
-//         return res.status(400).json({
-//           success: false,
-//           message: 'All KPI fields are required: title, description, weight, targetValue, measurableOutcome'
-//         });
-//       }
-      
-//       // Map frontend fields to schema fields
-//       kpi.target = kpi.targetValue;
-//       kpi.measurement = kpi.measurableOutcome;
-//     }
-
-//     const user = await User.findById(userId);
-//     if (!user) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'User not found'
-//       });
-//     }
-
-//     // ✅ SPECIAL CASE: Kelvin has no supervisor
-//     const isKelvin = user.email === 'kelvin.eyong@gratoglobal.com';
-//     let supervisorInfo = null;
-
-//     if (!isKelvin) {
-//       // Get supervisor using EMAIL (not name)
-//       const supervisorData = getTaskSupervisor(user.email, user.department);
-      
-//       if (!supervisorData) {
-//         console.error('❌ Unable to determine supervisor for:', user.email);
-//         return res.status(400).json({
-//           success: false,
-//           message: 'Unable to determine your supervisor. Please contact HR.'
-//         });
-//       }
-
-//       console.log('✓ Supervisor data received:', supervisorData);
-
-//       // Validate supervisor data structure
-//       if (!supervisorData.name || typeof supervisorData.name !== 'string') {
-//         console.error('❌ Invalid supervisor name:', supervisorData.name);
-//         return res.status(500).json({
-//           success: false,
-//           message: 'System error: Invalid supervisor name configuration. Please contact HR.'
-//         });
-//       }
-
-//       if (!supervisorData.email || typeof supervisorData.email !== 'string') {
-//         console.error('❌ Invalid supervisor email:', supervisorData.email);
-//         return res.status(500).json({
-//           success: false,
-//           message: 'System error: Invalid supervisor email configuration. Please contact HR.'
-//         });
-//       }
-
-//       supervisorInfo = {
-//         name: supervisorData.name,
-//         email: supervisorData.email,
-//         department: supervisorData.department || user.department
-//       };
-
-//       console.log('✓ Final supervisor info:', supervisorInfo);
-//     } else {
-//       console.log('✓ Kelvin detected - no supervisor required');
-//     }
-
-//     const [, year] = quarter.split('-');
-
-//     // Check if KPIs already exist
-//     let quarterlyKPI = await QuarterlyKPI.findOne({
-//       employee: userId,
-//       quarter: quarter
-//     });
-
-//     if (quarterlyKPI) {
-//       // Update existing KPIs (only if in draft or rejected status)
-//       if (quarterlyKPI.approvalStatus === 'approved') {
-//         return res.status(400).json({
-//           success: false,
-//           message: 'Cannot modify approved KPIs. Please contact your supervisor.'
-//         });
-//       }
-
-//       if (quarterlyKPI.approvalStatus === 'pending') {
-//         return res.status(400).json({
-//           success: false,
-//           message: 'KPIs are pending approval. Cannot modify until reviewed.'
-//         });
-//       }
-
-//       quarterlyKPI.kpis = kpis.map(kpi => ({
-//         title: kpi.title,
-//         description: kpi.description,
-//         weight: kpi.weight,
-//         target: kpi.targetValue,
-//         measurement: kpi.measurableOutcome,
-//         status: 'pending'
-//       }));
-//       quarterlyKPI.approvalStatus = 'draft';
-//       quarterlyKPI.rejectionReason = undefined;
-//       quarterlyKPI.supervisor = supervisorInfo;
-
-//       console.log('Updating existing KPIs');
-//     } else {
-//       // Create new KPIs
-//       quarterlyKPI = new QuarterlyKPI({
-//         employee: userId,
-//         quarter: quarter,
-//         year: parseInt(year),
-//         kpis: kpis.map(kpi => ({
-//           title: kpi.title,
-//           description: kpi.description,
-//           weight: kpi.weight,
-//           target: kpi.targetValue,
-//           measurement: kpi.measurableOutcome,
-//           status: 'pending'
-//         })),
-//         supervisor: supervisorInfo
-//       });
-
-//       console.log('Creating new KPIs');
-//     }
-
-//     await quarterlyKPI.save();
-//     console.log('✅ KPIs saved successfully');
-
-//     res.status(200).json({
-//       success: true,
-//       message: 'KPIs saved successfully',
-//       data: quarterlyKPI
-//     });
-
-//   } catch (error) {
-//     console.error('Create/Update KPIs error:', error);
-//     console.error('Error details:', {
-//       name: error.name,
-//       message: error.message,
-//       errors: error.errors
-//     });
-    
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to save KPIs',
-//       error: error.message
-//     });
-//   }
-// };
-
-
 const createOrUpdateKPIs = async (req, res) => {
   try {
     const { quarter, kpis } = req.body;
@@ -372,112 +193,6 @@ const createOrUpdateKPIs = async (req, res) => {
   }
 };
 
-// Submit KPIs for approval
-// const submitKPIsForApproval = async (req, res) => {
-//   try {
-//     const { id } = req.params;
-//     const userId = req.user.userId;
-
-//     const quarterlyKPI = await QuarterlyKPI.findOne({
-//       _id: id,
-//       employee: userId
-//     }).populate('employee', 'fullName email department');
-
-//     if (!quarterlyKPI) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'KPIs not found'
-//       });
-//     }
-
-//     if (quarterlyKPI.approvalStatus === 'approved') {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'KPIs are already approved'
-//       });
-//     }
-
-//     if (quarterlyKPI.approvalStatus === 'pending') {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'KPIs are already pending approval'
-//       });
-//     }
-
-//     // Validate before submission
-//     if (quarterlyKPI.totalWeight !== 100) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Total KPI weight must equal 100%'
-//       });
-//     }
-
-//     if (quarterlyKPI.kpis.length < 3) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Minimum 3 KPIs required'
-//       });
-//     }
-
-//     // ✅ SPECIAL CASE: Auto-approve for Kelvin (no supervisor)
-//     const isKelvin = quarterlyKPI.employee.email === 'kelvin.eyong@gratoglobal.com';
-    
-//     if (isKelvin) {
-//       console.log('✓ Auto-approving KPIs for Kelvin (no supervisor)');
-      
-//       quarterlyKPI.approvalStatus = 'approved';
-//       quarterlyKPI.submittedAt = new Date();
-//       quarterlyKPI.approvedBy = userId;
-//       quarterlyKPI.approvedAt = new Date();
-      
-//       quarterlyKPI.kpis.forEach(kpi => {
-//         kpi.status = 'approved';
-//         kpi.approvedBy = userId;
-//         kpi.approvedAt = new Date();
-//       });
-      
-//       await quarterlyKPI.save();
-      
-//       return res.json({
-//         success: true,
-//         message: 'KPIs automatically approved (no supervisor required)',
-//         data: quarterlyKPI
-//       });
-//     }
-
-//     // ✅ Regular submission for employees with supervisors
-//     quarterlyKPI.submitForApproval();
-//     await quarterlyKPI.save();
-
-//     // Send email to immediate supervisor only
-//     try {
-//       await sendKPIEmail.kpiSubmittedForApproval(
-//         quarterlyKPI.supervisor.email,
-//         quarterlyKPI.supervisor.name,
-//         quarterlyKPI.employee.fullName,
-//         quarterlyKPI.quarter,
-//         quarterlyKPI.kpis.length,
-//         quarterlyKPI._id
-//       );
-//     } catch (emailError) {
-//       console.error('Failed to send KPI submission email:', emailError);
-//     }
-
-//     res.json({
-//       success: true,
-//       message: 'KPIs submitted for supervisor approval',
-//       data: quarterlyKPI
-//     });
-
-//   } catch (error) {
-//     console.error('Submit KPIs error:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to submit KPIs',
-//       error: error.message
-//     });
-//   }
-// };
 
 
 const submitKPIsForApproval = async (req, res) => {
@@ -574,119 +289,6 @@ const submitKPIsForApproval = async (req, res) => {
     });
   }
 };
-
-// // Supervisor approve/reject KPIs - FIXED VERSION
-// const processKPIApproval = async (req, res) => {
-//   try {
-//     const { id } = req.params;
-//     const { decision, comments } = req.body;
-//     const userId = req.user.userId;
-
-//     if (!['approve', 'reject'].includes(decision)) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Invalid decision. Must be "approve" or "reject"'
-//       });
-//     }
-
-//     const user = await User.findById(userId);
-//     const quarterlyKPI = await QuarterlyKPI.findById(id)
-//       .populate('employee', 'fullName email department');
-
-//     if (!quarterlyKPI) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'KPIs not found'
-//       });
-//     }
-
-//     // ✅ STRICT CHECK: Only the assigned immediate supervisor can approve
-//     const isImmediateSupervisor = quarterlyKPI.supervisor?.email === user.email;
-    
-//     // Admins can still approve as override
-//     const isAdmin = ['admin', 'supply_chain'].includes(user.role);
-
-//     if (!isImmediateSupervisor && !isAdmin) {
-//       console.log('❌ AUTHORIZATION FAILED:');
-//       console.log('  - Required supervisor:', quarterlyKPI.supervisor?.email);
-//       console.log('  - Current user:', user.email);
-//       console.log('  - Is admin:', isAdmin);
-      
-//       return res.status(403).json({
-//         success: false,
-//         message: 'Only the immediate supervisor can approve these KPIs'
-//       });
-//     }
-
-//     if (quarterlyKPI.approvalStatus !== 'pending') {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'KPIs are not pending approval'
-//       });
-//     }
-
-//     if (decision === 'approve') {
-//       quarterlyKPI.approve(userId);
-      
-//       // Send approval email
-//       try {
-//         await sendKPIEmail.kpiApproved(
-//           quarterlyKPI.employee.email,
-//           quarterlyKPI.employee.fullName,
-//           user.fullName,
-//           quarterlyKPI.quarter,
-//           quarterlyKPI._id,
-//           comments
-//         );
-//       } catch (emailError) {
-//         console.error('Failed to send approval email:', emailError);
-//       }
-
-//       console.log('✅ KPIs APPROVED by immediate supervisor');
-//     } else {
-//       if (!comments) {
-//         return res.status(400).json({
-//           success: false,
-//           message: 'Rejection reason is required'
-//         });
-//       }
-
-//       quarterlyKPI.reject(userId, comments);
-      
-//       // Send rejection email
-//       try {
-//         await sendKPIEmail.kpiRejected(
-//           quarterlyKPI.employee.email,
-//           quarterlyKPI.employee.fullName,
-//           user.fullName,
-//           quarterlyKPI.quarter,
-//           quarterlyKPI._id,
-//           comments
-//         );
-//       } catch (emailError) {
-//         console.error('Failed to send rejection email:', emailError);
-//       }
-
-//       console.log('❌ KPIs REJECTED by immediate supervisor');
-//     }
-
-//     await quarterlyKPI.save();
-
-//     res.json({
-//       success: true,
-//       message: `KPIs ${decision}d successfully`,
-//       data: quarterlyKPI
-//     });
-
-//   } catch (error) {
-//     console.error('Process KPI approval error:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to process KPI approval',
-//       error: error.message
-//     });
-//   }
-// };
 
 
 const processKPIApproval = async (req, res) => {
@@ -822,7 +424,54 @@ const getEmployeeKPIs = async (req, res) => {
   }
 };
 
-// Get KPIs pending approval - FIXED VERSION
+// // Get KPIs pending approval - FIXED VERSION
+// const getPendingKPIApprovals = async (req, res) => {
+//   try {
+//     const userId = req.user.userId;
+//     const user = await User.findById(userId);
+
+//     if (!user) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'User not found'
+//       });
+//     }
+
+//     let filter = { approvalStatus: 'pending' };
+
+//     // ✅ CRITICAL FIX: Only show KPIs where this user is the IMMEDIATE supervisor
+//     if (user.role === 'admin' || user.role === 'supply_chain') {
+//       // Admins can see all pending KPIs (no filter restriction)
+//       console.log('✓ Admin user - showing all pending KPIs');
+//     } else {
+//       // Non-admins can ONLY see KPIs where they are listed as the supervisor
+//       filter['supervisor.email'] = user.email;
+//       console.log(`✓ Regular user - filtering by supervisor email: ${user.email}`);
+//     }
+
+//     const pendingKPIs = await QuarterlyKPI.find(filter)
+//       .populate('employee', 'fullName email department position')
+//       .sort({ submittedAt: 1 });
+
+//     console.log(`Found ${pendingKPIs.length} pending KPIs for ${user.fullName}`);
+
+//     res.json({
+//       success: true,
+//       data: pendingKPIs,
+//       count: pendingKPIs.length
+//     });
+
+//   } catch (error) {
+//     console.error('Get pending KPI approvals error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch pending KPI approvals',
+//       error: error.message
+//     });
+//   }
+// };
+
+
 const getPendingKPIApprovals = async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -835,23 +484,33 @@ const getPendingKPIApprovals = async (req, res) => {
       });
     }
 
+    console.log('=== GET PENDING KPI APPROVALS ===');
+    console.log('User:', user.fullName);
+    console.log('Email:', user.email);
+    console.log('Role:', user.role);
+    console.log('Department:', user.department);
+
     let filter = { approvalStatus: 'pending' };
 
-    // ✅ CRITICAL FIX: Only show KPIs where this user is the IMMEDIATE supervisor
-    if (user.role === 'admin' || user.role === 'supply_chain') {
-      // Admins can see all pending KPIs (no filter restriction)
-      console.log('✓ Admin user - showing all pending KPIs');
-    } else {
-      // Non-admins can ONLY see KPIs where they are listed as the supervisor
-      filter['supervisor.email'] = user.email;
-      console.log(`✓ Regular user - filtering by supervisor email: ${user.email}`);
-    }
+    // ✅ FIXED: Strict supervisor filtering for ALL users
+    // Only show KPIs where this user is EXPLICITLY listed as the supervisor
+    filter['supervisor.email'] = user.email;
+
+    console.log('Filter being applied:', JSON.stringify(filter, null, 2));
 
     const pendingKPIs = await QuarterlyKPI.find(filter)
       .populate('employee', 'fullName email department position')
       .sort({ submittedAt: 1 });
 
     console.log(`Found ${pendingKPIs.length} pending KPIs for ${user.fullName}`);
+    
+    // Log each KPI's supervisor for debugging
+    if (pendingKPIs.length > 0) {
+      console.log('\nKPIs found:');
+      pendingKPIs.forEach(kpi => {
+        console.log(`- Employee: ${kpi.employee.fullName}, Supervisor: ${kpi.supervisor?.email}`);
+      });
+    }
 
     res.json({
       success: true,
