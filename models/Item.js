@@ -30,8 +30,8 @@ const ItemSchema = new mongoose.Schema({
   itemType: {
     type: String,
     required: true,
-    enum: ['asset', 'liability', 'expense'],
-    default: 'expense'
+    enum: ['asset', 'liability', 'stock'],
+    default: 'stock'
   },
   imageUrl: {
     type: String,

@@ -14,6 +14,7 @@ const CATEGORY_CODE_MAP = {
   'Safety Equipment': 'SAF',
   'Maintenance Supplies': 'MNT',
   'Personal Accessories': 'PA',
+  'Expense': 'EX',
   'Other': 'OTH'
 };
 
@@ -28,6 +29,7 @@ const SUBCATEGORIES = {
   'Safety Equipment': ['PPE', 'First Aid', 'Fire Safety', 'Other Safety'],
   'Maintenance Supplies': ['Cleaning', 'Repair Tools', 'Spare Parts', 'Other Maintenance'],
   'Personal Accessories': ['Electronics', 'Household Items', 'Personal Care', 'Entertainment', 'Other Personal'],
+  'Spares': ['Spares'],
   'Other': ['Miscellaneous']
 };
 

@@ -114,7 +114,33 @@ const budgetCodeSchema = new mongoose.Schema({
     comments: String
   }],
 
-  // Allocation Tracking
+  // // Allocation Tracking
+  // allocations: [{
+  //   requisitionId: {
+  //     type: mongoose.Schema.Types.ObjectId,
+  //     ref: 'PurchaseRequisition'
+  //   },
+  //   amount: {
+  //     type: Number,
+  //     required: true,
+  //     min: 0
+  //   },
+  //   allocatedDate: {
+  //     type: Date,
+  //     default: Date.now
+  //   },
+  //   allocatedBy: {
+  //     type: mongoose.Schema.Types.ObjectId,
+  //     ref: 'User'
+  //   },
+  //   status: {
+  //     type: String,
+  //     enum: ['allocated', 'released', 'spent'],
+  //     default: 'allocated'
+  //   }
+  // }],
+
+
   allocations: [{
     requisitionId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -137,6 +163,73 @@ const budgetCodeSchema = new mongoose.Schema({
       type: String,
       enum: ['allocated', 'released', 'spent'],
       default: 'allocated'
+    },
+    // ✅ NEW: Track actual spending for partial disbursements
+    actualSpent: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    // ✅ NEW: Track first disbursement date
+    spentAt: {
+      type: Date
+    },
+    // ✅ NEW: Track latest disbursement
+    lastDisbursement: {
+      type: Date
+    },
+    // ✅ NEW: Count number of disbursements
+    disbursementCount: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    // ✅ NEW: Track returned funds
+    balanceReturned: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    // ✅ NEW: Release tracking
+    releaseDate: {
+      type: Date
+    },
+    releaseReason: {
+      type: String
+    }
+  }],
+
+
+  transactions: [{
+    type: {
+      type: String,
+      enum: ['reservation', 'deduction', 'return', 'release'],
+      required: true
+    },
+    amount: {
+      type: Number,
+      required: true
+    },
+    requisitionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'PurchaseRequisition'
+    },
+    description: {
+      type: String
+    },
+    performedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    balanceBefore: {
+      type: Number
+    },
+    balanceAfter: {
+      type: Number
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now
     }
   }],
 
@@ -579,43 +672,144 @@ budgetCodeSchema.methods.reserveBudget = async function(requestId, amount, userI
  * Moves allocation from 'allocated' → 'spent'
  * Updates 'used' field
  */
-budgetCodeSchema.methods.deductBudget = async function(requestId, actualAmount) {
-  console.log(`\n💸 DEDUCTING Budget: ${this.code}`);
-  console.log(`   Amount to deduct: XAF ${actualAmount.toLocaleString()}`);
+// budgetCodeSchema.methods.deductBudget = async function(requestId, actualAmount) {
+//   console.log(`\n💸 DEDUCTING Budget: ${this.code}`);
+//   console.log(`   Amount to deduct: XAF ${actualAmount.toLocaleString()}`);
 
+//   const allocation = this.allocations.find(
+//     a => a.requisitionId && a.requisitionId.toString() === requestId.toString() && a.status === 'allocated'
+//   );
+
+//   if (!allocation) {
+//     throw new Error('No active allocation found for this request. Budget may have already been deducted.');
+//   }
+
+//   const reservedAmount = allocation.amount;
+//   console.log(`   Originally reserved: XAF ${reservedAmount.toLocaleString()}`);
+
+//   // Handle partial disbursement
+//   if (actualAmount < reservedAmount) {
+//     const difference = reservedAmount - actualAmount;
+//     console.log(`   ⚠️  Partial disbursement detected`);
+//     console.log(`   Releasing unused: XAF ${difference.toLocaleString()}`);
+    
+//     // Update allocation to actual amount spent
+//     allocation.amount = actualAmount;
+//   }
+
+//   // NOW deduct from budget
+//   this.used += actualAmount;
+//   allocation.status = 'spent';
+//   allocation.actualSpent = actualAmount;
+
+//   await this.save();
+//   console.log(`   ✅ Budget deducted successfully`);
+//   console.log(`   Total used: XAF ${this.used.toLocaleString()}`);
+//   console.log(`   Remaining: XAF ${this.remaining.toLocaleString()}\n`);
+  
+//   return this;
+// };
+
+
+
+// Replace the deductBudget method in models/BudgetCode.js
+
+/**
+ * PHASE 2: Deduct budget on actual disbursement
+ * Supports multiple partial disbursements against a single allocation
+ */
+budgetCodeSchema.methods.deductBudget = async function(requisitionId, amount) {
+  console.log(`\n💸 DEDUCTING Budget: ${this.code}`);
+  console.log(`   Requisition: ${requisitionId}`);
+  console.log(`   Amount to deduct: XAF ${amount.toLocaleString()}`);
+  console.log(`   Current Used: XAF ${this.used.toLocaleString()}`);
+  console.log(`   Current Remaining: XAF ${this.remaining.toLocaleString()}`);
+
+  // ✅ Find allocation (can be 'allocated' or 'spent')
   const allocation = this.allocations.find(
-    a => a.requisitionId && a.requisitionId.toString() === requestId.toString() && a.status === 'allocated'
+    a => a.requisitionId?.toString() === requisitionId.toString() && 
+         ['allocated', 'spent'].includes(a.status)
   );
 
   if (!allocation) {
-    throw new Error('No active allocation found for this request. Budget may have already been deducted.');
+    console.error(`   ❌ No allocation found for requisition ${requisitionId}`);
+    throw new Error('No allocation found for this request. Budget may not have been reserved.');
   }
 
-  const reservedAmount = allocation.amount;
-  console.log(`   Originally reserved: XAF ${reservedAmount.toLocaleString()}`);
+  console.log(`   ✓ Found allocation: XAF ${allocation.amount.toLocaleString()} (Status: ${allocation.status})`);
 
-  // Handle partial disbursement
-  if (actualAmount < reservedAmount) {
-    const difference = reservedAmount - actualAmount;
-    console.log(`   ⚠️  Partial disbursement detected`);
-    console.log(`   Releasing unused: XAF ${difference.toLocaleString()}`);
-    
-    // Update allocation to actual amount spent
-    allocation.amount = actualAmount;
+  // ✅ Track total amount disbursed so far for this allocation
+  const previouslyDisbursed = allocation.actualSpent || 0;
+  const newTotalDisbursed = previouslyDisbursed + parseFloat(amount);
+
+  console.log(`   Previously disbursed: XAF ${previouslyDisbursed.toLocaleString()}`);
+  console.log(`   New total disbursed: XAF ${newTotalDisbursed.toLocaleString()}`);
+
+  // ✅ Check if total deductions would exceed allocated amount
+  if (newTotalDisbursed > allocation.amount) {
+    console.error(`   ❌ Total deductions (XAF ${newTotalDisbursed.toLocaleString()}) exceed allocated amount (XAF ${allocation.amount.toLocaleString()})`);
+    throw new Error(
+      `Cannot disburse XAF ${amount.toLocaleString()}. ` +
+      `Already disbursed: XAF ${previouslyDisbursed.toLocaleString()}, ` +
+      `Allocated: XAF ${allocation.amount.toLocaleString()}, ` +
+      `Would exceed by: XAF ${(newTotalDisbursed - allocation.amount).toLocaleString()}`
+    );
   }
 
-  // NOW deduct from budget
-  this.used += actualAmount;
+  // ✅ Validate sufficient budget remaining
+  if (this.remaining < parseFloat(amount)) {
+    console.error(`   ❌ Insufficient budget. Remaining: XAF ${this.remaining.toLocaleString()}`);
+    throw new Error(
+      `Insufficient budget in ${this.code}. ` +
+      `Available: XAF ${this.remaining.toLocaleString()}, ` +
+      `Required: XAF ${amount.toLocaleString()}`
+    );
+  }
+
+  // ✅ Update allocation tracking
+  allocation.actualSpent = newTotalDisbursed;
   allocation.status = 'spent';
-  allocation.actualSpent = actualAmount;
+  
+  if (!allocation.spentAt) {
+    allocation.spentAt = new Date(); // First disbursement timestamp
+  }
+  allocation.lastDisbursement = new Date(); // Track latest disbursement
+
+  // ✅ Update budget totals
+  this.used += parseFloat(amount);
+
+  // ✅ Initialize transactions array if needed
+  if (!this.transactions) {
+    this.transactions = [];
+  }
+
+  // ✅ Add transaction record
+  this.transactions.push({
+    type: 'deduction',
+    amount: parseFloat(amount),
+    requisitionId: requisitionId,
+    description: `Disbursement for ${requisitionId} (${newTotalDisbursed === allocation.amount ? 'Full' : 'Partial'} payment #${allocation.disbursementCount || 1})`,
+    performedBy: allocation.allocatedBy,
+    balanceBefore: this.remaining + parseFloat(amount),
+    balanceAfter: this.remaining,
+    timestamp: new Date()
+  });
+
+  // ✅ Track disbursement count
+  allocation.disbursementCount = (allocation.disbursementCount || 0) + 1;
 
   await this.save();
+
   console.log(`   ✅ Budget deducted successfully`);
-  console.log(`   Total used: XAF ${this.used.toLocaleString()}`);
-  console.log(`   Remaining: XAF ${this.remaining.toLocaleString()}\n`);
-  
+  console.log(`   Allocation progress: XAF ${allocation.actualSpent.toLocaleString()} / ${allocation.amount.toLocaleString()} (${Math.round((allocation.actualSpent / allocation.amount) * 100)}%)`);
+  console.log(`   Total disbursements: ${allocation.disbursementCount}`);
+  console.log(`   New Budget Used: XAF ${this.used.toLocaleString()}`);
+  console.log(`   New Budget Remaining: XAF ${this.remaining.toLocaleString()}\n`);
+
   return this;
 };
+
+
 
 /**
  * PHASE 3: Return unused funds after justification

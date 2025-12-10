@@ -28,6 +28,7 @@ const ItemRequestSchema = new mongoose.Schema({
       'Furniture',
       'Safety Equipment',
       'Maintenance Supplies',
+      'Spares',
       'Other'
     ],
     required: true
