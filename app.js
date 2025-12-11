@@ -68,6 +68,8 @@ const enhancedBehavioralRoutes = loadRoute('./routes/enhancedBehavioralEvaluatio
 const scheduledReportRoutes = loadRoute('./routes/scheduledReportRoutes', 'scheduledReportRoutes');
 const migrationRoutes = loadRoute('./routes/migrationRoutes', 'migrationRoutes');
 const headApprovalRoutes = require('./routes/headApproval');
+const quotationRoutes = require('./routes/quotationRoutes');
+const debitNoteRoutes = require('./routes/debitNoteRoutes');
 
 // Critical check for projectRoutes
 if (!projectRoutes) {
@@ -420,6 +422,17 @@ if (headApprovalRoutes) {
   app.use('/api/head-approval', headApprovalRoutes);
   console.log('✅ Mounted: /api/head-approval');
 }
+
+if (quotationRoutes) {
+  app.use('/api/quotations', quotationRoutes);
+  console.log('✅ Mounted: /api/quotaions');
+}
+
+if (debitNoteRoutes) {
+  app.use('/api/debit-notes', debitNoteRoutes);
+  console.log('✅ Mounted: /api/debit-notes');
+}
+
 
 try {
   app.use('/api/hr', require('./routes/hrRoutes'));

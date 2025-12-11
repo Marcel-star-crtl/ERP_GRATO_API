@@ -4234,7 +4234,7 @@ const createReimbursementRequest = async (req, res) => {
 
     console.log('✓ Required text fields validated');
 
-    // STEP 5: Parse and validate itemized breakdown (if provided)
+    // STEP 5: Parse and validate itemized breakdown (OPTIONAL - NOT REQUIRED)
     let parsedBreakdown = [];
     if (itemizedBreakdown) {
       try {
@@ -4242,8 +4242,10 @@ const createReimbursementRequest = async (req, res) => {
           ? JSON.parse(itemizedBreakdown) 
           : itemizedBreakdown;
         
-        // Validate breakdown if provided
+        // ✅ FIXED: Only validate if breakdown was actually provided
         if (Array.isArray(parsedBreakdown) && parsedBreakdown.length > 0) {
+          console.log(`📋 Itemized breakdown provided: ${parsedBreakdown.length} items`);
+          
           // Validate each item has required fields
           for (let i = 0; i < parsedBreakdown.length; i++) {
             const item = parsedBreakdown[i];
@@ -4273,15 +4275,20 @@ const createReimbursementRequest = async (req, res) => {
               message: `Itemized breakdown total (XAF ${breakdownTotal.toFixed(2)}) must match reimbursement amount (XAF ${amount.toFixed(2)})`
             });
           }
-          console.log(`✓ Itemized breakdown validated: ${parsedBreakdown.length} items`);
+          console.log(`✓ Itemized breakdown validated: ${parsedBreakdown.length} items, total XAF ${breakdownTotal.toLocaleString()}`);
+        } else {
+          // Empty or invalid array - just ignore
+          parsedBreakdown = [];
+          console.log('ℹ️  No itemized breakdown provided (optional)');
         }
       } catch (parseError) {
         console.error('Breakdown parsing error:', parseError);
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid itemized breakdown format'
-        });
+        // ✅ FIXED: Don't fail - just ignore invalid breakdown
+        parsedBreakdown = [];
+        console.log('⚠️  Invalid itemized breakdown format - ignoring (optional field)');
       }
+    } else {
+      console.log('ℹ️  No itemized breakdown provided (optional)');
     }
 
     // STEP 6: Validate receipt documents (MANDATORY)
@@ -4361,13 +4368,13 @@ const createReimbursementRequest = async (req, res) => {
       requiredDate: new Date(requiredDate),
       status: 'pending_supervisor',
       approvalChain: mappedApprovalChain,
-      itemizedBreakdown: parsedBreakdown.length > 0 ? parsedBreakdown : [],
+      itemizedBreakdown: parsedBreakdown, // ✅ Can be empty array (optional)
       
       // Reimbursement-specific details
       reimbursementDetails: {
         amountSpent: amount, // Already spent
         receiptDocuments,
-        itemizedBreakdown: parsedBreakdown.length > 0 ? parsedBreakdown : [],
+        itemizedBreakdown: parsedBreakdown, // ✅ Can be empty array (optional)
         submittedDate: new Date(),
         receiptVerified: false // Will be set during approval
       }
@@ -4403,7 +4410,7 @@ const createReimbursementRequest = async (req, res) => {
                 <li><strong>Type:</strong> ${requestType.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</li>
                 <li><strong>Purpose:</strong> ${purpose}</li>
                 <li><strong>Receipt Documents:</strong> ${receiptDocuments.length}</li>
-                ${parsedBreakdown.length > 0 ? `<li><strong>Itemized Expenses:</strong> ${parsedBreakdown.length}</li>` : ''}
+                ${parsedBreakdown.length > 0 ? `<li><strong>Itemized Expenses:</strong> ${parsedBreakdown.length} ✅</li>` : '<li><strong>Itemized Breakdown:</strong> Not provided</li>'}
                 <li><strong>Urgency:</strong> ${urgency.toUpperCase()}</li>
               </ul>
             </div>
@@ -4439,10 +4446,16 @@ const createReimbursementRequest = async (req, res) => {
               <li><strong>Amount:</strong> XAF ${amount.toLocaleString()}</li>
               <li><strong>Type:</strong> ${requestType.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</li>
               <li><strong>Receipt Documents:</strong> ${receiptDocuments.length}</li>
-              ${parsedBreakdown.length > 0 ? `<li><strong>Itemized Expenses:</strong> ${parsedBreakdown.length}</li>` : ''}
+              ${parsedBreakdown.length > 0 ? `<li><strong>Itemized Expenses:</strong> ${parsedBreakdown.length} ✅</li>` : ''}
               <li><strong>Monthly Limit:</strong> ${limitCheck.count + 1}/5 used this month</li>
             </ul>
           </div>
+
+          ${parsedBreakdown.length > 0 ? `
+          <div style="background-color: #d4edda; padding: 10px; border-radius: 5px; margin: 10px 0;">
+            <p><em>✅ Itemized breakdown provided - this helps speed up approval!</em></p>
+          </div>
+          ` : ''}
 
           <div style="background-color: #d4edda; padding: 10px; border-radius: 5px; margin: 10px 0;">
             <p><strong>Next Step:</strong> Your request will be reviewed by ${firstApprover.approver.name} (${firstApprover.approver.role}).</p>
@@ -4469,6 +4482,11 @@ const createReimbursementRequest = async (req, res) => {
         monthlyUsed: limitCheck.count + 1,
         monthlyLimit: 5,
         remaining: limitCheck.remaining - 1
+      },
+      metadata: {
+        receiptDocumentsUploaded: receiptDocuments.length,
+        hasItemizedBreakdown: parsedBreakdown.length > 0,
+        itemizedExpenseCount: parsedBreakdown.length
       }
     });
 
@@ -4479,10 +4497,12 @@ const createReimbursementRequest = async (req, res) => {
     // Cleanup uploaded files on error
     if (req.files && req.files.length > 0) {
       console.log('Cleaning up uploaded files due to error...');
+      const fs = require('fs').promises;
+      const fsSync = require('fs');
       await Promise.allSettled(
         req.files.map(file => {
-          if (file.path && fs.existsSync(file.path)) {
-            return fs.promises.unlink(file.path).catch(e => 
+          if (file.path && fsSync.existsSync(file.path)) {
+            return fs.unlink(file.path).catch(e => 
               console.error('File cleanup failed:', e)
             );
           }
@@ -4497,6 +4517,346 @@ const createReimbursementRequest = async (req, res) => {
     });
   }
 };
+
+
+// const createReimbursementRequest = async (req, res) => {
+//   try {
+//     console.log('=== CREATE REIMBURSEMENT REQUEST ===');
+//     console.log('Request body:', JSON.stringify(req.body, null, 2));
+//     console.log('Files received:', req.files?.length || 0);
+
+//     const {
+//       requestType,
+//       amountRequested,
+//       purpose,
+//       businessJustification,
+//       urgency,
+//       requiredDate,
+//       itemizedBreakdown
+//     } = req.body;
+
+//     // STEP 1: Get employee
+//     const employee = await User.findById(req.user.userId);
+//     if (!employee) {
+//       return res.status(404).json({ 
+//         success: false, 
+//         message: 'Employee not found' 
+//       });
+//     }
+
+//     console.log(`Creating reimbursement for: ${employee.fullName}`);
+
+//     // STEP 2: Check monthly limit (5 requests)
+//     const limitCheck = await CashRequest.checkMonthlyReimbursementLimit(req.user.userId);
+    
+//     if (!limitCheck.canSubmit) {
+//       return res.status(400).json({
+//         success: false,
+//         message: `Monthly reimbursement limit reached. You have submitted ${limitCheck.count} reimbursement requests this month (limit: 5)`,
+//         limitInfo: limitCheck
+//       });
+//     }
+
+//     console.log(`✓ Monthly limit check passed: ${limitCheck.count}/5 used`);
+
+//     // STEP 3: Validate amount
+//     const amount = parseFloat(amountRequested);
+//     if (isNaN(amount) || amount <= 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Please enter a valid amount greater than 0'
+//       });
+//     }
+
+//     if (amount > 100000) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Reimbursement amount cannot exceed XAF 100,000'
+//       });
+//     }
+
+//     console.log(`✓ Amount validated: XAF ${amount.toLocaleString()}`);
+
+//     // STEP 4: Validate text fields
+//     if (!purpose || purpose.trim().length < 10) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Purpose must be at least 10 characters long'
+//       });
+//     }
+
+//     if (!businessJustification || businessJustification.trim().length < 20) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Business justification must be at least 20 characters long'
+//       });
+//     }
+
+//     console.log('✓ Required text fields validated');
+
+//     // STEP 5: Parse and validate itemized breakdown (if provided)
+//     let parsedBreakdown = [];
+//     if (itemizedBreakdown) {
+//       try {
+//         parsedBreakdown = typeof itemizedBreakdown === 'string' 
+//           ? JSON.parse(itemizedBreakdown) 
+//           : itemizedBreakdown;
+        
+//         // Validate breakdown if provided
+//         if (Array.isArray(parsedBreakdown) && parsedBreakdown.length > 0) {
+//           // Validate each item has required fields
+//           for (let i = 0; i < parsedBreakdown.length; i++) {
+//             const item = parsedBreakdown[i];
+//             if (!item.description || !item.amount || !item.category) {
+//               return res.status(400).json({
+//                 success: false,
+//                 message: `Expense item ${i + 1} is missing description, amount, or category`
+//               });
+//             }
+//             if (parseFloat(item.amount) <= 0) {
+//               return res.status(400).json({
+//                 success: false,
+//                 message: `Expense item ${i + 1} must have an amount greater than 0`
+//               });
+//             }
+//           }
+          
+//           // Validate total matches
+//           const breakdownTotal = parsedBreakdown.reduce((sum, item) => 
+//             sum + parseFloat(item.amount || 0), 0
+//           );
+          
+//           const discrepancy = Math.abs(breakdownTotal - amount);
+//           if (discrepancy > 0.01) {
+//             return res.status(400).json({
+//               success: false,
+//               message: `Itemized breakdown total (XAF ${breakdownTotal.toFixed(2)}) must match reimbursement amount (XAF ${amount.toFixed(2)})`
+//             });
+//           }
+//           console.log(`✓ Itemized breakdown validated: ${parsedBreakdown.length} items`);
+//         }
+//       } catch (parseError) {
+//         console.error('Breakdown parsing error:', parseError);
+//         return res.status(400).json({
+//           success: false,
+//           message: 'Invalid itemized breakdown format'
+//         });
+//       }
+//     }
+
+//     // STEP 6: Validate receipt documents (MANDATORY)
+//     if (!req.files || req.files.length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Receipt documents are mandatory for reimbursement requests. Please upload at least one receipt.',
+//         hint: 'Accepted formats: PDF, JPG, PNG, JPEG (max 10 files, 10MB each)'
+//       });
+//     }
+
+//     console.log(`✓ ${req.files.length} receipt document(s) provided`);
+
+//     // STEP 7: Process receipt files
+//     let receiptDocuments = [];
+//     for (let i = 0; i < req.files.length; i++) {
+//       const file = req.files[i];
+//       try {
+//         console.log(`   Processing receipt ${i + 1}: ${file.originalname}`);
+        
+//         const fileMetadata = await saveFile(
+//           file,
+//           STORAGE_CATEGORIES.REIMBURSEMENTS,
+//           '', // no subfolder
+//           null // auto-generate filename
+//         );
+
+//         receiptDocuments.push({
+//           name: file.originalname,
+//           url: fileMetadata.url,
+//           publicId: fileMetadata.publicId,
+//           localPath: fileMetadata.localPath,
+//           size: file.size,
+//           mimetype: file.mimetype,
+//           uploadedAt: new Date()
+//         });
+
+//         console.log(`   ✓ Saved: ${fileMetadata.publicId}`);
+//       } catch (fileError) {
+//         console.error(`   ✗ Error processing ${file.originalname}:`, fileError);
+//         continue;
+//       }
+//     }
+
+//     if (receiptDocuments.length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Failed to upload receipt documents. Please try again.'
+//       });
+//     }
+
+//     console.log(`✓ Successfully processed ${receiptDocuments.length} receipt(s)`);
+
+//     // STEP 8: Generate approval chain
+//     const approvalChain = getCashRequestApprovalChain(employee.email);
+
+//     if (!approvalChain || approvalChain.length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Unable to determine approval chain. Please contact HR.'
+//       });
+//     }
+
+//     console.log(`✓ Approval chain generated with ${approvalChain.length} levels`);
+
+//     const mappedApprovalChain = mapApprovalChainForCashRequest(approvalChain);
+
+//     // STEP 9: Create reimbursement request
+//     const reimbursementRequest = new CashRequest({
+//       employee: req.user.userId,
+//       requestMode: 'reimbursement',
+//       requestType,
+//       amountRequested: amount,
+//       purpose: purpose.trim(),
+//       businessJustification: businessJustification.trim(),
+//       urgency,
+//       requiredDate: new Date(requiredDate),
+//       status: 'pending_supervisor',
+//       approvalChain: mappedApprovalChain,
+//       itemizedBreakdown: parsedBreakdown.length > 0 ? parsedBreakdown : [],
+      
+//       // Reimbursement-specific details
+//       reimbursementDetails: {
+//         amountSpent: amount, // Already spent
+//         receiptDocuments,
+//         itemizedBreakdown: parsedBreakdown.length > 0 ? parsedBreakdown : [],
+//         submittedDate: new Date(),
+//         receiptVerified: false // Will be set during approval
+//       }
+//     });
+
+//     await reimbursementRequest.save();
+//     console.log(`✓ Reimbursement request created: ${reimbursementRequest._id}`);
+
+//     // Populate employee details
+//     await reimbursementRequest.populate('employee', 'fullName email department');
+
+//     // STEP 10: Send notifications
+//     const notifications = [];
+
+//     // Notify first approver
+//     const firstApprover = approvalChain[0];
+//     if (firstApprover) {
+//       notifications.push(
+//         sendEmail({
+//           to: firstApprover.approver.email,
+//           subject: `💰 Reimbursement Request Requires Approval - ${employee.fullName}`,
+//           html: `
+//             <h3>Reimbursement Request Requires Your Approval</h3>
+//             <p>Dear ${firstApprover.approver.name},</p>
+
+//             <p><strong>${employee.fullName}</strong> has submitted a reimbursement request for your approval.</p>
+
+//             <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #ffc107;">
+//               <p><strong>Reimbursement Details:</strong></p>
+//               <ul>
+//                 <li><strong>Request ID:</strong> REQ-${reimbursementRequest._id.toString().slice(-6).toUpperCase()}</li>
+//                 <li><strong>Amount:</strong> XAF ${amount.toLocaleString()}</li>
+//                 <li><strong>Type:</strong> ${requestType.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</li>
+//                 <li><strong>Purpose:</strong> ${purpose}</li>
+//                 <li><strong>Receipt Documents:</strong> ${receiptDocuments.length}</li>
+//                 ${parsedBreakdown.length > 0 ? `<li><strong>Itemized Expenses:</strong> ${parsedBreakdown.length}</li>` : ''}
+//                 <li><strong>Urgency:</strong> ${urgency.toUpperCase()}</li>
+//               </ul>
+//             </div>
+
+//             <div style="background-color: #d1ecf1; padding: 10px; border-radius: 5px; margin: 10px 0;">
+//               <p><em>💡 This is a <strong>reimbursement request</strong> - the employee has already spent their personal funds.</em></p>
+//             </div>
+
+//             <p>Please review the attached receipts and approve or reject this request in the system.</p>
+//           `
+//         }).catch(error => {
+//           console.error('Failed to send approver notification:', error);
+//           return { error, type: 'approver' };
+//         })
+//       );
+//     }
+
+//     // Notify employee
+//     notifications.push(
+//       sendEmail({
+//         to: employee.email,
+//         subject: '✅ Reimbursement Request Submitted Successfully',
+//         html: `
+//           <h3>Your Reimbursement Request Has Been Submitted</h3>
+//           <p>Dear ${employee.fullName},</p>
+
+//           <p>Your reimbursement request has been successfully submitted and is being reviewed.</p>
+
+//           <div style="background-color: #d1ecf1; padding: 15px; border-radius: 5px; margin: 15px 0;">
+//             <p><strong>Submission Summary:</strong></p>
+//             <ul>
+//               <li><strong>Request ID:</strong> REQ-${reimbursementRequest._id.toString().slice(-6).toUpperCase()}</li>
+//               <li><strong>Amount:</strong> XAF ${amount.toLocaleString()}</li>
+//               <li><strong>Type:</strong> ${requestType.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</li>
+//               <li><strong>Receipt Documents:</strong> ${receiptDocuments.length}</li>
+//               ${parsedBreakdown.length > 0 ? `<li><strong>Itemized Expenses:</strong> ${parsedBreakdown.length}</li>` : ''}
+//               <li><strong>Monthly Limit:</strong> ${limitCheck.count + 1}/5 used this month</li>
+//             </ul>
+//           </div>
+
+//           <div style="background-color: #d4edda; padding: 10px; border-radius: 5px; margin: 10px 0;">
+//             <p><strong>Next Step:</strong> Your request will be reviewed by ${firstApprover.approver.name} (${firstApprover.approver.role}).</p>
+//           </div>
+
+//           <p>You will receive email notifications as your request progresses through the approval chain.</p>
+
+//           <p>Thank you for following the proper reimbursement process!</p>
+//         `
+//       }).catch(error => {
+//         console.error('Failed to send employee notification:', error);
+//         return { error, type: 'employee' };
+//       })
+//     );
+
+//     await Promise.allSettled(notifications);
+
+//     console.log('=== REIMBURSEMENT REQUEST CREATED SUCCESSFULLY ===');
+//     res.status(201).json({
+//       success: true,
+//       message: 'Reimbursement request submitted successfully',
+//       data: reimbursementRequest,
+//       limitInfo: {
+//         monthlyUsed: limitCheck.count + 1,
+//         monthlyLimit: 5,
+//         remaining: limitCheck.remaining - 1
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('❌ Create reimbursement request error:', error);
+//     console.error('Stack trace:', error.stack);
+
+//     // Cleanup uploaded files on error
+//     if (req.files && req.files.length > 0) {
+//       console.log('Cleaning up uploaded files due to error...');
+//       await Promise.allSettled(
+//         req.files.map(file => {
+//           if (file.path && fs.existsSync(file.path)) {
+//             return fs.promises.unlink(file.path).catch(e => 
+//               console.error('File cleanup failed:', e)
+//             );
+//           }
+//         })
+//       );
+//     }
+
+//     res.status(500).json({
+//       success: false,
+//       message: error.message || 'Failed to create reimbursement request',
+//       error: process.env.NODE_ENV === 'development' ? error.message : 'An error occurred'
+//     });
+//   }
+// };
 
 
 
