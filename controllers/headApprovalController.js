@@ -5,114 +5,6 @@ const { sendEmail } = require('../services/emailService');
 /**
  * Get requisitions pending head approval
  */
-// const getPendingHeadApprovals = async (req, res) => {
-//   try {
-//     const { status, tab, page = 1, limit = 20 } = req.query;
-    
-//     console.log('=== GET PENDING HEAD APPROVALS ===');
-//     console.log('User:', req.user.userId);
-//     console.log('Filters:', { status, tab });
-    
-//     const user = await User.findById(req.user.userId);
-    
-//     // Verify user is authorized (admin or supply_chain head)
-//     if (!['admin', 'supply_chain'].includes(user.role)) {
-//       return res.status(403).json({
-//         success: false,
-//         message: 'Access denied. Only admin or supply chain head can access this.'
-//       });
-//     }
-    
-//     // Build query based on tab
-//     let query = {};
-    
-//     switch (tab) {
-//       case 'pending':
-//         query.status = 'pending_head_approval';
-//         break;
-//       case 'approved':
-//         query.status = 'approved';
-//         query['headApproval.decision'] = 'approved';
-//         break;
-//       case 'rejected':
-//         query['headApproval.decision'] = 'rejected';
-//         break;
-//       case 'all':
-//         query.status = { 
-//           $in: ['pending_head_approval', 'approved', 'rejected'] 
-//         };
-//         break;
-//       default:
-//         query.status = 'pending_head_approval';
-//     }
-    
-//     // Apply additional status filter if provided
-//     if (status && !tab) {
-//       query.status = status;
-//     }
-    
-//     console.log('Query:', JSON.stringify(query, null, 2));
-    
-//     const requisitions = await PurchaseRequisition.find(query)
-//       .populate('employee', 'fullName email department')
-//       .populate('supplyChainReview.assignedBuyer', 'fullName email')
-//       .populate('headApproval.decidedBy', 'fullName email')
-//       .sort({ createdAt: -1 })
-//       .limit(limit * 1)
-//       .skip((page - 1) * limit);
-    
-//     const total = await PurchaseRequisition.countDocuments(query);
-    
-//     console.log(`Found ${requisitions.length} requisitions`);
-    
-//     // Transform data for frontend
-//     const transformedRequisitions = requisitions.map(req => ({
-//       id: req._id,
-//       requisitionNumber: req.requisitionNumber,
-//       title: req.title,
-//       requester: req.employee?.fullName || 'Unknown',
-//       department: req.employee?.department || 'Unknown',
-//       category: req.itemCategory,
-//       budgetXAF: req.budgetXAF || req.financeVerification?.assignedBudget,
-//       urgency: req.urgency,
-//       status: req.status,
-//       paymentMethod: req.paymentMethod || 'bank',
-//       assignedBuyer: req.supplyChainReview?.assignedBuyer ? {
-//         id: req.supplyChainReview.assignedBuyer._id,
-//         name: req.supplyChainReview.assignedBuyer.fullName,
-//         email: req.supplyChainReview.assignedBuyer.email
-//       } : null,
-//       buyerAssignmentDate: req.supplyChainReview?.buyerAssignmentDate,
-//       sourcingType: req.supplyChainReview?.sourcingType,
-//       submittedDate: req.createdAt,
-//       expectedDeliveryDate: req.expectedDate,
-//       items: req.items,
-//       headApproval: req.headApproval
-//     }));
-    
-//     res.json({
-//       success: true,
-//       data: transformedRequisitions,
-//       pagination: {
-//         current: parseInt(page),
-//         total: Math.ceil(total / limit),
-//         count: transformedRequisitions.length,
-//         totalRecords: total
-//       }
-//     });
-    
-//   } catch (error) {
-//     console.error('Get pending head approvals error:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to fetch requisitions',
-//       error: error.message
-//     });
-//   }
-// };
-
-
-
 const getPendingHeadApprovals = async (req, res) => {
   try {
     const { status, tab, page = 1, limit = 20 } = req.query;
@@ -123,6 +15,7 @@ const getPendingHeadApprovals = async (req, res) => {
     
     const user = await User.findById(req.user.userId);
     
+    // Verify user is authorized (admin or supply_chain head)
     if (!['admin', 'supply_chain'].includes(user.role)) {
       return res.status(403).json({
         success: false,
@@ -130,66 +23,30 @@ const getPendingHeadApprovals = async (req, res) => {
       });
     }
     
+    // Build query based on tab
     let query = {};
     
     switch (tab) {
       case 'pending':
-        // ✅ FIX: Check if Level 4 (Head) is pending in approval chain
-        query.$or = [
-          // Explicit head approval status
-          { status: 'pending_head_approval' },
-          // OR check approval chain for pending head approval
-          {
-            'approvalChain': {
-              $elemMatch: {
-                'approver.email': 'kelvin.eyong@gratoglobal.com',
-                'status': 'pending'
-              }
-            },
-            // Ensure previous levels are approved
-            'approvalChain.3.status': 'pending' // Level 4 is index 3 (0-based)
-          }
-        ];
+        query.status = 'pending_head_approval';
         break;
-        
       case 'approved':
         query.status = 'approved';
         query['headApproval.decision'] = 'approved';
         break;
-        
       case 'rejected':
         query['headApproval.decision'] = 'rejected';
         break;
-        
       case 'all':
-        query.$or = [
-          { status: 'pending_head_approval' },
-          { 'headApproval.decision': { $exists: true } },
-          {
-            'approvalChain': {
-              $elemMatch: {
-                'approver.email': 'kelvin.eyong@gratoglobal.com',
-                'status': 'pending'
-              }
-            }
-          }
-        ];
+        query.status = { 
+          $in: ['pending_head_approval', 'approved', 'rejected'] 
+        };
         break;
-        
       default:
-        query.$or = [
-          { status: 'pending_head_approval' },
-          {
-            'approvalChain': {
-              $elemMatch: {
-                'approver.email': 'kelvin.eyong@gratoglobal.com',
-                'status': 'pending'
-              }
-            }
-          }
-        ];
+        query.status = 'pending_head_approval';
     }
     
+    // Apply additional status filter if provided
     if (status && !tab) {
       query.status = status;
     }
@@ -199,9 +56,7 @@ const getPendingHeadApprovals = async (req, res) => {
     const requisitions = await PurchaseRequisition.find(query)
       .populate('employee', 'fullName email department')
       .populate('supplyChainReview.assignedBuyer', 'fullName email')
-      .populate('supplyChainReview.buyerAssignedBy', 'fullName email')
       .populate('headApproval.decidedBy', 'fullName email')
-      .populate('financeVerification.verifiedBy', 'fullName email')
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
@@ -210,6 +65,7 @@ const getPendingHeadApprovals = async (req, res) => {
     
     console.log(`Found ${requisitions.length} requisitions`);
     
+    // Transform data for frontend
     const transformedRequisitions = requisitions.map(req => ({
       id: req._id,
       requisitionNumber: req.requisitionNumber,
@@ -220,27 +76,18 @@ const getPendingHeadApprovals = async (req, res) => {
       budgetXAF: req.budgetXAF || req.financeVerification?.assignedBudget,
       urgency: req.urgency,
       status: req.status,
-      paymentMethod: req.paymentMethod || 'cash', // Default from your data
-      sourcingType: req.supplyChainReview?.sourcingType,
-      purchaseType: req.supplyChainReview?.purchaseTypeAssigned || req.purchaseType,
+      paymentMethod: req.paymentMethod || 'bank',
       assignedBuyer: req.supplyChainReview?.assignedBuyer ? {
         id: req.supplyChainReview.assignedBuyer._id,
         name: req.supplyChainReview.assignedBuyer.fullName,
         email: req.supplyChainReview.assignedBuyer.email
       } : null,
       buyerAssignmentDate: req.supplyChainReview?.buyerAssignmentDate,
-      buyerAssignedBy: req.supplyChainReview?.buyerAssignedBy?.fullName,
-      financeVerification: {
-        budgetCode: req.financeVerification?.budgetCode,
-        assignedBudget: req.financeVerification?.assignedBudget,
-        verifiedBy: req.financeVerification?.verifiedBy?.fullName
-      },
+      sourcingType: req.supplyChainReview?.sourcingType,
       submittedDate: req.createdAt,
       expectedDeliveryDate: req.expectedDate,
       items: req.items,
-      approvalChain: req.approvalChain,
-      headApproval: req.headApproval,
-      justification: req.justificationOfPurchase
+      headApproval: req.headApproval
     }));
     
     res.json({
@@ -263,7 +110,6 @@ const getPendingHeadApprovals = async (req, res) => {
     });
   }
 };
-
 
 /**
  * Get head approval statistics

@@ -501,11 +501,11 @@ class PDFService {
     }
   }
 
- drawFooter(doc, poData, pageNum, totalPages) {
-    const footerY = doc.page.height - 80;
+
+  drawFooter(doc, poData, pageNum, totalPages) {
+    doc.save(); // Save state before drawing footer
     
-    // ✅ SAVE current state before drawing footer
-    doc.save();
+    const footerY = doc.page.height - 80;
     
     // Horizontal line
     doc.strokeColor('#CCCCCC')
@@ -522,7 +522,7 @@ class PDFService {
     // Registration and page number
     doc.text('RC/DLA/2014/B/2690 NIU: M061421030521 Access Bank Cameroon PLC 10041000010010130003616', 40, footerY + 8, {
       width: 470,
-      continued: false // ✅ Prevents text from continuing
+      continued: false
     });
     
     doc.text(`Page ${pageNum} / ${totalPages}`, 520, footerY + 8, {
@@ -547,9 +547,58 @@ class PDFService {
       continued: false
     });
     
-    // ✅ RESTORE state after drawing footer
-    doc.restore();
+    doc.restore(); // Restore state after drawing footer
   }
+
+//  drawFooter(doc, poData, pageNum, totalPages) {
+//     const footerY = doc.page.height - 80;
+    
+//     // ✅ SAVE current state before drawing footer
+//     doc.save();
+    
+//     // Horizontal line
+//     doc.strokeColor('#CCCCCC')
+//       .lineWidth(0.5)
+//       .moveTo(40, footerY)
+//       .lineTo(555, footerY)
+//       .stroke();
+
+//     // Footer content
+//     doc.fontSize(7)
+//       .font(this.defaultFont)
+//       .fillColor('#666666');
+
+//     // Registration and page number
+//     doc.text('RC/DLA/2014/B/2690 NIU: M061421030521 Access Bank Cameroon PLC 10041000010010130003616', 40, footerY + 8, {
+//       width: 470,
+//       continued: false // ✅ Prevents text from continuing
+//     });
+    
+//     doc.text(`Page ${pageNum} / ${totalPages}`, 520, footerY + 8, {
+//       width: 35,
+//       align: 'right',
+//       continued: false
+//     });
+
+//     // Contact information
+//     doc.text('679586444 info@gratoengineering.com www.gratoengineering.com', 40, footerY + 20, {
+//       width: 515,
+//       continued: false
+//     });
+    
+//     doc.text('Location: Bonaberi-Douala, beside Santa', 40, footerY + 32, {
+//       width: 515,
+//       continued: false
+//     });
+    
+//     doc.text('Lucia Telecommunications, Civil, Electrical and Mechanical Engineering Services.', 40, footerY + 44, {
+//       width: 515,
+//       continued: false
+//     });
+    
+//     // ✅ RESTORE state after drawing footer
+//     doc.restore();
+//   }
 
   // drawFooter(doc, poData, pageNum, totalPages) {
   //   const footerY = doc.page.height - 80;
@@ -1649,8 +1698,83 @@ class PDFService {
     });
   }
 
+  // generateCashRequestContent(doc, data) {
+  //   let yPos = 50;
+
+  //   // Header with logo and company info
+  //   this.drawCashRequestHeader(doc, yPos, data);
+  //   yPos += 90;
+
+  //   // Request title bar
+  //   this.drawCashRequestTitleBar(doc, yPos, data);
+  //   yPos += 60;
+
+  //   // Employee and Request Details
+  //   yPos = this.drawCashRequestDetails(doc, yPos, data);
+
+  //   // Check page break before approval chain
+  //   if (yPos > 600) {
+  //     doc.addPage();
+  //     yPos = 50;
+  //   }
+
+  //   // Disbursement History (if exists)
+  //   if (data.disbursements && data.disbursements.length > 0) {
+  //     yPos = this.drawDisbursementHistory(doc, yPos, data);
+      
+  //     // Check page break after disbursement
+  //     if (yPos > 650) {
+  //       doc.addPage();
+  //       yPos = 50;
+  //     }
+  //   }
+
+  //   // Approval Chain Timeline
+  //   yPos = this.drawApprovalChainTimeline(doc, yPos, data);
+
+  //   // Check page break before financial summary
+  //   if (yPos > 650) {
+  //     doc.addPage();
+  //     yPos = 50;
+  //   }
+
+  //   // Financial Summary
+  //   yPos = this.drawCashRequestFinancialSummary(doc, yPos, data);
+
+  //   // Budget Allocation (if exists)
+  //   if (data.budgetAllocation && data.budgetAllocation.budgetCodeId) {
+  //     if (yPos > 650) {
+  //       doc.addPage();
+  //       yPos = 50;
+  //     }
+  //     yPos = this.drawBudgetAllocation(doc, yPos, data);
+  //   }
+
+  //   // Check page break before signatures
+  //   if (yPos > 680) {
+  //     doc.addPage();
+  //     yPos = 50;
+  //   }
+
+  //   // Signature Section
+  //   this.drawCashRequestSignatureSection(doc, yPos, data);
+
+  //   // Footer on all pages
+  //   const range = doc.bufferedPageRange();
+  //   for (let i = 0; i < range.count; i++) {
+  //     doc.switchToPage(i);
+  //     this.drawCashRequestFooter(doc, data);
+  //   }
+  // }
+
+
   generateCashRequestContent(doc, data) {
     let yPos = 50;
+    let currentPage = 1;
+
+    console.log('=== STARTING CASH REQUEST PDF GENERATION ===');
+    console.log('Request ID:', data._id);
+    console.log('Employee:', data.employee?.fullName);
 
     // Header with logo and company info
     this.drawCashRequestHeader(doc, yPos, data);
@@ -1666,6 +1790,7 @@ class PDFService {
     // Check page break before approval chain
     if (yPos > 600) {
       doc.addPage();
+      currentPage++;
       yPos = 50;
     }
 
@@ -1676,6 +1801,7 @@ class PDFService {
       // Check page break after disbursement
       if (yPos > 650) {
         doc.addPage();
+        currentPage++;
         yPos = 50;
       }
     }
@@ -1686,6 +1812,7 @@ class PDFService {
     // Check page break before financial summary
     if (yPos > 650) {
       doc.addPage();
+      currentPage++;
       yPos = 50;
     }
 
@@ -1696,6 +1823,7 @@ class PDFService {
     if (data.budgetAllocation && data.budgetAllocation.budgetCodeId) {
       if (yPos > 650) {
         doc.addPage();
+        currentPage++;
         yPos = 50;
       }
       yPos = this.drawBudgetAllocation(doc, yPos, data);
@@ -1704,18 +1832,32 @@ class PDFService {
     // Check page break before signatures
     if (yPos > 680) {
       doc.addPage();
+      currentPage++;
       yPos = 50;
     }
 
     // Signature Section
     this.drawCashRequestSignatureSection(doc, yPos, data);
 
-    // Footer on all pages
+    // ✅ FIXED: Footer on all pages with CORRECT indexing
     const range = doc.bufferedPageRange();
+    console.log('📄 Drawing footers for pages. Range:', range);
+    
+    // PDFKit uses 0-based indexing for switchToPage when bufferPages is enabled
+    // But the range starts at 0
     for (let i = 0; i < range.count; i++) {
-      doc.switchToPage(i);
-      this.drawCashRequestFooter(doc, data);
+      try {
+        // PDFKit's bufferedPageRange returns { start: 0, count: N }
+        // switchToPage expects 0-based index
+        doc.switchToPage(range.start + i);
+        this.drawCashRequestFooter(doc, data, i + 1, range.count);
+        console.log(`✅ Footer drawn on page ${i + 1} of ${range.count}`);
+      } catch (error) {
+        console.error(`❌ Error drawing footer on page ${i + 1}:`, error.message);
+      }
     }
+    
+    console.log('=== CASH REQUEST PDF CONTENT GENERATION COMPLETE ===');
   }
 
   drawCashRequestHeader(doc, yPos, data) {
@@ -2329,30 +2471,74 @@ class PDFService {
     }
   }
 
-  drawCashRequestFooter(doc, data) {
-    // Footer is drawn on the current page
+  // drawCashRequestFooter(doc, data) {
+  //   // Footer is drawn on the current page
+  //   const footerY = doc.page.height - 70;
+    
+  //   // Horizontal line
+  //   doc.strokeColor('#CCCCCC')
+  //      .lineWidth(0.5)
+  //      .moveTo(40, footerY)
+  //      .lineTo(555, footerY)
+  //      .stroke();
+
+  //   // Footer content
+  //   doc.fontSize(7)
+  //      .font(this.defaultFont)
+  //      .fillColor('#666666');
+
+  //   // Registration
+  //   doc.text('RC/DLA/2014/B/2690 NIU: M061421030521', 40, footerY + 8);
+    
+  //   // Generation timestamp
+  //   doc.text(`Generated: ${new Date().toLocaleString('en-GB')}`, 40, footerY + 20);
+    
+  //   // Contact
+  //   doc.text('679586444 | info@gratoengineering.com', 40, footerY + 32);
+  // }
+
+  drawCashRequestFooter(doc, data, pageNum, totalPages) {
+    // Save current state
+    doc.save();
+    
     const footerY = doc.page.height - 70;
     
     // Horizontal line
     doc.strokeColor('#CCCCCC')
-       .lineWidth(0.5)
-       .moveTo(40, footerY)
-       .lineTo(555, footerY)
-       .stroke();
+      .lineWidth(0.5)
+      .moveTo(40, footerY)
+      .lineTo(555, footerY)
+      .stroke();
 
     // Footer content
     doc.fontSize(7)
-       .font(this.defaultFont)
-       .fillColor('#666666');
+      .font(this.defaultFont)
+      .fillColor('#666666');
 
     // Registration
-    doc.text('RC/DLA/2014/B/2690 NIU: M061421030521', 40, footerY + 8);
+    doc.text('RC/DLA/2014/B/2690 NIU: M061421030521', 40, footerY + 8, {
+      continued: false
+    });
+    
+    // Page number (right aligned)
+    doc.text(`Page ${pageNum} / ${totalPages}`, 480, footerY + 8, {
+      width: 75,
+      align: 'right',
+      continued: false
+    });
     
     // Generation timestamp
-    doc.text(`Generated: ${new Date().toLocaleString('en-GB')}`, 40, footerY + 20);
+    doc.text(`Generated: ${new Date().toLocaleString('en-GB')}`, 40, footerY + 20, {
+      continued: false
+    });
     
     // Contact
-    doc.text('679586444 | info@gratoengineering.com', 40, footerY + 32);
+    doc.text('679586444 | info@gratoengineering.com', 40, footerY + 32, {
+      continued: false
+    });
+    
+    // Restore state
+    doc.restore();
   }
 
   // ============================================
