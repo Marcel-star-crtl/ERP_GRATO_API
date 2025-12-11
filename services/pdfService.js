@@ -1772,8 +1772,8 @@ class PDFService {
     let yPos = 50;
     let currentPage = 1;
 
-    console.log('=== STARTING CASH REQUEST PDF GENERATION ===');
-    console.log('Request ID:', data._id);
+    console.log('=== STARTING PETTY CASH FORM PDF GENERATION ===');
+    console.log('Form Number:', data.displayId);
     console.log('Employee:', data.employee?.fullName);
 
     // Header with logo and company info
@@ -1784,26 +1784,36 @@ class PDFService {
     this.drawCashRequestTitleBar(doc, yPos, data);
     yPos += 60;
 
-    // Employee and Request Details
-    yPos = this.drawCashRequestDetails(doc, yPos, data);
+    // Employee and Request Details (Basic Info Only)
+    yPos = this.drawCashRequestBasicDetails(doc, yPos, data);
+
+    // Check page break before items table
+    if (yPos > 650) {
+      doc.addPage();
+      currentPage++;
+      yPos = 50;
+    }
+
+    // ✅ NEW: Items Table
+    const tableResult = this.drawPettyCashItemsTable(doc, yPos, data, currentPage);
+    yPos = tableResult.yPos;
+    currentPage = tableResult.currentPage;
+
+    // Check page break before purpose
+    if (yPos > 650) {
+      doc.addPage();
+      currentPage++;
+      yPos = 50;
+    }
+
+    // Purpose and Justification
+    yPos = this.drawPettyCashPurpose(doc, yPos, data);
 
     // Check page break before approval chain
     if (yPos > 600) {
       doc.addPage();
       currentPage++;
       yPos = 50;
-    }
-
-    // Disbursement History (if exists)
-    if (data.disbursements && data.disbursements.length > 0) {
-      yPos = this.drawDisbursementHistory(doc, yPos, data);
-      
-      // Check page break after disbursement
-      if (yPos > 650) {
-        doc.addPage();
-        currentPage++;
-        yPos = 50;
-      }
     }
 
     // Approval Chain Timeline
@@ -1819,36 +1829,22 @@ class PDFService {
     // Financial Summary
     yPos = this.drawCashRequestFinancialSummary(doc, yPos, data);
 
-    // Budget Allocation (if exists)
-    if (data.budgetAllocation && data.budgetAllocation.budgetCodeId) {
-      if (yPos > 650) {
-        doc.addPage();
-        currentPage++;
-        yPos = 50;
-      }
-      yPos = this.drawBudgetAllocation(doc, yPos, data);
-    }
-
-    // Check page break before signatures
+    // Check page break before signature
     if (yPos > 680) {
       doc.addPage();
       currentPage++;
       yPos = 50;
     }
 
-    // Signature Section
-    this.drawCashRequestSignatureSection(doc, yPos, data);
+    // ✅ UPDATED: Single Buyer Acknowledgment Signature
+    this.drawBuyerAcknowledgmentSignature(doc, yPos, data);
 
-    // ✅ FIXED: Footer on all pages with CORRECT indexing
+    // Footer on all pages
     const range = doc.bufferedPageRange();
     console.log('📄 Drawing footers for pages. Range:', range);
     
-    // PDFKit uses 0-based indexing for switchToPage when bufferPages is enabled
-    // But the range starts at 0
     for (let i = 0; i < range.count; i++) {
       try {
-        // PDFKit's bufferedPageRange returns { start: 0, count: N }
-        // switchToPage expects 0-based index
         doc.switchToPage(range.start + i);
         this.drawCashRequestFooter(doc, data, i + 1, range.count);
         console.log(`✅ Footer drawn on page ${i + 1} of ${range.count}`);
@@ -1857,7 +1853,327 @@ class PDFService {
       }
     }
     
-    console.log('=== CASH REQUEST PDF CONTENT GENERATION COMPLETE ===');
+    console.log('=== PETTY CASH FORM PDF CONTENT GENERATION COMPLETE ===');
+  }
+
+  drawPettyCashItemsTable(doc, yPos, data, currentPage) {
+  console.log('=== DRAWING ITEMS TABLE ===');
+  console.log('Items data:', data.items);
+  
+  // Section header
+  doc.fontSize(11)
+     .font(this.boldFont)
+     .fillColor('#000000')
+     .text('Requested Items', 40, yPos);
+  
+  yPos += 20;
+
+  const tableWidth = 515;
+  const colX = {
+    no: 40,
+    desc: 70,
+    qty: 350,
+    unit: 420,
+    price: 485
+  };
+  
+  let currentY = yPos;
+  const pageBottomLimit = 720;
+
+  // Draw table header
+  const drawTableHeader = (y) => {
+    // Table header with gray background
+    doc.fillColor('#F5F5F5')
+       .rect(40, y, tableWidth, 20)
+       .fill();
+
+    doc.strokeColor('#CCCCCC')
+       .lineWidth(0.5)
+       .rect(40, y, tableWidth, 20)
+       .stroke();
+
+    doc.fillColor('#000000')
+       .fontSize(9)
+       .font(this.boldFont);
+
+    // Column headers
+    doc.text('#', colX.no + 5, y + 6);
+    doc.text('Description', colX.desc + 5, y + 6);
+    doc.text('Quantity', colX.qty, y + 6);
+    doc.text('Unit', colX.unit, y + 6);
+    doc.text('Est. Price', colX.price, y + 6);
+
+    // Vertical lines for header
+    [colX.desc, colX.qty, colX.unit, colX.price].forEach(x => {
+      doc.moveTo(x, y).lineTo(x, y + 20).stroke();
+    });
+
+    return y + 20;
+  };
+
+  currentY = drawTableHeader(currentY);
+
+  // Table rows
+  const items = Array.isArray(data.items) ? data.items : [];
+  console.log(`Processing ${items.length} items`);
+
+  if (items.length === 0) {
+    // No items row
+    doc.fillColor('#F9F9F9')
+       .rect(40, currentY, tableWidth, 25)
+       .fill();
+
+    doc.strokeColor('#CCCCCC')
+       .rect(40, currentY, tableWidth, 25)
+       .stroke();
+
+    doc.fillColor('#666666')
+       .fontSize(8)
+       .font(this.defaultFont)
+       .text('No items found', colX.desc + 5, currentY + 8);
+    
+    currentY += 25;
+  } else {
+    items.forEach((item, index) => {
+      console.log(`Processing item ${index + 1}:`, item);
+      
+      const description = this.safeString(item.description, 'No description');
+      const quantity = this.safeNumber(item.quantity, 0);
+      const unit = this.safeString(item.unit || item.measuringUnit, 'pcs');
+      const estimatedPrice = this.safeNumber(item.estimatedPrice, 0);
+      
+      // Calculate dynamic row height based on description
+      const descWidth = 270;
+      doc.fontSize(8).font(this.defaultFont);
+      const descHeight = doc.heightOfString(description, { width: descWidth, lineGap: 1 });
+      const rowHeight = Math.max(25, descHeight + 12);
+      
+      // Check if row will fit on current page
+      if (currentY + rowHeight > pageBottomLimit) {
+        doc.addPage();
+        currentPage++;
+        currentY = 50;
+        
+        // Redraw section header
+        doc.fontSize(11)
+           .font(this.boldFont)
+           .fillColor('#000000')
+           .text('Requested Items (continued)', 40, currentY);
+        currentY += 20;
+        
+        // Redraw table header
+        currentY = drawTableHeader(currentY);
+      }
+
+      // Row border
+      doc.strokeColor('#CCCCCC')
+         .rect(40, currentY, tableWidth, rowHeight)
+         .stroke();
+
+      doc.fillColor('#000000')
+         .fontSize(8)
+         .font(this.defaultFont);
+
+      // Item number
+      const textY = currentY + (rowHeight / 2) - 4;
+      doc.text(`${index + 1}`, colX.no + 5, textY);
+
+      // Description - with word wrap
+      doc.text(description, colX.desc + 5, currentY + 6, {
+        width: descWidth,
+        align: 'left',
+        lineGap: 1
+      });
+      
+      // Other columns - vertically centered
+      doc.text(quantity.toFixed(2), colX.qty, textY);
+      doc.text(unit, colX.unit, textY);
+      doc.text(estimatedPrice > 0 ? this.formatCurrency(estimatedPrice) : 'TBD', colX.price, textY);
+
+      // Vertical lines for row
+      [colX.desc, colX.qty, colX.unit, colX.price].forEach(x => {
+        doc.moveTo(x, currentY).lineTo(x, currentY + rowHeight).stroke();
+      });
+
+      currentY += rowHeight;
+    });
+  }
+
+  currentY += 15;
+
+  return { yPos: currentY, currentPage };
+}
+
+// ✅ NEW: Purpose Section (Separate from Basic Details)
+drawPettyCashPurpose(doc, yPos, data) {
+  yPos += 5;
+  
+  // Purpose
+  doc.fontSize(11)
+     .font(this.boldFont)
+     .fillColor('#000000')
+     .text('Purpose', 40, yPos);
+  
+  yPos += 15;
+
+  const purposeText = this.safeString(data.purpose || data.title, 'N/A');
+  doc.fontSize(9)
+     .font(this.defaultFont)
+     .fillColor('#333333')
+     .text(purposeText, 40, yPos, {
+       width: 515,
+       align: 'justify',
+       lineGap: 3
+     });
+
+  const purposeHeight = doc.heightOfString(purposeText, { width: 515 });
+  yPos += Math.min(purposeHeight, 60) + 15;
+
+  // Business Justification
+  doc.fontSize(11)
+     .font(this.boldFont)
+     .fillColor('#000000')
+     .text('Business Justification', 40, yPos);
+  
+  yPos += 15;
+
+  const justificationText = this.safeString(
+    data.businessJustification || data.justification,
+    'Standard business expense'
+  );
+  
+  doc.fontSize(9)
+     .font(this.defaultFont)
+     .fillColor('#333333')
+     .text(justificationText, 40, yPos, {
+       width: 515,
+       align: 'justify',
+       lineGap: 3
+     });
+
+  const justificationHeight = doc.heightOfString(justificationText, { width: 515 });
+  yPos += Math.min(justificationHeight, 70) + 20;
+
+  return yPos;
+}
+
+// ✅ NEW: Single Buyer Acknowledgment Signature Section
+drawBuyerAcknowledgmentSignature(doc, yPos, data) {
+  yPos += 20;
+  
+  // Section title
+  doc.fontSize(11)
+     .font(this.boldFont)
+     .fillColor('#000000')
+     .text('Buyer Acknowledgment', 40, yPos);
+  
+  yPos += 25;
+
+  // Signature box with light blue background
+  const boxHeight = 100;
+  doc.rect(40, yPos, 515, boxHeight)
+     .fillAndStroke('#F0F8FF', '#1890FF');
+
+  yPos += 15;
+
+  // Instruction text
+  doc.fontSize(8)
+     .font(this.defaultFont)
+     .fillColor('#333333')
+     .text(
+       'I hereby acknowledge receipt of the cash amount specified above for the stated purpose.',
+       50, yPos, {
+         width: 495,
+         align: 'justify'
+       }
+     );
+
+  yPos += 30;
+
+  // Centered buyer signature
+  const centerX = 180;
+  const lineWidth = 200;
+
+  // Buyer Acknowledgment
+  doc.moveTo(centerX, yPos)
+     .lineTo(centerX + lineWidth, yPos)
+     .strokeColor('#000000')
+     .lineWidth(0.5)
+     .stroke();
+
+  doc.fontSize(8)
+     .font(this.boldFont)
+     .fillColor('#000000')
+     .text('Buyer Signature', centerX, yPos + 5);
+
+  doc.fontSize(7)
+     .font(this.defaultFont)
+     .fillColor('#666666')
+     .text('Name: _______________________', centerX, yPos + 18);
+
+  doc.text('Date: ________________________', centerX, yPos + 30);
+}
+
+
+  // ✅ NEW: Basic Details (Employee Info Only)
+  drawCashRequestBasicDetails(doc, yPos, data) {
+    yPos += 10;
+    
+    // Section header
+    doc.fontSize(11)
+      .font(this.boldFont)
+      .fillColor('#000000')
+      .text('Employee Details', 40, yPos);
+    
+    yPos += 20;
+
+    // Compact details box
+    const boxHeight = 80;
+    
+    doc.rect(40, yPos, 515, boxHeight)
+      .strokeColor('#CCCCCC')
+      .lineWidth(0.5)
+      .stroke();
+
+    yPos += 12;
+
+    // Left Column - Employee Info
+    doc.fontSize(8)
+      .font(this.boldFont)
+      .fillColor('#000000')
+      .text('Employee Name:', 50, yPos);
+    
+    doc.font(this.defaultFont)
+      .fontSize(9)
+      .text(data.employee?.fullName || 'N/A', 50, yPos + 12);
+    
+    doc.fontSize(8)
+      .fillColor('#666666')
+      .text(`Department: ${data.employee?.department || 'N/A'}`, 50, yPos + 25);
+
+    doc.text(`Email: ${data.employee?.email || 'N/A'}`, 50, yPos + 38);
+
+    // Right Column - Request Info
+    doc.fillColor('#000000')
+      .fontSize(8)
+      .font(this.boldFont)
+      .text('Request Type:', 300, yPos);
+    
+    doc.font(this.defaultFont)
+      .fontSize(9)
+      .text('Petty Cash', 300, yPos + 12);
+
+    doc.font(this.boldFont)
+      .fontSize(8)
+      .text('Urgency:', 300, yPos + 25);
+    
+    doc.font(this.defaultFont)
+      .fontSize(9)
+      .text(this.formatUrgency(data.urgency), 300, yPos + 37);
+
+    yPos += boxHeight + 15;
+
+    return yPos;
   }
 
   drawCashRequestHeader(doc, yPos, data) {
@@ -2498,48 +2814,46 @@ class PDFService {
   // }
 
   drawCashRequestFooter(doc, data, pageNum, totalPages) {
-    // Save current state
-    doc.save();
-    
-    const footerY = doc.page.height - 70;
-    
-    // Horizontal line
-    doc.strokeColor('#CCCCCC')
-      .lineWidth(0.5)
-      .moveTo(40, footerY)
-      .lineTo(555, footerY)
-      .stroke();
+  doc.save();
+  
+  const footerY = doc.page.height - 70;
+  
+  // Horizontal line
+  doc.strokeColor('#CCCCCC')
+     .lineWidth(0.5)
+     .moveTo(40, footerY)
+     .lineTo(555, footerY)
+     .stroke();
 
-    // Footer content
-    doc.fontSize(7)
-      .font(this.defaultFont)
-      .fillColor('#666666');
+  // Footer content
+  doc.fontSize(7)
+     .font(this.defaultFont)
+     .fillColor('#666666');
 
-    // Registration
-    doc.text('RC/DLA/2014/B/2690 NIU: M061421030521', 40, footerY + 8, {
-      continued: false
-    });
-    
-    // Page number (right aligned)
-    doc.text(`Page ${pageNum} / ${totalPages}`, 480, footerY + 8, {
-      width: 75,
-      align: 'right',
-      continued: false
-    });
-    
-    // Generation timestamp
-    doc.text(`Generated: ${new Date().toLocaleString('en-GB')}`, 40, footerY + 20, {
-      continued: false
-    });
-    
-    // Contact
-    doc.text('679586444 | info@gratoengineering.com', 40, footerY + 32, {
-      continued: false
-    });
-    
-    // Restore state
-    doc.restore();
-  }
+  // Registration
+  doc.text('RC/DLA/2014/B/2690 NIU: M061421030521', 40, footerY + 8, {
+    continued: false
+  });
+  
+  // Page number (right aligned)
+  doc.text(`Page ${pageNum} / ${totalPages}`, 480, footerY + 8, {
+    width: 75,
+    align: 'right',
+    continued: false
+  });
+  
+  // Generation timestamp
+  doc.text(`Generated: ${new Date().toLocaleString('en-GB')}`, 40, footerY + 20, {
+    continued: false
+  });
+  
+  // Contact
+  doc.text('679586444 | info@gratoengineering.com', 40, footerY + 32, {
+    continued: false
+  });
+  
+  doc.restore();
+}
 
   // ============================================
   // HELPER METHODS
