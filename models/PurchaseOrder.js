@@ -466,28 +466,68 @@ PurchaseOrderSchema.virtual('supplierPerformanceAtCreation').get(function() {
   return this.supplierDetails.performanceSnapshot || null;
 });
 
-// Method to generate PO number
-PurchaseOrderSchema.pre('save', async function(next) {
-  // Only generate PO number if it's a new document and doesn't have one
-  if (this.isNew && !this.poNumber) {
-    try {
-      const count = await this.constructor.countDocuments();
-      const now = new Date();
-      const year = now.getFullYear();
-      this.poNumber = `PO-${year}-${String(count + 1).padStart(6, '0')}`;
-    } catch (error) {
-      return next(error);
+// // Method to generate PO number
+// PurchaseOrderSchema.pre('save', async function(next) {
+//   // Only generate PO number if it's a new document and doesn't have one
+//   if (this.isNew && !this.poNumber) {
+//     try {
+//       const count = await this.constructor.countDocuments();
+//       const now = new Date();
+//       const year = now.getFullYear();
+//       this.poNumber = `PO-${year}-${String(count + 1).padStart(6, '0')}`;
+//     } catch (error) {
+//       return next(error);
+//     }
+//   }
+
+//   // Update integration metadata
+//   if (this.isNew || this.isModified('items')) {
+//     const itemsFromDb = this.items.filter(item => item.itemId).length;
+//     this.integrationData.itemsFromDatabase = itemsFromDb;
+//     this.integrationData.manualItems = this.items.length - itemsFromDb;
+//   }
+
+//   this.lastModifiedDate = new Date();
+//   next();
+// });
+
+
+PurchaseOrderSchema.pre('save', function(next) {
+  // Recalculate item totals and overall totals with tax
+  if (this.items && this.items.length > 0) {
+    // First, ensure each item has correct totalPrice
+    this.items.forEach(item => {
+      if (item.quantity && item.unitPrice) {
+        item.totalPrice = item.quantity * item.unitPrice;
+      }
+    });
+
+    // Calculate subtotal from all items
+    const subtotal = this.items.reduce((sum, item) => {
+      return sum + (item.totalPrice || 0);
+    }, 0);
+
+    // Store subtotal
+    this.subtotalAmount = subtotal;
+
+    // Calculate and apply tax if applicable
+    if (this.taxApplicable && this.taxRate > 0) {
+      const taxAmount = subtotal * (this.taxRate / 100);
+      this.taxAmount = taxAmount;
+      this.totalAmount = subtotal + taxAmount;
+    } else {
+      // No tax applicable
+      this.taxAmount = 0;
+      this.totalAmount = subtotal;
     }
+
+    console.log(`Tax calculation for ${this.poNumber || 'New PO'}:`);
+    console.log(`  Subtotal: ${subtotal}`);
+    console.log(`  Tax Rate: ${this.taxRate}%`);
+    console.log(`  Tax Amount: ${this.taxAmount}`);
+    console.log(`  Total: ${this.totalAmount}`);
   }
 
-  // Update integration metadata
-  if (this.isNew || this.isModified('items')) {
-    const itemsFromDb = this.items.filter(item => item.itemId).length;
-    this.integrationData.itemsFromDatabase = itemsFromDb;
-    this.integrationData.manualItems = this.items.length - itemsFromDb;
-  }
-
-  this.lastModifiedDate = new Date();
   next();
 });
 

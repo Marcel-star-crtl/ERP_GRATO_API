@@ -232,7 +232,7 @@ const createPurchaseOrder = async (req, res) => {
     }
 
     // Validate and process items
-    let calculatedTotal = 0;
+    let calculatedSubtotal = 0;
     const processedItems = await Promise.all(
       items.map(async (item, index) => {
         if (!item.description || !item.quantity || item.quantity <= 0 || !item.unitPrice || item.unitPrice <= 0) {
@@ -240,7 +240,7 @@ const createPurchaseOrder = async (req, res) => {
         }
 
         const itemTotal = item.quantity * item.unitPrice;
-        calculatedTotal += itemTotal;
+        calculatedSubtotal += itemTotal;
 
         // If itemId is provided, fetch additional details from database
         let itemDetails = {
@@ -268,6 +268,25 @@ const createPurchaseOrder = async (req, res) => {
       })
     );
 
+
+    // Calculate tax
+    let calculatedTaxAmount = 0;
+    let calculatedTotal = calculatedSubtotal;
+
+    if (taxApplicable && taxRate > 0) {
+      calculatedTaxAmount = calculatedSubtotal * (taxRate / 100);
+      calculatedTotal = calculatedSubtotal + calculatedTaxAmount;
+    }
+
+    console.log('Purchase Order Calculations:', {
+      subtotal: calculatedSubtotal,
+      taxRate: taxRate,
+      taxAmount: calculatedTaxAmount,
+      total: calculatedTotal
+    });
+
+
+
     // Validate dates
     const deliveryDate = new Date(expectedDeliveryDate);
     const today = new Date();
@@ -291,9 +310,17 @@ const createPurchaseOrder = async (req, res) => {
       supplierId: supplier?._id || null, // Use Supplier model ID for registered suppliers, null for external
       buyerId: req.user.userId,
 
-      // Order details
+      // // Order details
+      // items: processedItems,
+      // totalAmount: calculatedTotal,
+      // currency,
+      // taxApplicable,
+      // taxRate,
+
       items: processedItems,
-      totalAmount: calculatedTotal,
+      subtotalAmount: calculatedSubtotal,
+      totalAmount: calculatedTotal, 
+      taxAmount: calculatedTaxAmount,
       currency,
       taxApplicable,
       taxRate,

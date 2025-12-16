@@ -138,7 +138,8 @@ const createRequisition = async (req, res) => {
     console.log('Processed items:', processedItems);
 
     // ✅ FIXED: Generate approval chain using employee EMAIL instead of name
-    const approvalChain = getCashRequestApprovalChain(employee.email);
+    // const approvalChain = getApprovalChainForRequisition(employee.email);
+    const approvalChain = getApprovalChainForRequisition(employee.name, employee.department);
     if (!approvalChain || approvalChain.length === 0) {
       return res.status(400).json({
         success: false,
