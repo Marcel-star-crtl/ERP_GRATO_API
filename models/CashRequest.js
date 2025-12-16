@@ -389,12 +389,25 @@ const CashRequestSchema = new mongoose.Schema({
   },
 
   // Attachments for initial request
+  // attachments: [{
+  //   name: String,
+  //   url: String,
+  //   publicId: String,
+  //   size: Number,
+  //   mimetype: String
+  // }],
+
   attachments: [{
     name: String,
     url: String,
     publicId: String,
+    localPath: String, 
     size: Number,
-    mimetype: String
+    mimetype: String,
+    uploadedAt: {
+      type: Date,
+      default: Date.now
+    }
   }],
 
   itemizedBreakdown: [{
@@ -583,10 +596,32 @@ CashRequestSchema.methods.getApprovalProgress = function() {
 //   return ['disbursed', 'fully_disbursed', 'partially_disbursed'].includes(this.status);
 // };
 
-// Method to check if request can be justified
+// // Method to check if request can be justified
+// CashRequestSchema.methods.canSubmitJustification = function() {
+//   return ['disbursed', 'fully_disbursed'].includes(this.status);
+// };
+
+// ✅ UPDATED: Method to check if request can be justified
 CashRequestSchema.methods.canSubmitJustification = function() {
+  // ONLY cash advances need justification, NOT reimbursements
+  if (this.requestMode === 'reimbursement') {
+    return false;
+  }
+  
   return ['disbursed', 'fully_disbursed'].includes(this.status);
 };
+
+// ✅ NEW: Method to check if request is complete
+CashRequestSchema.methods.isComplete = function() {
+  if (this.requestMode === 'reimbursement') {
+    // Reimbursements complete after disbursement
+    return ['fully_disbursed', 'completed'].includes(this.status);
+  } else {
+    // Advances complete after justification approval
+    return this.status === 'completed';
+  }
+};
+
 
 // Method to check if justification can be approved by supervisor
 CashRequestSchema.methods.canSupervisorApproveJustification = function() {
@@ -656,6 +691,54 @@ CashRequestSchema.methods.getBudgetInfo = function() {
 // });
 
 
+// CashRequestSchema.pre('save', function(next) {
+//   if (this.requestMode === 'reimbursement') {
+//     // Enforce 100,000 limit
+//     if (this.amountRequested > 100000) {
+//       return next(new Error('Reimbursement amount cannot exceed XAF 100,000'));
+//     }
+
+//     // Receipts are mandatory
+//     if (!this.reimbursementDetails?.receiptDocuments || 
+//         this.reimbursementDetails.receiptDocuments.length === 0) {
+//       return next(new Error('Receipt documents are mandatory for reimbursement requests'));
+//     }
+
+//     // ✅ FIXED: Itemized breakdown is now OPTIONAL
+//     // Remove or comment out this validation:
+//     /*
+//     if (!this.reimbursementDetails?.itemizedBreakdown || 
+//         this.reimbursementDetails.itemizedBreakdown.length === 0) {
+//       return next(new Error('Itemized breakdown is required for reimbursement requests'));
+//     }
+//     */
+    
+//     // ✅ Optional validation: If itemized breakdown is provided, validate it matches total
+//     if (this.reimbursementDetails?.itemizedBreakdown && 
+//         this.reimbursementDetails.itemizedBreakdown.length > 0) {
+      
+//       const breakdownTotal = this.reimbursementDetails.itemizedBreakdown.reduce(
+//         (sum, item) => sum + (parseFloat(item.amount) || 0), 
+//         0
+//       );
+      
+//       const discrepancy = Math.abs(breakdownTotal - this.amountRequested);
+      
+//       if (discrepancy > 0.01) {
+//         return next(new Error(
+//           `Itemized breakdown total (XAF ${breakdownTotal.toFixed(2)}) must match ` +
+//           `requested amount (XAF ${this.amountRequested.toFixed(2)})`
+//         ));
+//       }
+      
+//       console.log(`✓ Itemized breakdown validated: ${this.reimbursementDetails.itemizedBreakdown.length} items`);
+//     }
+//   }
+//   next();
+// });
+
+
+// ✅ UPDATED: Pre-save validation for reimbursement requests
 CashRequestSchema.pre('save', function(next) {
   if (this.requestMode === 'reimbursement') {
     // Enforce 100,000 limit
@@ -670,34 +753,7 @@ CashRequestSchema.pre('save', function(next) {
     }
 
     // ✅ FIXED: Itemized breakdown is now OPTIONAL
-    // Remove or comment out this validation:
-    /*
-    if (!this.reimbursementDetails?.itemizedBreakdown || 
-        this.reimbursementDetails.itemizedBreakdown.length === 0) {
-      return next(new Error('Itemized breakdown is required for reimbursement requests'));
-    }
-    */
-    
-    // ✅ Optional validation: If itemized breakdown is provided, validate it matches total
-    if (this.reimbursementDetails?.itemizedBreakdown && 
-        this.reimbursementDetails.itemizedBreakdown.length > 0) {
-      
-      const breakdownTotal = this.reimbursementDetails.itemizedBreakdown.reduce(
-        (sum, item) => sum + (parseFloat(item.amount) || 0), 
-        0
-      );
-      
-      const discrepancy = Math.abs(breakdownTotal - this.amountRequested);
-      
-      if (discrepancy > 0.01) {
-        return next(new Error(
-          `Itemized breakdown total (XAF ${breakdownTotal.toFixed(2)}) must match ` +
-          `requested amount (XAF ${this.amountRequested.toFixed(2)})`
-        ));
-      }
-      
-      console.log(`✓ Itemized breakdown validated: ${this.reimbursementDetails.itemizedBreakdown.length} items`);
-    }
+    // No validation needed for itemized breakdown
   }
   next();
 });

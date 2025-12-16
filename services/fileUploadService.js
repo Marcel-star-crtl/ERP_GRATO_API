@@ -135,7 +135,7 @@ exports.getSignedUrl = (publicId, options = {}) => {
             secure: true,
             transformation,
             sign_url: true,
-            expires_at: expiresAt || Math.floor(Date.now() / 1000) + 3600 // Default 1 hour
+            expires_at: expiresAt || Math.floor(Date.now() / 1000) + 3600 
         });
     } catch (error) {
         console.error('Signed URL generation error:', error);

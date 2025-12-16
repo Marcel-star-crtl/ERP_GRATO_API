@@ -1,5 +1,3 @@
-// services/pdfService.js - COMPLETE FILE WITH FIXED PAGINATION
-
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
@@ -21,7 +19,7 @@ class PDFService {
         const doc = new PDFDocument({ 
           size: 'A4', 
           margins: this.pageMargins,
-          bufferPages: true, // ✅ CRITICAL: Enable page buffering for switchToPage
+          bufferPages: true,
           info: {
             Title: `Purchase Order - ${poData.poNumber}`,
             Author: 'GRATO ENGINEERING GLOBAL LTD',

@@ -4,11 +4,18 @@ const { getApprovalChainForRequisition } = require('../config/requisitionApprova
 const { sendPurchaseRequisitionEmail, sendEmail } = require('../services/emailService');
 const fs = require('fs');
 const path = require('path');
+const { 
+  saveFile, 
+  deleteFile,
+  deleteFiles,
+  STORAGE_CATEGORIES 
+} = require('../utils/localFileStorage');
 
 const createRequisition = async (req, res) => {
   try {
     console.log('=== CREATE PURCHASE REQUISITION STARTED ===');
     console.log('Request body:', JSON.stringify(req.body, null, 2));
+    console.log('Files received:', req.files?.length || 0); // ✅ Log files
 
     const {
       requisitionNumber,
@@ -23,6 +30,7 @@ const createRequisition = async (req, res) => {
       justificationOfPreferredSupplier,
       items
     } = req.body;
+
 
     // Validate required fields
     if (!requisitionNumber) {
@@ -130,45 +138,103 @@ const createRequisition = async (req, res) => {
     console.log('Processed items:', processedItems);
 
     // ✅ FIXED: Generate approval chain using employee EMAIL instead of name
-    const approvalChain = getApprovalChainForRequisition(employee.email);
-    console.log('Generated approval chain:', JSON.stringify(approvalChain, null, 2));
-
+    const approvalChain = getCashRequestApprovalChain(employee.email);
     if (!approvalChain || approvalChain.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Unable to determine approval chain. Please contact HR for assistance.'
+        message: 'Unable to determine approval chain. Please contact HR.'
       });
     }
 
+    // ✅ PROCESS ATTACHMENTS USING LOCAL STORAGE
+    const { 
+      saveFile, 
+      STORAGE_CATEGORIES 
+    } = require('../utils/localFileStorage');
+
     // Process attachments if any
+    // let attachments = [];
+    // if (req.files && req.files.length > 0) {
+    //   for (const file of req.files) {
+    //     try {
+    //       const fileName = `${Date.now()}-${file.originalname}`;
+    //       const uploadDir = path.join(__dirname, '../uploads/requisitions');
+    //       const filePath = path.join(uploadDir, fileName);
+
+    //       await fs.promises.mkdir(uploadDir, { recursive: true });
+
+    //       if (file.path) {
+    //         await fs.promises.rename(file.path, filePath);
+    //       }
+
+    //       attachments.push({
+    //         name: file.originalname,
+    //         url: `/uploads/requisitions/${fileName}`,
+    //         publicId: fileName,
+    //         size: file.size,
+    //         mimetype: file.mimetype
+    //       });
+    //     } catch (fileError) {
+    //       console.error('Error processing file:', file.originalname, fileError);
+    //     }
+    //   }
+    // }
+
+
     let attachments = [];
+    
     if (req.files && req.files.length > 0) {
-      for (const file of req.files) {
+      console.log(`\n📎 Processing ${req.files.length} attachment(s)...`);
+      
+      for (let i = 0; i < req.files.length; i++) {
+        const file = req.files[i];
+        
         try {
-          const fileName = `${Date.now()}-${file.originalname}`;
-          const uploadDir = path.join(__dirname, '../uploads/requisitions');
-          const filePath = path.join(uploadDir, fileName);
+          console.log(`   Processing file ${i + 1}: ${file.originalname}`);
+          
+          // Save file using local storage
+          // const fileMetadata = await saveFile(
+          //   file,
+          //   STORAGE_CATEGORIES.SUPPLIER_INVOICES, // Or create new category
+          //   'attachments', // subfolder
+          //   null // auto-generate filename
+          // );
 
-          await fs.promises.mkdir(uploadDir, { recursive: true });
-
-          if (file.path) {
-            await fs.promises.rename(file.path, filePath);
-          }
+          const fileMetadata = await saveFile(
+            file,
+            STORAGE_CATEGORIES.PURCHASE_REQUISITIONS, 
+            'attachments',
+            null
+          );
 
           attachments.push({
             name: file.originalname,
-            url: `/uploads/requisitions/${fileName}`,
-            publicId: fileName,
+            url: fileMetadata.url,
+            publicId: fileMetadata.publicId,
+            localPath: fileMetadata.localPath, // ✅ CRITICAL
             size: file.size,
-            mimetype: file.mimetype
+            mimetype: file.mimetype,
+            uploadedAt: new Date()
           });
+
+          console.log(`   ✅ Saved: ${fileMetadata.publicId}`);
+          
         } catch (fileError) {
-          console.error('Error processing file:', file.originalname, fileError);
+          console.error(`   ❌ Error processing ${file.originalname}:`, fileError);
+          // Continue with other files
+          continue;
         }
       }
+      
+      console.log(`\n✅ ${attachments.length} attachment(s) processed successfully`);
+    } else {
+      console.log('ℹ️  No attachments uploaded');
     }
 
-    // ✅ FIXED: Properly map approval chain structure to match schema
+    // Map approval chain
+    const mappedApprovalChain = mapApprovalChainForCashRequest(approvalChain);
+
+    // Create requisition with attachments
     const requisition = new PurchaseRequisition({
       requisitionNumber,
       employee: req.user.userId,
@@ -182,252 +248,123 @@ const createRequisition = async (req, res) => {
       expectedDate: new Date(expectedDate),
       justificationOfPurchase: justification,
       justificationOfPreferredSupplier,
-      items: processedItems,
-      attachments,
+      items: parsedItems,
+      attachments, // ✅ Include attachments
       status: 'pending_supervisor',
-      approvalChain: approvalChain.map(step => ({
-        level: step.level,
-        approver: {
-          // ✅ FIXED: Access nested properties correctly
-          name: step.approver.name,
-          email: step.approver.email,
-          role: step.approver.role,
-          department: step.approver.department
-        },
-        status: step.status || 'pending',
-        assignedDate: step.assignedDate || new Date()
-      }))
-    });
-
-    console.log('Requisition object before save:', {
-      requisitionNumber: requisition.requisitionNumber,
-      justificationOfPurchase: requisition.justificationOfPurchase,
-      justificationLength: requisition.justificationOfPurchase?.length,
-      itemsCount: requisition.items.length,
-      approvalChainCount: requisition.approvalChain.length,
-      firstApprover: requisition.approvalChain[0]?.approver
+      approvalChain: mappedApprovalChain
     });
 
     await requisition.save();
     console.log('✅ Requisition saved successfully with ID:', requisition._id);
+    console.log(`   Attachments: ${attachments.length}`);
 
-    // Populate employee details for response
+    // Populate employee details
     await requisition.populate('employee', 'fullName email department');
 
-    // === EMAIL NOTIFICATIONS ===
+    // Send notifications
     const notifications = [];
-    console.log('=== STARTING EMAIL NOTIFICATIONS ===');
 
-    // Get first approver
+    // Notify first approver
     const firstApprover = approvalChain[0];
-    console.log('First approver details:', firstApprover);
-
     if (firstApprover && firstApprover.approver.email) {
-      console.log('Sending notification to first approver:', firstApprover.approver.email);
-      
-      try {
-        const supervisorNotification = await sendEmail({
+      notifications.push(
+        sendEmail({
           to: firstApprover.approver.email,
           subject: `New Purchase Requisition Requires Your Approval - ${employee.fullName}`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-                <h2 style="color: #1890ff; margin: 0;">New Purchase Requisition for Approval</h2>
-                <p style="color: #666; margin: 5px 0 0 0;">A new purchase requisition has been submitted and requires your approval.</p>
-              </div>
+              <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px;">
+                <h2 style="color: #1890ff;">New Purchase Requisition for Approval</h2>
+                <p>Dear ${firstApprover.approver.name},</p>
+                <p>A new purchase requisition has been submitted and requires your approval.</p>
+                
+                <div style="background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                  <h4>Requisition Details</h4>
+                  <ul>
+                    <li><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
+                    <li><strong>Employee:</strong> ${employee.fullName}</li>
+                    <li><strong>Department:</strong> ${employee.department}</li>
+                    <li><strong>Title:</strong> ${title}</li>
+                    <li><strong>Category:</strong> ${itemCategory}</li>
+                    <li><strong>Items Count:</strong> ${parsedItems.length}</li>
+                    <li><strong>Budget:</strong> XAF ${budgetXAF ? parseFloat(budgetXAF).toLocaleString() : 'Not specified'}</li>
+                    <li><strong>Urgency:</strong> ${urgency}</li>
+                    ${attachments.length > 0 ? `<li><strong>📎 Attachments:</strong> ${attachments.length} file(s)</li>` : ''}
+                  </ul>
+                </div>
 
-              <div style="background-color: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-                <h3 style="color: #333; margin-top: 0;">Requisition Details</h3>
-                <table style="width: 100%; border-collapse: collapse;">
-                  <tr>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Requisition Number:</strong></td>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${requisition.requisitionNumber}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Employee:</strong></td>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${employee.fullName}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Department:</strong></td>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${employee.department}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Title:</strong></td>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${title}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Category:</strong></td>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${itemCategory}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Items Count:</strong></td>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${parsedItems.length}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Budget:</strong></td>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">XAF ${budgetXAF ? parseFloat(budgetXAF).toLocaleString() : 'Not specified'}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Urgency:</strong></td>
-                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${urgency}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0;"><strong>Expected Date:</strong></td>
-                    <td style="padding: 8px 0;">${new Date(expectedDate).toLocaleDateString()}</td>
-                  </tr>
-                </table>
-              </div>
+                <div style="background-color: #f0f8ff; padding: 15px; border-radius: 8px;">
+                  <h4>Justification</h4>
+                  <p>${justification}</p>
+                </div>
 
-              <div style="background-color: #f0f8ff; border-left: 4px solid #1890ff; padding: 15px; margin: 20px 0;">
-                <h4 style="margin: 0 0 10px 0; color: #1890ff;">Justification</h4>
-                <p style="margin: 0; color: #333;">${justification}</p>
-              </div>
-
-              <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">
-                <h4 style="margin: 0 0 10px 0; color: #856404;">Action Required</h4>
-                <p style="margin: 0; color: #856404;">This requisition requires your approval as the next approver in the chain. Please log into the system to review and approve/reject this request.</p>
-              </div>
-
-              <div style="text-align: center; margin: 30px 0;">
-                <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/supervisor/purchase-requisitions" 
-                   style="background-color: #1890ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-                  Review Requisition
-                </a>
-              </div>
-
-              <div style="border-top: 1px solid #e8e8e8; padding-top: 20px; color: #666; font-size: 14px;">
-                <p style="margin: 0;">Best regards,<br>Purchase Requisition Management System</p>
-                <p style="margin: 10px 0 0 0; font-size: 12px;">This is an automated notification. Please do not reply to this email.</p>
+                <p style="margin-top: 20px;">Please review this requisition in the system.</p>
               </div>
             </div>
           `
-        });
-
-        console.log('Supervisor notification result:', supervisorNotification);
-        notifications.push(Promise.resolve(supervisorNotification));
-
-      } catch (error) {
-        console.error('Failed to send supervisor notification:', error);
-        notifications.push(Promise.resolve({ error, type: 'supervisor' }));
-      }
+        }).catch(error => {
+          console.error('Failed to send supervisor notification:', error);
+          return { error, type: 'supervisor' };
+        })
+      );
     }
 
-    // Notify admins about new requisition
-    try {
-      const admins = await User.find({ role: 'admin' }).select('email fullName');
-      console.log('Found admins:', admins.map(a => ({ name: a.fullName, email: a.email })));
-
-      if (admins.length > 0) {
-        const adminEmails = admins.map(a => a.email);
-        console.log('Sending admin notification to:', adminEmails);
-
-        const adminNotification = await sendEmail({
-          to: adminEmails,
+    // Notify admins
+    const admins = await User.find({ role: 'admin' }).select('email fullName');
+    if (admins.length > 0) {
+      notifications.push(
+        sendEmail({
+          to: admins.map(a => a.email),
           subject: `New Purchase Requisition Submitted - ${employee.fullName}`,
           html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <div style="background-color: #f6ffed; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-                <h2 style="color: #52c41a; margin: 0;">New Purchase Requisition Submitted</h2>
-                <p style="color: #666; margin: 5px 0 0 0;">A new purchase requisition has been submitted by ${employee.fullName}</p>
-              </div>
-
-              <div style="background-color: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 20px;">
-                <h3 style="color: #333; margin-top: 0;">Requisition Summary</h3>
-                <ul style="list-style: none; padding: 0;">
-                  <li style="padding: 5px 0;"><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
-                  <li style="padding: 5px 0;"><strong>Employee:</strong> ${employee.fullName} (${employee.department})</li>
-                  <li style="padding: 5px 0;"><strong>Title:</strong> ${title}</li>
-                  <li style="padding: 5px 0;"><strong>Category:</strong> ${itemCategory}</li>
-                  <li style="padding: 5px 0;"><strong>Items Count:</strong> ${parsedItems.length}</li>
-                  <li style="padding: 5px 0;"><strong>Budget:</strong> XAF ${budgetXAF ? parseFloat(budgetXAF).toLocaleString() : 'Not specified'}</li>
-                  <li style="padding: 5px 0;"><strong>Urgency:</strong> ${urgency}</li>
-                  <li style="padding: 5px 0;"><strong>Status:</strong> Pending Approval</li>
-                  <li style="padding: 5px 0;"><strong>Current Approver:</strong> ${firstApprover?.approver.name} (${firstApprover?.approver.email})</li>
-                </ul>
-              </div>
-
-              <div style="text-align: center; margin: 30px 0;">
-                <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/admin/purchase-requisitions" 
-                   style="background-color: #52c41a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-                  View All Requisitions
-                </a>
-              </div>
+            <div style="font-family: Arial, sans-serif;">
+              <h3>New Purchase Requisition Submitted</h3>
+              <p><strong>${employee.fullName}</strong> has submitted a new purchase requisition.</p>
+              <ul>
+                <li><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
+                <li><strong>Title:</strong> ${title}</li>
+                <li><strong>Budget:</strong> XAF ${budgetXAF ? parseFloat(budgetXAF).toLocaleString() : 'TBD'}</li>
+                <li><strong>Items:</strong> ${parsedItems.length}</li>
+                ${attachments.length > 0 ? `<li><strong>📎 Attachments:</strong> ${attachments.length}</li>` : ''}
+                <li><strong>Current Approver:</strong> ${firstApprover?.approver.name}</li>
+              </ul>
             </div>
           `
-        });
-
-        console.log('Admin notification result:', adminNotification);
-        notifications.push(Promise.resolve(adminNotification));
-      }
-    } catch (error) {
-      console.error('Failed to send admin notification:', error);
-      notifications.push(Promise.resolve({ error, type: 'admin' }));
+        }).catch(error => {
+          console.error('Failed to send admin notification:', error);
+          return { error, type: 'admin' };
+        })
+      );
     }
 
-    // Notify employee of successful submission
-    try {
-      console.log('Sending employee confirmation to:', employee.email);
-
-      const employeeNotification = await sendEmail({
+    // Notify employee
+    notifications.push(
+      sendEmail({
         to: employee.email,
         subject: 'Purchase Requisition Submitted Successfully',
         html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-              <h2 style="color: #1890ff; margin: 0;">Purchase Requisition Submitted</h2>
-              <p style="color: #666; margin: 5px 0 0 0;">Your purchase requisition has been successfully submitted and is now under review.</p>
-            </div>
-
-            <div style="background-color: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-              <h3 style="color: #333; margin-top: 0;">Your Requisition Details</h3>
-              <ul style="list-style: none; padding: 0;">
-                <li style="padding: 5px 0;"><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
-                <li style="padding: 5px 0;"><strong>Title:</strong> ${title}</li>
-                <li style="padding: 5px 0;"><strong>Status:</strong> Pending Approval</li>
-                <li style="padding: 5px 0;"><strong>Current Approver:</strong> ${firstApprover?.approver.name}</li>
-              </ul>
-            </div>
-
-            <div style="background-color: #f0f8ff; border-left: 4px solid #1890ff; padding: 15px; margin: 20px 0;">
-              <p style="margin: 0; color: #333;"><strong>Next Steps:</strong> Your requisition is now in the approval workflow. You will receive email notifications as it progresses through each approval stage.</p>
-            </div>
-
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/employee/purchase-requisitions" 
-                 style="background-color: #1890ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
-                Track Your Requisitions
-              </a>
-            </div>
-
-            <div style="border-top: 1px solid #e8e8e8; padding-top: 20px; color: #666; font-size: 14px;">
-              <p style="margin: 0;">Thank you for using our Purchase Requisition System!</p>
-            </div>
+          <div style="font-family: Arial, sans-serif;">
+            <h3>Purchase Requisition Submitted Successfully</h3>
+            <p>Dear ${employee.fullName},</p>
+            <p>Your purchase requisition has been successfully submitted.</p>
+            <ul>
+              <li><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
+              <li><strong>Title:</strong> ${title}</li>
+              ${attachments.length > 0 ? `<li><strong>📎 Attachments:</strong> ${attachments.length} file(s) uploaded</li>` : ''}
+              <li><strong>Status:</strong> Pending Approval</li>
+              <li><strong>Current Approver:</strong> ${firstApprover?.approver.name}</li>
+            </ul>
+            <p>You will receive email notifications as your requisition progresses.</p>
           </div>
         `
-      });
+      }).catch(error => {
+        console.error('Failed to send employee notification:', error);
+        return { error, type: 'employee' };
+      })
+    );
 
-      console.log('Employee notification result:', employeeNotification);
-      notifications.push(Promise.resolve(employeeNotification));
-
-    } catch (error) {
-      console.error('Failed to send employee notification:', error);
-      notifications.push(Promise.resolve({ error, type: 'employee' }));
-    }
-
-    // Wait for all notifications to complete
-    console.log('Waiting for all notifications to complete...');
+    // Wait for notifications
     const notificationResults = await Promise.allSettled(notifications);
-    
-    notificationResults.forEach((result, index) => {
-      if (result.status === 'rejected') {
-        console.error(`Notification ${index} failed:`, result.reason);
-      } else if (result.value && result.value.error) {
-        console.error(`${result.value.type} notification failed:`, result.value.error);
-      } else {
-        console.log(`Notification ${index} sent successfully`);
-      }
-    });
-
     const notificationStats = {
       sent: notificationResults.filter(r => r.status === 'fulfilled' && !r.value?.error).length,
       failed: notificationResults.filter(r => r.status === 'rejected' || r.value?.error).length
@@ -438,40 +375,348 @@ const createRequisition = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'Purchase requisition created successfully and sent for approval',
+      message: 'Purchase requisition created successfully',
       data: requisition,
+      metadata: {
+        attachmentsUploaded: attachments.length,
+        approvalLevels: approvalChain.length
+      },
       notifications: notificationStats
     });
 
   } catch (error) {
     console.error('Create purchase requisition error:', error);
 
-    // Clean up uploaded files if request failed
+    // ✅ CLEANUP: Delete uploaded files on error
     if (req.files && req.files.length > 0) {
+      console.log('Cleaning up uploaded files due to error...');
+      const fs = require('fs').promises;
+      const fsSync = require('fs');
+      
       await Promise.allSettled(
         req.files.map(file => {
-          if (file.path) {
-            return fs.promises.unlink(file.path).catch(e => console.error('File cleanup failed:', e));
+          if (file.path && fsSync.existsSync(file.path)) {
+            return fs.unlink(file.path).catch(e => 
+              console.error('File cleanup failed:', e)
+            );
           }
         })
       );
     }
 
-    // Provide more specific error messages
-    let errorMessage = 'Failed to create purchase requisition';
-    if (error.name === 'ValidationError') {
-      const validationErrors = Object.values(error.errors).map(err => err.message);
-      errorMessage = `Validation failed: ${validationErrors.join(', ')}`;
-    }
-
     res.status(500).json({
       success: false,
-      message: errorMessage,
-      error: error.message,
-      details: error.name === 'ValidationError' ? error.errors : undefined
+      message: 'Failed to create purchase requisition',
+      error: error.message
     });
   }
 };
+
+
+//     // ✅ FIXED: Properly map approval chain structure to match schema
+//     const requisition = new PurchaseRequisition({
+//       requisitionNumber,
+//       employee: req.user.userId,
+//       title,
+//       department: employee.department,
+//       itemCategory,
+//       budgetXAF: budgetXAF ? parseFloat(budgetXAF) : undefined,
+//       budgetHolder,
+//       urgency,
+//       deliveryLocation,
+//       expectedDate: new Date(expectedDate),
+//       justificationOfPurchase: justification,
+//       justificationOfPreferredSupplier,
+//       items: processedItems,
+//       attachments,
+//       status: 'pending_supervisor',
+//       approvalChain: approvalChain.map(step => ({
+//         level: step.level,
+//         approver: {
+//           // ✅ FIXED: Access nested properties correctly
+//           name: step.approver.name,
+//           email: step.approver.email,
+//           role: step.approver.role,
+//           department: step.approver.department
+//         },
+//         status: step.status || 'pending',
+//         assignedDate: step.assignedDate || new Date()
+//       }))
+//     });
+
+//     console.log('Requisition object before save:', {
+//       requisitionNumber: requisition.requisitionNumber,
+//       justificationOfPurchase: requisition.justificationOfPurchase,
+//       justificationLength: requisition.justificationOfPurchase?.length,
+//       itemsCount: requisition.items.length,
+//       approvalChainCount: requisition.approvalChain.length,
+//       firstApprover: requisition.approvalChain[0]?.approver
+//     });
+
+//     await requisition.save();
+//     console.log('✅ Requisition saved successfully with ID:', requisition._id);
+
+//     // Populate employee details for response
+//     await requisition.populate('employee', 'fullName email department');
+
+//     // === EMAIL NOTIFICATIONS ===
+//     const notifications = [];
+//     console.log('=== STARTING EMAIL NOTIFICATIONS ===');
+
+//     // Get first approver
+//     const firstApprover = approvalChain[0];
+//     console.log('First approver details:', firstApprover);
+
+//     if (firstApprover && firstApprover.approver.email) {
+//       console.log('Sending notification to first approver:', firstApprover.approver.email);
+      
+//       try {
+//         const supervisorNotification = await sendEmail({
+//           to: firstApprover.approver.email,
+//           subject: `New Purchase Requisition Requires Your Approval - ${employee.fullName}`,
+//           html: `
+//             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+//               <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+//                 <h2 style="color: #1890ff; margin: 0;">New Purchase Requisition for Approval</h2>
+//                 <p style="color: #666; margin: 5px 0 0 0;">A new purchase requisition has been submitted and requires your approval.</p>
+//               </div>
+
+//               <div style="background-color: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+//                 <h3 style="color: #333; margin-top: 0;">Requisition Details</h3>
+//                 <table style="width: 100%; border-collapse: collapse;">
+//                   <tr>
+//                     <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Requisition Number:</strong></td>
+//                     <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${requisition.requisitionNumber}</td>
+//                   </tr>
+//                   <tr>
+//                     <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Employee:</strong></td>
+//                     <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${employee.fullName}</td>
+//                   </tr>
+//                   <tr>
+//                     <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Department:</strong></td>
+//                     <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${employee.department}</td>
+//                   </tr>
+//                   <tr>
+//                     <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Title:</strong></td>
+//                     <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${title}</td>
+//                   </tr>
+//                   <tr>
+//                     <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Category:</strong></td>
+//                     <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${itemCategory}</td>
+//                   </tr>
+//                   <tr>
+//                     <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Items Count:</strong></td>
+//                     <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${parsedItems.length}</td>
+//                   </tr>
+//                   <tr>
+//                     <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Budget:</strong></td>
+//                     <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">XAF ${budgetXAF ? parseFloat(budgetXAF).toLocaleString() : 'Not specified'}</td>
+//                   </tr>
+//                   <tr>
+//                     <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Urgency:</strong></td>
+//                     <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${urgency}</td>
+//                   </tr>
+//                   <tr>
+//                     <td style="padding: 8px 0;"><strong>Expected Date:</strong></td>
+//                     <td style="padding: 8px 0;">${new Date(expectedDate).toLocaleDateString()}</td>
+//                   </tr>
+//                 </table>
+//               </div>
+
+//               <div style="background-color: #f0f8ff; border-left: 4px solid #1890ff; padding: 15px; margin: 20px 0;">
+//                 <h4 style="margin: 0 0 10px 0; color: #1890ff;">Justification</h4>
+//                 <p style="margin: 0; color: #333;">${justification}</p>
+//               </div>
+
+//               <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">
+//                 <h4 style="margin: 0 0 10px 0; color: #856404;">Action Required</h4>
+//                 <p style="margin: 0; color: #856404;">This requisition requires your approval as the next approver in the chain. Please log into the system to review and approve/reject this request.</p>
+//               </div>
+
+//               <div style="text-align: center; margin: 30px 0;">
+//                 <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/supervisor/purchase-requisitions" 
+//                    style="background-color: #1890ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+//                   Review Requisition
+//                 </a>
+//               </div>
+
+//               <div style="border-top: 1px solid #e8e8e8; padding-top: 20px; color: #666; font-size: 14px;">
+//                 <p style="margin: 0;">Best regards,<br>Purchase Requisition Management System</p>
+//                 <p style="margin: 10px 0 0 0; font-size: 12px;">This is an automated notification. Please do not reply to this email.</p>
+//               </div>
+//             </div>
+//           `
+//         });
+
+//         console.log('Supervisor notification result:', supervisorNotification);
+//         notifications.push(Promise.resolve(supervisorNotification));
+
+//       } catch (error) {
+//         console.error('Failed to send supervisor notification:', error);
+//         notifications.push(Promise.resolve({ error, type: 'supervisor' }));
+//       }
+//     }
+
+//     // Notify admins about new requisition
+//     try {
+//       const admins = await User.find({ role: 'admin' }).select('email fullName');
+//       console.log('Found admins:', admins.map(a => ({ name: a.fullName, email: a.email })));
+
+//       if (admins.length > 0) {
+//         const adminEmails = admins.map(a => a.email);
+//         console.log('Sending admin notification to:', adminEmails);
+
+//         const adminNotification = await sendEmail({
+//           to: adminEmails,
+//           subject: `New Purchase Requisition Submitted - ${employee.fullName}`,
+//           html: `
+//             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+//               <div style="background-color: #f6ffed; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+//                 <h2 style="color: #52c41a; margin: 0;">New Purchase Requisition Submitted</h2>
+//                 <p style="color: #666; margin: 5px 0 0 0;">A new purchase requisition has been submitted by ${employee.fullName}</p>
+//               </div>
+
+//               <div style="background-color: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 20px;">
+//                 <h3 style="color: #333; margin-top: 0;">Requisition Summary</h3>
+//                 <ul style="list-style: none; padding: 0;">
+//                   <li style="padding: 5px 0;"><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
+//                   <li style="padding: 5px 0;"><strong>Employee:</strong> ${employee.fullName} (${employee.department})</li>
+//                   <li style="padding: 5px 0;"><strong>Title:</strong> ${title}</li>
+//                   <li style="padding: 5px 0;"><strong>Category:</strong> ${itemCategory}</li>
+//                   <li style="padding: 5px 0;"><strong>Items Count:</strong> ${parsedItems.length}</li>
+//                   <li style="padding: 5px 0;"><strong>Budget:</strong> XAF ${budgetXAF ? parseFloat(budgetXAF).toLocaleString() : 'Not specified'}</li>
+//                   <li style="padding: 5px 0;"><strong>Urgency:</strong> ${urgency}</li>
+//                   <li style="padding: 5px 0;"><strong>Status:</strong> Pending Approval</li>
+//                   <li style="padding: 5px 0;"><strong>Current Approver:</strong> ${firstApprover?.approver.name} (${firstApprover?.approver.email})</li>
+//                 </ul>
+//               </div>
+
+//               <div style="text-align: center; margin: 30px 0;">
+//                 <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/admin/purchase-requisitions" 
+//                    style="background-color: #52c41a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+//                   View All Requisitions
+//                 </a>
+//               </div>
+//             </div>
+//           `
+//         });
+
+//         console.log('Admin notification result:', adminNotification);
+//         notifications.push(Promise.resolve(adminNotification));
+//       }
+//     } catch (error) {
+//       console.error('Failed to send admin notification:', error);
+//       notifications.push(Promise.resolve({ error, type: 'admin' }));
+//     }
+
+//     // Notify employee of successful submission
+//     try {
+//       console.log('Sending employee confirmation to:', employee.email);
+
+//       const employeeNotification = await sendEmail({
+//         to: employee.email,
+//         subject: 'Purchase Requisition Submitted Successfully',
+//         html: `
+//           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+//             <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+//               <h2 style="color: #1890ff; margin: 0;">Purchase Requisition Submitted</h2>
+//               <p style="color: #666; margin: 5px 0 0 0;">Your purchase requisition has been successfully submitted and is now under review.</p>
+//             </div>
+
+//             <div style="background-color: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+//               <h3 style="color: #333; margin-top: 0;">Your Requisition Details</h3>
+//               <ul style="list-style: none; padding: 0;">
+//                 <li style="padding: 5px 0;"><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
+//                 <li style="padding: 5px 0;"><strong>Title:</strong> ${title}</li>
+//                 <li style="padding: 5px 0;"><strong>Status:</strong> Pending Approval</li>
+//                 <li style="padding: 5px 0;"><strong>Current Approver:</strong> ${firstApprover?.approver.name}</li>
+//               </ul>
+//             </div>
+
+//             <div style="background-color: #f0f8ff; border-left: 4px solid #1890ff; padding: 15px; margin: 20px 0;">
+//               <p style="margin: 0; color: #333;"><strong>Next Steps:</strong> Your requisition is now in the approval workflow. You will receive email notifications as it progresses through each approval stage.</p>
+//             </div>
+
+//             <div style="text-align: center; margin: 30px 0;">
+//               <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/employee/purchase-requisitions" 
+//                  style="background-color: #1890ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+//                 Track Your Requisitions
+//               </a>
+//             </div>
+
+//             <div style="border-top: 1px solid #e8e8e8; padding-top: 20px; color: #666; font-size: 14px;">
+//               <p style="margin: 0;">Thank you for using our Purchase Requisition System!</p>
+//             </div>
+//           </div>
+//         `
+//       });
+
+//       console.log('Employee notification result:', employeeNotification);
+//       notifications.push(Promise.resolve(employeeNotification));
+
+//     } catch (error) {
+//       console.error('Failed to send employee notification:', error);
+//       notifications.push(Promise.resolve({ error, type: 'employee' }));
+//     }
+
+//     // Wait for all notifications to complete
+//     console.log('Waiting for all notifications to complete...');
+//     const notificationResults = await Promise.allSettled(notifications);
+    
+//     notificationResults.forEach((result, index) => {
+//       if (result.status === 'rejected') {
+//         console.error(`Notification ${index} failed:`, result.reason);
+//       } else if (result.value && result.value.error) {
+//         console.error(`${result.value.type} notification failed:`, result.value.error);
+//       } else {
+//         console.log(`Notification ${index} sent successfully`);
+//       }
+//     });
+
+//     const notificationStats = {
+//       sent: notificationResults.filter(r => r.status === 'fulfilled' && !r.value?.error).length,
+//       failed: notificationResults.filter(r => r.status === 'rejected' || r.value?.error).length
+//     };
+
+//     console.log('=== PURCHASE REQUISITION CREATED SUCCESSFULLY ===');
+//     console.log('Notification stats:', notificationStats);
+
+//     res.status(201).json({
+//       success: true,
+//       message: 'Purchase requisition created successfully and sent for approval',
+//       data: requisition,
+//       notifications: notificationStats
+//     });
+
+//   } catch (error) {
+//     console.error('Create purchase requisition error:', error);
+
+//     // Clean up uploaded files if request failed
+//     if (req.files && req.files.length > 0) {
+//       await Promise.allSettled(
+//         req.files.map(file => {
+//           if (file.path) {
+//             return fs.promises.unlink(file.path).catch(e => console.error('File cleanup failed:', e));
+//           }
+//         })
+//       );
+//     }
+
+//     // Provide more specific error messages
+//     let errorMessage = 'Failed to create purchase requisition';
+//     if (error.name === 'ValidationError') {
+//       const validationErrors = Object.values(error.errors).map(err => err.message);
+//       errorMessage = `Validation failed: ${validationErrors.join(', ')}`;
+//     }
+
+//     res.status(500).json({
+//       success: false,
+//       message: errorMessage,
+//       error: error.message,
+//       details: error.name === 'ValidationError' ? error.errors : undefined
+//     });
+//   }
+// };
 
 /**
  * Get requisitions pending head approval

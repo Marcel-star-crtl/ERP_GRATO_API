@@ -6,6 +6,8 @@ const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware'
 const buyerRequisitionController = require('../controllers/buyerRequisitionController');
 const buyerPurchaseOrderController = require('../controllers/buyerPurchaseOrderController');
 const buyerDeliveryController = require('../controllers/buyerDeliveryController');
+const quotationController = require('../controllers/quotationController');
+const debitNoteController = require('../controllers/debitNoteController');
 
 // Middleware to ensure only buyers, supply_chain users, and admins can access
 const buyerAuthMiddleware = requireRoles('buyer', 'supply_chain', 'admin');
@@ -249,6 +251,253 @@ router.post('/purchase-orders/validate-bulk',
     }
   }
 );
+
+// =============================================
+// QUOTATION PDF ROUTES
+// =============================================
+
+// Download quotation PDF
+router.get('/quotations/:quoteId/download-pdf',
+  authMiddleware,
+  buyerAuthMiddleware,
+  quotationController.downloadQuotationPDF
+);
+
+// Preview quotation PDF
+router.get('/quotations/:quoteId/preview-pdf',
+  authMiddleware,
+  buyerAuthMiddleware,
+  quotationController.previewQuotationPDF
+);
+
+// Email quotation PDF
+router.post('/quotations/:quoteId/email-pdf',
+  authMiddleware,
+  buyerAuthMiddleware,
+  quotationController.emailQuotationPDF
+);
+
+// =============================================
+// DEBIT NOTE ROUTES
+// =============================================
+
+// Create debit note
+router.post('/debit-notes',
+  authMiddleware,
+  buyerAuthMiddleware,
+  debitNoteController.createDebitNote
+);
+
+// Get all debit notes
+router.get('/debit-notes',
+  authMiddleware,
+  buyerAuthMiddleware,
+  debitNoteController.getDebitNotes
+);
+
+// Get debit note details
+router.get('/debit-notes/:debitNoteId',
+  authMiddleware,
+  buyerAuthMiddleware,
+  debitNoteController.getDebitNoteDetails
+);
+
+// Download debit note PDF
+router.get('/debit-notes/:debitNoteId/download-pdf',
+  authMiddleware,
+  buyerAuthMiddleware,
+  debitNoteController.downloadDebitNotePDF
+);
+
+// Preview debit note PDF
+router.get('/debit-notes/:debitNoteId/preview-pdf',
+  authMiddleware,
+  buyerAuthMiddleware,
+  async (req, res) => {
+    try {
+      const { debitNoteId } = req.params;
+
+      const debitNote = await require('../models/DebitNote').findById(debitNoteId)
+        .populate('purchaseOrderId', 'poNumber totalAmount')
+        .populate('supplierId', 'name email phone address');
+
+      if (!debitNote) {
+        return res.status(404).json({ success: false, message: 'Debit note not found' });
+      }
+
+      const pdfData = {
+        debitNoteNumber: debitNote.debitNoteNumber,
+        poNumber: debitNote.purchaseOrderId?.poNumber,
+        supplierDetails: {
+          name: debitNote.supplierId?.name,
+          email: debitNote.supplierId?.email,
+          phone: debitNote.supplierId?.phone,
+          address: typeof debitNote.supplierId?.address === 'object'
+            ? `${debitNote.supplierId.address.street || ''}, ${debitNote.supplierId.address.city || ''}`
+            : debitNote.supplierId?.address
+        },
+        reason: debitNote.reason,
+        description: debitNote.description,
+        originalAmount: debitNote.originalAmount,
+        debitAmount: debitNote.debitAmount,
+        currency: debitNote.currency,
+        status: debitNote.status,
+        createdAt: debitNote.createdAt,
+        approvalChain: debitNote.approvalChain
+      };
+
+      const pdfResult = await require('../services/pdfService').generateDebitNotePDF(pdfData);
+
+      if (!pdfResult.success) {
+        return res.status(500).json({ success: false, message: 'Failed to generate PDF' });
+      }
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="Debit_Note_${debitNote.debitNoteNumber}_preview.pdf"`);
+      res.send(pdfResult.buffer);
+
+    } catch (error) {
+      console.error('Preview debit note PDF error:', error);
+      res.status(500).json({ success: false, message: 'Failed to generate PDF preview' });
+    }
+  }
+);
+
+// Email debit note PDF
+router.post('/debit-notes/:debitNoteId/email-pdf',
+  authMiddleware,
+  buyerAuthMiddleware,
+  async (req, res) => {
+    try {
+      const { debitNoteId } = req.params;
+      const { emailTo, message = '' } = req.body;
+
+      const debitNote = await require('../models/DebitNote').findById(debitNoteId)
+        .populate('purchaseOrderId', 'poNumber')
+        .populate('supplierId', 'name email');
+
+      if (!debitNote) {
+        return res.status(404).json({ success: false, message: 'Debit note not found' });
+      }
+
+      const pdfData = {
+        debitNoteNumber: debitNote.debitNoteNumber,
+        poNumber: debitNote.purchaseOrderId?.poNumber,
+        supplierDetails: debitNote.supplierDetails,
+        reason: debitNote.reason,
+        description: debitNote.description,
+        originalAmount: debitNote.originalAmount,
+        debitAmount: debitNote.debitAmount,
+        currency: debitNote.currency,
+        status: debitNote.status,
+        createdAt: debitNote.createdAt,
+        approvalChain: debitNote.approvalChain
+      };
+
+      const pdfResult = await require('../services/pdfService').generateDebitNotePDF(pdfData);
+
+      if (!pdfResult.success) {
+        return res.status(500).json({ success: false, message: 'Failed to generate PDF' });
+      }
+
+      const { sendEmail } = require('../services/emailService');
+
+      await sendEmail({
+        to: emailTo || debitNote.supplierDetails?.email,
+        subject: `Debit Note ${debitNote.debitNoteNumber}`,
+        html: `
+          <div style="font-family: Arial, sans-serif;">
+            <h2>Debit Note Document</h2>
+            <p>Please find attached the debit note document.</p>
+            ${message ? `<p><strong>Message:</strong><br>${message}</p>` : ''}
+            <p>Best regards,<br>GRATO ENGINEERING GLOBAL LTD</p>
+          </div>
+        `,
+        attachments: [{
+          filename: pdfResult.filename,
+          content: pdfResult.buffer,
+          contentType: 'application/pdf'
+        }]
+      });
+
+      res.json({ success: true, message: `Debit note PDF sent to ${emailTo}` });
+
+    } catch (error) {
+      console.error('Email debit note PDF error:', error);
+      res.status(500).json({ success: false, message: 'Failed to email PDF' });
+    }
+  }
+);
+
+
+router.get('/debit-note-approvals',
+  authMiddleware,
+  requireRoles('supervisor', 'technical', 'hr', 'finance', 'admin'),
+  async (req, res) => {
+    try {
+      const DebitNote = require('../models/DebitNote');
+
+      const pendingDebitNotes = await DebitNote.find({
+        'approvalChain.approver.email': req.user.email,
+        'approvalChain.status': 'pending',
+        status: {
+          $in: ['pending_approval']
+        },
+        $expr: {
+          $let: {
+            vars: {
+              currentStep: {
+                $arrayElemAt: [
+                  {
+                    $filter: {
+                      input: '$approvalChain',
+                      cond: { $eq: ['$$this.level', '$currentApprovalLevel'] }
+                    }
+                  },
+                  0
+                ]
+              }
+            },
+            in: { $eq: ['$$currentStep.approver.email', req.user.email] }
+          }
+        }
+      })
+      .populate('purchaseOrderId', 'poNumber totalAmount')
+      .populate('supplierId', 'name email')
+      .populate('createdBy', 'fullName')
+      .sort({ createdAt: -1 });
+
+      res.json({
+        success: true,
+        data: pendingDebitNotes,
+        count: pendingDebitNotes.length
+      });
+
+    } catch (error) {
+      console.error('Get pending debit notes error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch pending debit notes',
+        error: error.message
+      });
+    }
+  }
+);
+
+// Approve/Reject debit note
+router.post('/debit-note-approvals/:debitNoteId/process',
+  authMiddleware,
+  requireRoles('supervisor', 'technical', 'hr', 'finance', 'admin'),
+  debitNoteController.processDebitNoteApproval
+);
+
+// Download debit note for approval
+router.get('/debit-note-approvals/:debitNoteId/download-pdf',
+  authMiddleware,
+  requireRoles('supervisor', 'technical', 'hr', 'finance', 'admin'),
+  debitNoteController.downloadDebitNotePDF
+);
+
 
 // Get suppliers for PO creation
 router.get('/suppliers', 
