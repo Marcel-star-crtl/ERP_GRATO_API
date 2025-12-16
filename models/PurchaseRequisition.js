@@ -105,7 +105,7 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
     measuringUnit: {
       type: String,
       required: true,
-      enum: ['Pieces', 'Sets', 'Boxes', 'Packs', 'Units', 'Kg', 'Litres', 'Meters', 'Pairs', 'Each']
+      enum: ['Pieces', 'Sets', 'Boxes', 'Packs', 'Units', 'Kg', 'Litres', 'Meters', 'Pairs', 'Each', 'Reams']
     },
     estimatedPrice: {
       type: Number,
