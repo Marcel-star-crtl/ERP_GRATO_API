@@ -137,6 +137,15 @@ const createRequisition = async (req, res) => {
 
     console.log('Processed items:', processedItems);
 
+    // // ✅ FIXED: Generate approval chain using employee EMAIL for purchase requisitions
+    // const approvalChain = getApprovalChainForRequisition(employee.email);
+    // if (!approvalChain || approvalChain.length === 0) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: 'Unable to determine approval chain. Please contact HR.'
+    //   });
+    // }
+
     // ✅ FIXED: Generate approval chain using employee EMAIL for purchase requisitions
     const approvalChain = getApprovalChainForRequisition(employee.email);
     if (!approvalChain || approvalChain.length === 0) {
@@ -145,7 +154,7 @@ const createRequisition = async (req, res) => {
         message: 'Unable to determine approval chain. Please contact HR.'
       });
     }
-    
+
     // ✅ PROCESS ATTACHMENTS USING LOCAL STORAGE
     const { 
       saveFile, 
@@ -224,7 +233,7 @@ const createRequisition = async (req, res) => {
     }
 
     // Map approval chain
-    const mappedApprovalChain = mapApprovalChainForCashRequest(approvalChain);
+    // const mappedApprovalChain = mapApprovalChainForCashRequest(approvalChain);
 
     // Create requisition with attachments
     const requisition = new PurchaseRequisition({
