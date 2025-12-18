@@ -557,7 +557,7 @@ module.exports = {
   getUserApprovalLevel,
   getFallbackApprovalChain,
   validateCashApprovalChain,
-  validateApprovalChain: validateCashApprovalChain, // Alias for backward compatibility
+  validateApprovalChain: validateCashApprovalChain, 
   isFinanceStep
 };
 

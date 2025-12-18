@@ -1171,7 +1171,7 @@ router.get(
 router.get(
   '/admin/:requestId',
   authMiddleware,
-  requireRoles('admin'),
+  requireRoles('finance', 'admin'),
   cashRequestController.getAdminRequestDetails
 );
 
@@ -1179,7 +1179,7 @@ router.get(
 router.get(
   '/admin',
   authMiddleware,
-  requireRoles('admin'),
+  requireRoles('finance', 'admin'),
   cashRequestController.getAllRequests
 );
 
