@@ -11,11 +11,12 @@ const {
   STORAGE_CATEGORIES 
 } = require('../utils/localFileStorage');
 
+
 const createRequisition = async (req, res) => {
   try {
     console.log('=== CREATE PURCHASE REQUISITION STARTED ===');
     console.log('Request body:', JSON.stringify(req.body, null, 2));
-    console.log('Files received:', req.files?.length || 0); // ✅ Log files
+    console.log('Files received:', req.files?.length || 0);
 
     const {
       requisitionNumber,
@@ -26,11 +27,13 @@ const createRequisition = async (req, res) => {
       urgency,
       deliveryLocation,
       expectedDate,
-      justificationForPurchase,
+      justificationOfPurchase,
       justificationOfPreferredSupplier,
-      items
+      items,
+      project,
+      supplierId,
+      preferredSupplierName
     } = req.body;
-
 
     // Validate required fields
     if (!requisitionNumber) {
@@ -40,7 +43,7 @@ const createRequisition = async (req, res) => {
       });
     }
 
-    const justification = justificationForPurchase || req.body.justificationOfPurchase;
+    const justification = justificationOfPurchase || req.body.justificationOfPurchase;
     
     if (!justification || justification.length < 20) {
       return res.status(400).json({
@@ -137,105 +140,69 @@ const createRequisition = async (req, res) => {
 
     console.log('Processed items:', processedItems);
 
-    // // ✅ FIXED: Generate approval chain using employee EMAIL for purchase requisitions
-    // const approvalChain = getApprovalChainForRequisition(employee.email);
-    // if (!approvalChain || approvalChain.length === 0) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: 'Unable to determine approval chain. Please contact HR.'
-    //   });
-    // }
-
-    // ✅ FIXED: Generate approval chain using employee EMAIL for purchase requisitions
+    // Generate approval chain using employee EMAIL
     const approvalChain = getApprovalChainForRequisition(employee.email);
+    console.log('Generated approval chain:', JSON.stringify(approvalChain, null, 2));
+
     if (!approvalChain || approvalChain.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Unable to determine approval chain. Please contact HR.'
+        message: 'Unable to determine approval chain. Please contact HR for assistance.'
       });
     }
 
-    // ✅ PROCESS ATTACHMENTS USING LOCAL STORAGE
-    const { 
-      saveFile, 
-      STORAGE_CATEGORIES 
-    } = require('../utils/localFileStorage');
-
-    // Process attachments if any
-    // let attachments = [];
-    // if (req.files && req.files.length > 0) {
-    //   for (const file of req.files) {
-    //     try {
-    //       const fileName = `${Date.now()}-${file.originalname}`;
-    //       const uploadDir = path.join(__dirname, '../uploads/requisitions');
-    //       const filePath = path.join(uploadDir, fileName);
-
-    //       await fs.promises.mkdir(uploadDir, { recursive: true });
-
-    //       if (file.path) {
-    //         await fs.promises.rename(file.path, filePath);
-    //       }
-
-    //       attachments.push({
-    //         name: file.originalname,
-    //         url: `/uploads/requisitions/${fileName}`,
-    //         publicId: fileName,
-    //         size: file.size,
-    //         mimetype: file.mimetype
-    //       });
-    //     } catch (fileError) {
-    //       console.error('Error processing file:', file.originalname, fileError);
-    //     }
-    //   }
-    // }
-
-
+    // ✅ CRITICAL: Process attachments using LOCAL STORAGE (like petty cash)
     let attachments = [];
-    
     if (req.files && req.files.length > 0) {
-      console.log(`\n📎 Processing ${req.files.length} attachment(s)...`);
-      
+      console.log(`\n📎 Processing ${req.files.length} attachment(s) using local storage...`);
+
       for (let i = 0; i < req.files.length; i++) {
         const file = req.files[i];
-        
+
         try {
-          console.log(`   Processing file ${i + 1}: ${file.originalname}`);
-          
+          console.log(`   Processing file ${i + 1}/${req.files.length}: ${file.originalname}`);
+
+          // ✅ Use local file storage (same as petty cash)
           const fileMetadata = await saveFile(
             file,
-            STORAGE_CATEGORIES.PURCHASE_REQUISITIONS, 
-            'attachments',
-            null
+            STORAGE_CATEGORIES.PURCHASE_REQUISITIONS,
+            'attachments', // subfolder
+            null // auto-generate filename
           );
 
           attachments.push({
             name: file.originalname,
-            url: fileMetadata.url,
             publicId: fileMetadata.publicId,
-            localPath: fileMetadata.localPath, // ✅ CRITICAL
+            url: fileMetadata.url,
+            localPath: fileMetadata.localPath, // ✅ CRITICAL: Store local path
             size: file.size,
             mimetype: file.mimetype,
             uploadedAt: new Date()
           });
 
           console.log(`   ✅ Saved: ${fileMetadata.publicId}`);
-          
+
         } catch (fileError) {
           console.error(`   ❌ Error processing ${file.originalname}:`, fileError);
-          // Continue with other files
-          continue;
+          continue; // Skip this file and continue with others
         }
       }
-      
+
       console.log(`\n✅ ${attachments.length} attachment(s) processed successfully`);
-    } else {
-      console.log('ℹ️  No attachments uploaded');
     }
 
-    // Map approval chain
-    // const mappedApprovalChain = mapApprovalChainForCashRequest(approvalChain);
+    // Get supplier information
+    let preferredSupplier = '';
+    if (supplierId) {
+      const supplier = await User.findById(supplierId);
+      if (supplier) {
+        preferredSupplier = supplier.supplierDetails?.companyName || supplier.fullName;
+      }
+    } else if (preferredSupplierName) {
+      preferredSupplier = preferredSupplierName;
+    }
 
-    // Create requisition with attachments
+    // Properly map approval chain structure to match schema
     const requisition = new PurchaseRequisition({
       requisitionNumber,
       employee: req.user.userId,
@@ -249,123 +216,296 @@ const createRequisition = async (req, res) => {
       expectedDate: new Date(expectedDate),
       justificationOfPurchase: justification,
       justificationOfPreferredSupplier,
-      items: parsedItems,
-      attachments, // ✅ Include attachments
+      items: processedItems,
+      attachments, // ✅ Now contains local file paths
       status: 'pending_supervisor',
-      approvalChain: mappedApprovalChain
+      approvalChain: approvalChain.map(step => ({
+        level: step.level,
+        approver: {
+          name: step.approver.name,
+          email: step.approver.email,
+          role: step.approver.role,
+          department: step.approver.department
+        },
+        status: step.status || 'pending',
+        assignedDate: step.assignedDate || new Date()
+      })),
+      // Add project if provided
+      project: project || undefined,
+      // Add supplier information
+      supplierId: supplierId || undefined,
+      preferredSupplier: preferredSupplier || undefined
+    });
+
+    console.log('Requisition object before save:', {
+      requisitionNumber: requisition.requisitionNumber,
+      justificationOfPurchase: requisition.justificationOfPurchase,
+      justificationLength: requisition.justificationOfPurchase?.length,
+      itemsCount: requisition.items.length,
+      attachmentsCount: requisition.attachments.length,
+      approvalChainCount: requisition.approvalChain.length,
+      firstApprover: requisition.approvalChain[0]?.approver,
+      hasProject: !!requisition.project,
+      hasSupplier: !!requisition.preferredSupplier
     });
 
     await requisition.save();
     console.log('✅ Requisition saved successfully with ID:', requisition._id);
     console.log(`   Attachments: ${attachments.length}`);
+    console.log(`   Project: ${requisition.project || 'None'}`);
+    console.log(`   Preferred Supplier: ${requisition.preferredSupplier || 'None'}`);
 
-    // Populate employee details
+    // Populate employee details for response
     await requisition.populate('employee', 'fullName email department');
+    
+    // Populate project if exists
+    if (requisition.project) {
+      await requisition.populate('project', 'name code');
+    }
+    
+    // Populate supplier if exists
+    if (requisition.supplierId) {
+      await requisition.populate('supplierId', 'fullName email supplierDetails');
+    }
 
-    // Send notifications
+    // === EMAIL NOTIFICATIONS ===
     const notifications = [];
+    console.log('=== STARTING EMAIL NOTIFICATIONS ===');
 
-    // Notify first approver
+    // Get first approver
     const firstApprover = approvalChain[0];
+    console.log('First approver details:', firstApprover);
+
     if (firstApprover && firstApprover.approver.email) {
-      notifications.push(
-        sendEmail({
+      console.log('Sending notification to first approver:', firstApprover.approver.email);
+      
+      try {
+        const supervisorNotification = await sendEmail({
           to: firstApprover.approver.email,
           subject: `New Purchase Requisition Requires Your Approval - ${employee.fullName}`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px;">
-                <h2 style="color: #1890ff;">New Purchase Requisition for Approval</h2>
-                <p>Dear ${firstApprover.approver.name},</p>
-                <p>A new purchase requisition has been submitted and requires your approval.</p>
-                
-                <div style="background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                  <h4>Requisition Details</h4>
-                  <ul>
-                    <li><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
-                    <li><strong>Employee:</strong> ${employee.fullName}</li>
-                    <li><strong>Department:</strong> ${employee.department}</li>
-                    <li><strong>Title:</strong> ${title}</li>
-                    <li><strong>Category:</strong> ${itemCategory}</li>
-                    <li><strong>Items Count:</strong> ${parsedItems.length}</li>
-                    <li><strong>Budget:</strong> XAF ${budgetXAF ? parseFloat(budgetXAF).toLocaleString() : 'Not specified'}</li>
-                    <li><strong>Urgency:</strong> ${urgency}</li>
-                    ${attachments.length > 0 ? `<li><strong>📎 Attachments:</strong> ${attachments.length} file(s)</li>` : ''}
-                  </ul>
-                </div>
+              <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                <h2 style="color: #1890ff; margin: 0;">New Purchase Requisition for Approval</h2>
+                <p style="color: #666; margin: 5px 0 0 0;">A new purchase requisition has been submitted and requires your approval.</p>
+              </div>
 
-                <div style="background-color: #f0f8ff; padding: 15px; border-radius: 8px;">
-                  <h4>Justification</h4>
-                  <p>${justification}</p>
-                </div>
+              <div style="background-color: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                <h3 style="color: #333; margin-top: 0;">Requisition Details</h3>
+                <table style="width: 100%; border-collapse: collapse;">
+                  <tr>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Requisition Number:</strong></td>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${requisition.requisitionNumber}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Employee:</strong></td>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${employee.fullName}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Department:</strong></td>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${employee.department}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Title:</strong></td>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${title}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Category:</strong></td>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${itemCategory}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Items Count:</strong></td>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${parsedItems.length}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Budget:</strong></td>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">XAF ${budgetXAF ? parseFloat(budgetXAF).toLocaleString() : 'Not specified'}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Urgency:</strong></td>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${urgency}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 0;"><strong>Expected Date:</strong></td>
+                    <td style="padding: 8px 0;">${new Date(expectedDate).toLocaleDateString()}</td>
+                  </tr>
+                  ${project ? `
+                  <tr>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Project:</strong></td>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${requisition.project?.name || 'N/A'}</td>
+                  </tr>
+                  ` : ''}
+                  ${preferredSupplier ? `
+                  <tr>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;"><strong>Preferred Supplier:</strong></td>
+                    <td style="padding: 8px 0; border-bottom: 1px solid #f0f0f0;">${preferredSupplier}</td>
+                  </tr>
+                  ` : ''}
+                </table>
+              </div>
 
-                <p style="margin-top: 20px;">Please review this requisition in the system.</p>
+              <div style="background-color: #f0f8ff; border-left: 4px solid #1890ff; padding: 15px; margin: 20px 0;">
+                <h4 style="margin: 0 0 10px 0; color: #1890ff;">Justification</h4>
+                <p style="margin: 0; color: #333;">${justification}</p>
+              </div>
+
+              ${attachments.length > 0 ? `
+              <div style="background-color: #fff3cd; padding: 10px; border-radius: 5px; margin: 10px 0;">
+                <p style="margin: 0;"><strong>📎 ${attachments.length} attachment(s) included</strong></p>
+              </div>
+              ` : ''}
+
+              <div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0;">
+                <h4 style="margin: 0 0 10px 0; color: #856404;">Action Required</h4>
+                <p style="margin: 0; color: #856404;">This requisition requires your approval as the next approver in the chain. Please log into the system to review and approve/reject this request.</p>
+              </div>
+
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/supervisor/purchase-requisitions" 
+                   style="background-color: #1890ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+                  Review Requisition
+                </a>
+              </div>
+
+              <div style="border-top: 1px solid #e8e8e8; padding-top: 20px; color: #666; font-size: 14px;">
+                <p style="margin: 0;">Best regards,<br>Purchase Requisition Management System</p>
+                <p style="margin: 10px 0 0 0; font-size: 12px;">This is an automated notification. Please do not reply to this email.</p>
               </div>
             </div>
           `
-        }).catch(error => {
-          console.error('Failed to send supervisor notification:', error);
-          return { error, type: 'supervisor' };
-        })
-      );
+        });
+
+        console.log('Supervisor notification result:', supervisorNotification);
+        notifications.push(Promise.resolve(supervisorNotification));
+
+      } catch (error) {
+        console.error('Failed to send supervisor notification:', error);
+        notifications.push(Promise.resolve({ error, type: 'supervisor' }));
+      }
     }
 
-    // Notify admins
-    const admins = await User.find({ role: 'admin' }).select('email fullName');
-    if (admins.length > 0) {
-      notifications.push(
-        sendEmail({
-          to: admins.map(a => a.email),
+    // Notify admins about new requisition
+    try {
+      const admins = await User.find({ role: 'admin' }).select('email fullName');
+      console.log('Found admins:', admins.map(a => ({ name: a.fullName, email: a.email })));
+
+      if (admins.length > 0) {
+        const adminEmails = admins.map(a => a.email);
+        console.log('Sending admin notification to:', adminEmails);
+
+        const adminNotification = await sendEmail({
+          to: adminEmails,
           subject: `New Purchase Requisition Submitted - ${employee.fullName}`,
           html: `
-            <div style="font-family: Arial, sans-serif;">
-              <h3>New Purchase Requisition Submitted</h3>
-              <p><strong>${employee.fullName}</strong> has submitted a new purchase requisition.</p>
-              <ul>
-                <li><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
-                <li><strong>Title:</strong> ${title}</li>
-                <li><strong>Budget:</strong> XAF ${budgetXAF ? parseFloat(budgetXAF).toLocaleString() : 'TBD'}</li>
-                <li><strong>Items:</strong> ${parsedItems.length}</li>
-                ${attachments.length > 0 ? `<li><strong>📎 Attachments:</strong> ${attachments.length}</li>` : ''}
-                <li><strong>Current Approver:</strong> ${firstApprover?.approver.name}</li>
-              </ul>
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <div style="background-color: #f6ffed; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                <h2 style="color: #52c41a; margin: 0;">New Purchase Requisition Submitted</h2>
+                <p style="color: #666; margin: 5px 0 0 0;">A new purchase requisition has been submitted by ${employee.fullName}</p>
+              </div>
+
+              <div style="background-color: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 20px;">
+                <h3 style="color: #333; margin-top: 0;">Requisition Summary</h3>
+                <ul style="list-style: none; padding: 0;">
+                  <li style="padding: 5px 0;"><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
+                  <li style="padding: 5px 0;"><strong>Employee:</strong> ${employee.fullName} (${employee.department})</li>
+                  <li style="padding: 5px 0;"><strong>Title:</strong> ${title}</li>
+                  <li style="padding: 5px 0;"><strong>Category:</strong> ${itemCategory}</li>
+                  <li style="padding: 5px 0;"><strong>Items Count:</strong> ${parsedItems.length}</li>
+                  <li style="padding: 5px 0;"><strong>Budget:</strong> XAF ${budgetXAF ? parseFloat(budgetXAF).toLocaleString() : 'Not specified'}</li>
+                  <li style="padding: 5px 0;"><strong>Urgency:</strong> ${urgency}</li>
+                  <li style="padding: 5px 0;"><strong>Status:</strong> Pending Approval</li>
+                  <li style="padding: 5px 0;"><strong>Current Approver:</strong> ${firstApprover?.approver.name} (${firstApprover?.approver.email})</li>
+                  ${attachments.length > 0 ? `<li style="padding: 5px 0;"><strong>Attachments:</strong> ${attachments.length} file(s)</li>` : ''}
+                  ${project ? `<li style="padding: 5px 0;"><strong>Project:</strong> ${requisition.project?.name || 'N/A'}</li>` : ''}
+                  ${preferredSupplier ? `<li style="padding: 5px 0;"><strong>Preferred Supplier:</strong> ${preferredSupplier}</li>` : ''}
+                </ul>
+              </div>
+
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/admin/purchase-requisitions" 
+                   style="background-color: #52c41a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+                  View All Requisitions
+                </a>
+              </div>
             </div>
           `
-        }).catch(error => {
-          console.error('Failed to send admin notification:', error);
-          return { error, type: 'admin' };
-        })
-      );
+        });
+
+        console.log('Admin notification result:', adminNotification);
+        notifications.push(Promise.resolve(adminNotification));
+      }
+    } catch (error) {
+      console.error('Failed to send admin notification:', error);
+      notifications.push(Promise.resolve({ error, type: 'admin' }));
     }
 
-    // Notify employee
-    notifications.push(
-      sendEmail({
+    // Notify employee of successful submission
+    try {
+      console.log('Sending employee confirmation to:', employee.email);
+
+      const employeeNotification = await sendEmail({
         to: employee.email,
         subject: 'Purchase Requisition Submitted Successfully',
         html: `
-          <div style="font-family: Arial, sans-serif;">
-            <h3>Purchase Requisition Submitted Successfully</h3>
-            <p>Dear ${employee.fullName},</p>
-            <p>Your purchase requisition has been successfully submitted.</p>
-            <ul>
-              <li><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
-              <li><strong>Title:</strong> ${title}</li>
-              ${attachments.length > 0 ? `<li><strong>📎 Attachments:</strong> ${attachments.length} file(s) uploaded</li>` : ''}
-              <li><strong>Status:</strong> Pending Approval</li>
-              <li><strong>Current Approver:</strong> ${firstApprover?.approver.name}</li>
-            </ul>
-            <p>You will receive email notifications as your requisition progresses.</p>
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+              <h2 style="color: #1890ff; margin: 0;">Purchase Requisition Submitted</h2>
+              <p style="color: #666; margin: 5px 0 0 0;">Your purchase requisition has been successfully submitted and is now under review.</p>
+            </div>
+
+            <div style="background-color: #fff; border: 1px solid #e8e8e8; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+              <h3 style="color: #333; margin-top: 0;">Your Requisition Details</h3>
+              <ul style="list-style: none; padding: 0;">
+                <li style="padding: 5px 0;"><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
+                <li style="padding: 5px 0;"><strong>Title:</strong> ${title}</li>
+                <li style="padding: 5px 0;"><strong>Status:</strong> Pending Approval</li>
+                <li style="padding: 5px 0;"><strong>Current Approver:</strong> ${firstApprover?.approver.name}</li>
+                ${attachments.length > 0 ? `<li style="padding: 5px 0;"><strong>Attachments:</strong> ${attachments.length} file(s) uploaded</li>` : ''}
+                ${project ? `<li style="padding: 5px 0;"><strong>Project:</strong> ${requisition.project?.name || 'N/A'}</li>` : ''}
+                ${preferredSupplier ? `<li style="padding: 5px 0;"><strong>Preferred Supplier:</strong> ${preferredSupplier}</li>` : ''}
+              </ul>
+            </div>
+
+            <div style="background-color: #f0f8ff; border-left: 4px solid #1890ff; padding: 15px; margin: 20px 0;">
+              <p style="margin: 0; color: #333;"><strong>Next Steps:</strong> Your requisition is now in the approval workflow. You will receive email notifications as it progresses through each approval stage.</p>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/employee/purchase-requisitions" 
+                 style="background-color: #1890ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+                Track Your Requisitions
+              </a>
+            </div>
+
+            <div style="border-top: 1px solid #e8e8e8; padding-top: 20px; color: #666; font-size: 14px;">
+              <p style="margin: 0;">Thank you for using our Purchase Requisition System!</p>
+            </div>
           </div>
         `
-      }).catch(error => {
-        console.error('Failed to send employee notification:', error);
-        return { error, type: 'employee' };
-      })
-    );
+      });
 
-    // Wait for notifications
+      console.log('Employee notification result:', employeeNotification);
+      notifications.push(Promise.resolve(employeeNotification));
+
+    } catch (error) {
+      console.error('Failed to send employee notification:', error);
+      notifications.push(Promise.resolve({ error, type: 'employee' }));
+    }
+
+    // Wait for all notifications to complete
+    console.log('Waiting for all notifications to complete...');
     const notificationResults = await Promise.allSettled(notifications);
+    
+    notificationResults.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        console.error(`Notification ${index} failed:`, result.reason);
+      } else if (result.value && result.value.error) {
+        console.error(`${result.value.type} notification failed:`, result.value.error);
+      } else {
+        console.log(`Notification ${index} sent successfully`);
+      }
+    });
+
     const notificationStats = {
       sent: notificationResults.filter(r => r.status === 'fulfilled' && !r.value?.error).length,
       failed: notificationResults.filter(r => r.status === 'rejected' || r.value?.error).length
@@ -376,11 +516,14 @@ const createRequisition = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'Purchase requisition created successfully',
+      message: 'Purchase requisition created successfully and sent for approval',
       data: requisition,
       metadata: {
         attachmentsUploaded: attachments.length,
-        approvalLevels: approvalChain.length
+        itemsCount: parsedItems.length,
+        approvalLevels: approvalChain.length,
+        hasProject: !!requisition.project,
+        hasSupplier: !!requisition.preferredSupplier
       },
       notifications: notificationStats
     });
@@ -388,12 +531,9 @@ const createRequisition = async (req, res) => {
   } catch (error) {
     console.error('Create purchase requisition error:', error);
 
-    // ✅ CLEANUP: Delete uploaded files on error
+    // ✅ CRITICAL: Clean up uploaded files if request failed (like petty cash)
     if (req.files && req.files.length > 0) {
       console.log('Cleaning up uploaded files due to error...');
-      const fs = require('fs').promises;
-      const fsSync = require('fs');
-      
       await Promise.allSettled(
         req.files.map(file => {
           if (file.path && fsSync.existsSync(file.path)) {
@@ -405,14 +545,21 @@ const createRequisition = async (req, res) => {
       );
     }
 
+    // Provide more specific error messages
+    let errorMessage = 'Failed to create purchase requisition';
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      errorMessage = `Validation failed: ${validationErrors.join(', ')}`;
+    }
+
     res.status(500).json({
       success: false,
-      message: 'Failed to create purchase requisition',
-      error: error.message
+      message: errorMessage,
+      error: error.message,
+      details: error.name === 'ValidationError' ? error.errors : undefined
     });
   }
 };
-
 
 /**
  * Get requisitions pending head approval
@@ -698,222 +845,6 @@ const getRequisitionDetails = async (req, res) => {
 };
 
 
-// /**
-//  * Process head approval decision
-//  * ENHANCED: Auto-generate petty cash form if payment method is cash
-//  */
-// const processHeadApproval = async (req, res) => {
-//   try {
-//     const { requisitionId } = req.params;
-//     const { decision, comments } = req.body;
-    
-//     console.log('=== PROCESS HEAD APPROVAL ===');
-//     console.log('Requisition ID:', requisitionId);
-//     console.log('Decision:', decision);
-    
-//     const user = await User.findById(req.user.userId);
-    
-//     // Verify authorization
-//     if (!['admin', 'supply_chain'].includes(user.role)) {
-//       return res.status(403).json({
-//         success: false,
-//         message: 'Access denied. Only admin or supply chain head can approve.'
-//       });
-//     }
-    
-//     const requisition = await PurchaseRequisition.findById(requisitionId)
-//       .populate('employee', 'fullName email department')
-//       .populate('supplyChainReview.assignedBuyer', 'fullName email');
-    
-//     if (!requisition) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'Requisition not found'
-//       });
-//     }
-    
-//     // Verify status
-//     if (requisition.status !== 'pending_head_approval') {
-//       return res.status(400).json({
-//         success: false,
-//         message: `Cannot process approval. Current status: ${requisition.status}`
-//       });
-//     }
-    
-//     // Update head approval
-//     requisition.headApproval = {
-//       decision: decision,
-//       comments: comments,
-//       decisionDate: new Date(),
-//       decidedBy: req.user.userId
-//     };
-    
-//     if (decision === 'approved') {
-//       requisition.status = 'approved';
-      
-//       // NEW: Auto-generate petty cash form if payment method is cash
-//       const paymentMethod = requisition.paymentMethod;
-      
-//       if (paymentMethod === 'cash') {
-//         console.log('Payment method is cash - generating petty cash form');
-        
-//         try {
-//           // Generate petty cash form number
-//           await requisition.generatePettyCashFormNumber();
-          
-//           console.log('Petty cash form generated:', requisition.pettyCashForm.formNumber);
-          
-//           // Save requisition with petty cash form
-//           await requisition.save();
-          
-//           // Send notification to buyer about petty cash form
-//           if (requisition.supplyChainReview.assignedBuyer) {
-//             await sendPettyCashFormNotificationToBuyer(requisition);
-//           }
-          
-//           // Send notification to employee
-//           await sendPettyCashFormNotificationToEmployee(requisition);
-          
-//         } catch (pettyCashError) {
-//           console.error('Error generating petty cash form:', pettyCashError);
-//           // Continue with approval even if petty cash generation fails
-//           // The form can be regenerated later if needed
-//         }
-//       } else {
-//         console.log('Payment method is bank - no petty cash form needed');
-//         await requisition.save();
-//       }
-      
-//       // Send approval notification
-//       try {
-//         await sendEmail({
-//           to: requisition.employee.email,
-//           subject: `Requisition Approved - ${requisition.title}`,
-//           html: `
-//             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-//               <div style="background-color: #f6ffed; padding: 20px; border-radius: 8px; border-left: 4px solid #52c41a;">
-//                 <h2 style="color: #52c41a; margin-top: 0;">✓ Requisition Approved</h2>
-//                 <p>Dear ${requisition.employee.fullName},</p>
-//                 <p>Your purchase requisition has been approved by ${user.fullName} (Head of Business Dev & Supply Chain).</p>
-                
-//                 <div style="background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
-//                   <h4>Requisition Details</h4>
-//                   <ul>
-//                     <li><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
-//                     <li><strong>Title:</strong> ${requisition.title}</li>
-//                     <li><strong>Budget:</strong> XAF ${requisition.budgetXAF.toLocaleString()}</li>
-//                     <li><strong>Payment Method:</strong> ${paymentMethod === 'cash' ? 'Petty Cash' : 'Bank Transfer'}</li>
-//                     <li><strong>Approval Date:</strong> ${new Date().toLocaleDateString('en-GB')}</li>
-//                   </ul>
-//                 </div>
-                
-//                 ${paymentMethod === 'cash' ? `
-//                 <div style="background-color: #fff7e6; padding: 15px; border-radius: 8px; margin: 15px 0;">
-//                   <h4>Petty Cash Form Generated</h4>
-//                   <p><strong>Form Number:</strong> ${requisition.pettyCashForm?.formNumber}</p>
-//                   <p>A petty cash form has been automatically generated for this requisition. Your assigned buyer will handle the petty cash disbursement process.</p>
-//                 </div>
-//                 ` : `
-//                 <div style="background-color: #e6f7ff; padding: 15px; border-radius: 8px; margin: 15px 0;">
-//                   <h4>Bank Transfer Payment</h4>
-//                   <p>This requisition will be processed through the standard procurement process with bank transfer payment.</p>
-//                   <p>Your assigned buyer will begin the sourcing process and send RFQs to qualified suppliers.</p>
-//                 </div>
-//                 `}
-                
-//                 <p><strong>Next Steps:</strong></p>
-//                 <ul>
-//                   ${paymentMethod === 'cash' ? 
-//                     '<li>Your assigned buyer will download the petty cash form</li><li>The procurement process will continue as scheduled</li><li>You will be notified of any updates</li>' :
-//                     '<li>Your assigned buyer will create and send RFQs to suppliers</li><li>Suppliers will submit their quotations</li><li>The buyer will evaluate quotes and select the best option</li><li>You will be notified when procurement is complete</li>'
-//                   }
-//                 </ul>
-                
-//                 <p>You can track your requisition status in your employee dashboard.</p>
-//                 <p>Best regards,<br>Procurement Team</p>
-//               </div>
-//             </div>
-//           `
-//         });
-        
-//         console.log('Approval email sent to employee');
-//       } catch (emailError) {
-//         console.error('Failed to send approval email:', emailError);
-//         // Don't fail the approval if email fails
-//       }
-      
-//     } else if (decision === 'rejected') {
-//       requisition.status = 'rejected';
-//       await requisition.save();
-      
-//       // Send rejection notification
-//       try {
-//         await sendEmail({
-//           to: requisition.employee.email,
-//           subject: `Requisition Rejected - ${requisition.title}`,
-//           html: `
-//             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-//               <div style="background-color: #fff2f0; padding: 20px; border-radius: 8px; border-left: 4px solid #ff4d4f;">
-//                 <h2 style="color: #ff4d4f; margin-top: 0;">✗ Requisition Rejected</h2>
-//                 <p>Dear ${requisition.employee.fullName},</p>
-//                 <p>Your purchase requisition has been rejected by ${user.fullName} (Head of Business Dev & Supply Chain).</p>
-                
-//                 <div style="background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
-//                   <h4>Requisition Details</h4>
-//                   <ul>
-//                     <li><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
-//                     <li><strong>Title:</strong> ${requisition.title}</li>
-//                     <li><strong>Rejection Date:</strong> ${new Date().toLocaleDateString('en-GB')}</li>
-//                   </ul>
-//                 </div>
-                
-//                 ${comments ? `
-//                 <div style="background-color: #fff7e6; padding: 15px; border-radius: 8px; margin: 15px 0;">
-//                   <h4>Rejection Reason</h4>
-//                   <p>${comments}</p>
-//                 </div>
-//                 ` : ''}
-                
-//                 <p>If you believe this rejection was made in error or have additional information, please contact your supervisor or the Supply Chain team.</p>
-//                 <p>Best regards,<br>Procurement Team</p>
-//               </div>
-//             </div>
-//           `
-//         });
-        
-//         console.log('Rejection email sent to employee');
-//       } catch (emailError) {
-//         console.error('Failed to send rejection email:', emailError);
-//         // Don't fail the rejection if email fails
-//       }
-//     }
-    
-//     res.json({
-//       success: true,
-//       message: `Requisition ${decision}`,
-//       data: {
-//         requisitionId: requisition._id,
-//         requisitionNumber: requisition.requisitionNumber,
-//         status: requisition.status,
-//         decision: decision,
-//         pettyCashForm: requisition.pettyCashForm?.generated ? {
-//           formNumber: requisition.pettyCashForm.formNumber,
-//           generatedDate: requisition.pettyCashForm.generatedDate,
-//           status: requisition.pettyCashForm.status
-//         } : null,
-//         paymentMethod: requisition.paymentMethod
-//       }
-//     });
-    
-//   } catch (error) {
-//     console.error('Error processing head approval:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to process head approval',
-//       error: error.message
-//     });
-//   }
-// };
 
 /**
  * Send petty cash form notification to buyer
@@ -4435,6 +4366,7 @@ const getFinanceDashboardData = async (req, res) => {
 
 
 
+
 const processSupplyChainBusinessDecisions = async (req, res) => {
   try {
     const { requisitionId } = req.params;
@@ -4443,13 +4375,15 @@ const processSupplyChainBusinessDecisions = async (req, res) => {
       purchaseType,
       paymentMethod, 
       assignedBuyer, 
-      estimatedCost,
+      estimatedCost,      // ✅ NEW: Can override/assign budget
+      budgetXAF,           // ✅ NEW: Supply chain assigned budget
       comments 
     } = req.body;
     
     console.log('\n=== SUPPLY CHAIN BUSINESS DECISIONS ===');
     console.log('Requisition ID:', requisitionId);
     console.log('Payment Method:', paymentMethod);
+    console.log('Budget Assignment:', budgetXAF ? `XAF ${parseFloat(budgetXAF).toLocaleString()}` : 'Using existing');
     
     const user = await User.findById(req.user.userId);
     
@@ -4506,12 +4440,45 @@ const processSupplyChainBusinessDecisions = async (req, res) => {
       validationErrors.push('Buyer assignment is required');
     }
     
+    // ✅ NEW: Budget validation with assignment capability
+    const finalBudget = budgetXAF ? parseFloat(budgetXAF) : requisition.budgetXAF;
+    
+    if (!finalBudget || finalBudget <= 0) {
+      validationErrors.push('Budget amount is required. Please assign a budget for this requisition.');
+    }
+    
+    if (finalBudget && finalBudget > 999999999) {
+      validationErrors.push(`Budget amount (XAF ${finalBudget.toLocaleString()}) exceeds maximum allowed (XAF 999,999,999)`);
+    }
+    
     if (validationErrors.length > 0) {
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
         errors: validationErrors
       });
+    }
+    
+    // ============================================
+    // ✅ NEW: UPDATE BUDGET IF ASSIGNED BY SUPPLY CHAIN
+    // ============================================
+    let budgetAssignedBySupplyChain = false;
+    let previousBudget = requisition.budgetXAF;
+    
+    if (budgetXAF && parseFloat(budgetXAF) !== requisition.budgetXAF) {
+      console.log(`\n💰 Supply Chain assigning/updating budget:`);
+      console.log(`   Previous: ${previousBudget ? `XAF ${previousBudget.toLocaleString()}` : 'Not set'}`);
+      console.log(`   New: XAF ${parseFloat(budgetXAF).toLocaleString()}`);
+      
+      requisition.budgetXAF = parseFloat(budgetXAF);
+      budgetAssignedBySupplyChain = true;
+      
+      // Also update finance verification budget if exists
+      if (requisition.financeVerification) {
+        requisition.financeVerification.assignedBudget = parseFloat(budgetXAF);
+      }
+      
+      console.log('✅ Budget updated successfully');
     }
     
     // ============================================
@@ -4537,7 +4504,7 @@ const processSupplyChainBusinessDecisions = async (req, res) => {
     console.log(`✅ Buyer validated: ${buyer.fullName}`);
     
     // ============================================
-    // ✅ CRITICAL FIX: UPDATE APPROVAL CHAIN STATUS FOR SUPPLY CHAIN COORDINATOR
+    // UPDATE APPROVAL CHAIN STATUS FOR SUPPLY CHAIN COORDINATOR
     // ============================================
     const supplyChainStepIndex = requisition.approvalChain.findIndex(
       step => step.approver.email.toLowerCase() === user.email.toLowerCase() && 
@@ -4546,7 +4513,8 @@ const processSupplyChainBusinessDecisions = async (req, res) => {
 
     if (supplyChainStepIndex !== -1) {
       requisition.approvalChain[supplyChainStepIndex].status = 'approved';
-      requisition.approvalChain[supplyChainStepIndex].comments = comments;
+      requisition.approvalChain[supplyChainStepIndex].comments = comments + 
+        (budgetAssignedBySupplyChain ? `\n[Budget assigned: XAF ${parseFloat(budgetXAF).toLocaleString()}]` : '');
       requisition.approvalChain[supplyChainStepIndex].actionDate = new Date();
       requisition.approvalChain[supplyChainStepIndex].actionTime = new Date().toLocaleTimeString('en-GB');
       requisition.approvalChain[supplyChainStepIndex].decidedBy = req.user.userId;
@@ -4571,8 +4539,12 @@ const processSupplyChainBusinessDecisions = async (req, res) => {
       buyerAssignmentDate: new Date(),
       buyerAssignedBy: req.user.userId,
       
-      // Additional Details
-      estimatedCost: estimatedCost || requisition.budgetXAF || requisition.financeVerification?.assignedBudget,
+      // ✅ NEW: Budget assignment tracking
+      estimatedCost: estimatedCost || finalBudget,
+      budgetAssignedBySupplyChain: budgetAssignedBySupplyChain,
+      assignedBudget: budgetAssignedBySupplyChain ? parseFloat(budgetXAF) : requisition.budgetXAF,
+      previousBudget: budgetAssignedBySupplyChain ? previousBudget : undefined,
+      
       comments: comments,
       
       // Decision Status
@@ -4581,15 +4553,16 @@ const processSupplyChainBusinessDecisions = async (req, res) => {
       decidedBy: req.user.userId
     };
     
-    // ✅ CRITICAL FIX: Set payment method at ROOT LEVEL (not nested)
+    // Set payment method and purchase type at ROOT LEVEL
     requisition.paymentMethod = paymentMethod;
     requisition.purchaseType = purchaseType;
     
-    // ✅ Move to Head of Business for final approval
+    // Move to Head of Business for final approval
     requisition.status = 'pending_head_approval';
     
     console.log('✅ Payment method set to:', paymentMethod);
     console.log('✅ Purchase type set to:', purchaseType);
+    console.log('✅ Final budget:', `XAF ${finalBudget.toLocaleString()}`);
     
     await requisition.save();
     
@@ -4597,6 +4570,7 @@ const processSupplyChainBusinessDecisions = async (req, res) => {
     console.log(`   Sourcing: ${sourcingType}`);
     console.log(`   Purchase Type: ${purchaseType}`);
     console.log(`   Payment: ${paymentMethod}`);
+    console.log(`   Budget: XAF ${finalBudget.toLocaleString()} ${budgetAssignedBySupplyChain ? '(Assigned by Supply Chain)' : '(Original)'}`);
     console.log(`   Buyer: ${buyer.fullName}`);
     console.log(`   Next: Head of Business approval`);
     
@@ -4623,12 +4597,20 @@ const processSupplyChainBusinessDecisions = async (req, res) => {
                   <li><strong>Requisition:</strong> ${requisition.title}</li>
                   <li><strong>Requester:</strong> ${requisition.employee.fullName}</li>
                   <li><strong>Department:</strong> ${requisition.employee.department}</li>
-                  <li><strong>Budget:</strong> XAF ${(estimatedCost || requisition.budgetXAF || 0).toLocaleString()}</li>
+                  <li><strong>Budget:</strong> XAF ${finalBudget.toLocaleString()} ${budgetAssignedBySupplyChain ? '⚡ (Assigned by Supply Chain)' : ''}</li>
                   <li><strong>Sourcing Type:</strong> ${sourcingType.replace('_', ' ').toUpperCase()}</li>
                   <li><strong>Purchase Type:</strong> ${purchaseType.toUpperCase()}</li>
                   <li><strong>Payment Method:</strong> ${paymentMethod === 'cash' ? '💵 PETTY CASH' : '🏦 BANK TRANSFER'}</li>
                 </ul>
               </div>
+              
+              ${budgetAssignedBySupplyChain ? `
+              <div style="background-color: #fff7e6; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #faad14;">
+                <h4 style="color: #faad14; margin-top: 0;">⚡ Budget Assigned</h4>
+                <p>Supply Chain has assigned a budget of <strong>XAF ${parseFloat(budgetXAF).toLocaleString()}</strong> for this requisition.</p>
+                ${previousBudget ? `<p><small>Previous budget: XAF ${previousBudget.toLocaleString()}</small></p>` : '<p><small>No previous budget was set</small></p>'}
+              </div>
+              ` : ''}
               
               ${paymentMethod === 'cash' ? `
               <div style="background-color: #fff7e6; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #faad14;">
@@ -4682,10 +4664,21 @@ const processSupplyChainBusinessDecisions = async (req, res) => {
                   <ul>
                     <li><strong>Requester:</strong> ${requisition.employee.fullName} (${requisition.employee.department})</li>
                     <li><strong>Title:</strong> ${requisition.title}</li>
-                    <li><strong>Budget:</strong> XAF ${(estimatedCost || requisition.budgetXAF || 0).toLocaleString()}</li>
+                    <li><strong>Budget:</strong> XAF ${finalBudget.toLocaleString()} ${budgetAssignedBySupplyChain ? '⚡ (Assigned by Supply Chain)' : ''}</li>
                     <li><strong>Budget Code:</strong> ${requisition.financeVerification?.budgetCode || 'N/A'}</li>
                   </ul>
                 </div>
+                
+                ${budgetAssignedBySupplyChain ? `
+                <div style="background-color: #fff7e6; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #faad14;">
+                  <h4 style="color: #faad14; margin-top: 0;">⚡ Budget Assignment Notice</h4>
+                  <p>Supply Chain has assigned a budget of <strong>XAF ${parseFloat(budgetXAF).toLocaleString()}</strong> for this requisition during their review.</p>
+                  ${previousBudget ? 
+                    `<p><small>Previous: XAF ${previousBudget.toLocaleString()} → New: XAF ${parseFloat(budgetXAF).toLocaleString()}</small></p>` : 
+                    '<p><small>This requisition had no budget - Supply Chain has now assigned one.</small></p>'
+                  }
+                </div>
+                ` : ''}
                 
                 <div style="background-color: #e6f7ff; padding: 15px; border-radius: 8px; margin: 15px 0;">
                   <h4>✅ Business Decisions Made by ${user.fullName}</h4>
@@ -4720,7 +4713,7 @@ const processSupplyChainBusinessDecisions = async (req, res) => {
       );
     }
     
-    // 3. Notify employee of progress
+    // 3. Notify employee of progress (with budget info if assigned)
     notifications.push(
       sendEmail({
         to: requisition.employee.email,
@@ -4737,6 +4730,7 @@ const processSupplyChainBusinessDecisions = async (req, res) => {
                 <ul>
                   <li><strong>Requisition:</strong> ${requisition.title}</li>
                   <li><strong>Processed by:</strong> ${user.fullName}</li>
+                  <li><strong>Budget:</strong> XAF ${finalBudget.toLocaleString()} ${budgetAssignedBySupplyChain ? '⚡ (Assigned)' : ''}</li>
                   <li><strong>Sourcing Method:</strong> ${sourcingType.replace('_', ' ')}</li>
                   <li><strong>Purchase Type:</strong> ${purchaseType.toUpperCase()}</li>
                   <li><strong>Payment Method:</strong> ${paymentMethod === 'cash' ? 'Petty Cash' : 'Bank Transfer'}</li>
@@ -4744,6 +4738,17 @@ const processSupplyChainBusinessDecisions = async (req, res) => {
                   <li><strong>Current Status:</strong> Pending Head of Business Approval</li>
                 </ul>
               </div>
+              
+              ${budgetAssignedBySupplyChain ? `
+              <div style="background-color: #fff7e6; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #faad14;">
+                <h4 style="color: #faad14; margin-top: 0;">⚡ Budget Assignment</h4>
+                <p>Supply Chain has assigned a budget of <strong>XAF ${parseFloat(budgetXAF).toLocaleString()}</strong> to your requisition during their review process.</p>
+                ${previousBudget ? 
+                  `<p><small>Your original budget request was XAF ${previousBudget.toLocaleString()}</small></p>` : 
+                  '<p><small>Your requisition had no budget specified - Supply Chain has now assigned one.</small></p>'
+                }
+              </div>
+              ` : ''}
               
               <p>You will be notified once the Head of Business approves your requisition.</p>
             </div>
@@ -4767,7 +4772,13 @@ const processSupplyChainBusinessDecisions = async (req, res) => {
         requisitionId: requisition._id,
         requisitionNumber: requisition.requisitionNumber,
         status: requisition.status,
-        paymentMethod: requisition.paymentMethod, // ✅ Return from root level
+        paymentMethod: requisition.paymentMethod,
+        budgetInfo: {
+          finalBudget: finalBudget,
+          assignedBySupplyChain: budgetAssignedBySupplyChain,
+          previousBudget: previousBudget,
+          currency: 'XAF'
+        },
         businessDecisions: {
           sourcingType,
           purchaseType,
