@@ -900,6 +900,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
 });
 
 
+
 // Edit cash request
 router.put(
   '/:requestId/edit',
@@ -1452,6 +1453,66 @@ router.post(
   cashRequestController.createReimbursementRequest,
   cleanupTempFiles
 );
+
+// Add this route to serve justification documents
+router.get('/justification-document/:requestId/:filename', protect, async (req, res) => {
+  try {
+    const { requestId, filename } = req.params;
+    
+    // Find the request
+    const request = await CashRequest.findById(requestId);
+    
+    if (!request) {
+      return res.status(404).json({
+        success: false,
+        message: 'Request not found'
+      });
+    }
+    
+    // Check if user has permission to view this document
+    const canView = 
+      req.user._id.toString() === request.employee.toString() ||
+      req.user.role === 'admin' ||
+      req.user.role === 'finance' ||
+      req.user.role === 'supervisor';
+    
+    if (!canView) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to view this document'
+      });
+    }
+    
+    // Find the document in the justification
+    const doc = request.justification?.documents?.find(d => d.name === filename);
+    
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: 'Document not found'
+      });
+    }
+    
+    // Serve the file
+    const filePath = path.join(__dirname, '..', doc.localPath || doc.url);
+    
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'File not found on server'
+      });
+    }
+    
+    res.sendFile(filePath);
+    
+  } catch (error) {
+    console.error('Error serving document:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving document'
+    });
+  }
+});
 
 router.get(
   '/reimbursement/limit-status',
