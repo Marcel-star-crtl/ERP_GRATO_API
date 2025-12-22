@@ -1245,6 +1245,157 @@ const reassignTask = async (req, res) => {
 };
 
 
+// const getActionItems = async (req, res) => {
+//   try {
+//     const { status, priority, projectId, assignedTo, view, page = 1, limit = 50 } = req.query;
+//     const user = await User.findById(req.user.userId);
+
+//     console.log('=== GET ACTION ITEMS ===');
+//     console.log(`User: ${user.fullName} (${user.role})`);
+//     console.log(`Email: ${user.email}`);
+//     console.log(`View: ${view || 'default'}`);
+
+//     let filter = {};
+
+//     // ✅ FIX: Check if user IS a supervisor (not if role === 'supervisor')
+//     // A user is a supervisor if tasks have their email in the supervisor field
+//     const isSupervisorOf = await ActionItem.countDocuments({ 
+//       'supervisor.email': user.email 
+//     });
+
+//     console.log(`User supervises ${isSupervisorOf} tasks`);
+
+//     // Apply view-based filters
+//     if (view === 'my-tasks') {
+//       // Tasks assigned to me
+//       filter['assignedTo.user'] = req.user.userId;
+      
+//     } else if (view === 'team-tasks') {
+//       // ✅ FIX: Show tasks based on actual supervision relationship
+//       if (['admin', 'supply_chain'].includes(user.role)) {
+//         // Admins and supply chain see ALL tasks
+//         // No additional filter
+//       } else if (isSupervisorOf > 0) {
+//         // If user supervises ANY tasks, show:
+//         // 1. Tasks they supervise
+//         // 2. Tasks assigned to them
+//         // 3. Tasks in their department
+//         const departmentUsers = await User.find({ department: user.department }).select('_id');
+        
+//         filter.$or = [
+//           { 'supervisor.email': user.email },
+//           { 'assignedTo.user': req.user.userId },
+//           { 'assignedTo.user': { $in: departmentUsers.map(u => u._id) } }
+//         ];
+//       } else {
+//         // Not a supervisor - just show own tasks
+//         filter['assignedTo.user'] = req.user.userId;
+//       }
+      
+//     } else if (view === 'project-tasks') {
+//       if (projectId) {
+//         filter.projectId = projectId;
+//       } else {
+//         filter.projectId = { $ne: null };
+//       }
+      
+//     } else if (view === 'standalone-tasks') {
+//       filter.projectId = null;
+      
+//     } else if (view === 'my-approvals') {
+//       // ✅ CRITICAL FIX: Show tasks awaiting MY approval as supervisor
+//       if (['admin', 'supply_chain'].includes(user.role)) {
+//         // Admins see all pending approvals
+//         filter.$or = [
+//           { status: 'Pending Approval', 'supervisor.email': user.email },
+//           { status: 'Pending Completion Approval', 'supervisor.email': user.email },
+//           { createdBy: req.user.userId }
+//         ];
+//       } else if (isSupervisorOf > 0) {
+//         // ✅ FIX: Show tasks where I'm the supervisor AND they need approval
+//         filter.$or = [
+//           {
+//             'supervisor.email': user.email,
+//             status: { $in: ['Pending Approval', 'Pending Completion Approval'] }
+//           },
+//           {
+//             createdBy: req.user.userId
+//           }
+//         ];
+//       } else {
+//         // Not a supervisor - just show own tasks
+//         filter['assignedTo.user'] = req.user.userId;
+//       }
+      
+//       console.log('My Approvals Filter:', JSON.stringify(filter, null, 2));
+      
+//     } else {
+//       // Default view - show own tasks
+//       filter['assignedTo.user'] = req.user.userId;
+//     }
+
+//     // Apply additional filters
+//     if (status) filter.status = status;
+//     if (priority) filter.priority = priority;
+//     if (projectId && view !== 'project-tasks') filter.projectId = projectId;
+//     if (assignedTo) filter['assignedTo.user'] = assignedTo;
+
+//     console.log('Final Filter:', JSON.stringify(filter, null, 2));
+
+//     const tasks = await ActionItem.find(filter)
+//       .populate('assignedTo.user', 'fullName email department position')
+//       .populate('createdBy', 'fullName email')
+//       .populate('projectId', 'name code department')
+//       .sort({ dueDate: 1, priority: -1, createdAt: -1 })
+//       .limit(limit * 1)
+//       .skip((page - 1) * limit);
+
+//     const total = await ActionItem.countDocuments(filter);
+
+//     console.log(`Found ${tasks.length} action items`);
+
+//     // ✅ Additional debug for 'my-approvals' view
+//     if (view === 'my-approvals' && tasks.length === 0) {
+//       console.log('=== DEBUG: No tasks found for approval ===');
+      
+//       // Check if there are ANY tasks supervised by this user
+//       const supervisedTasks = await ActionItem.find({ 
+//         'supervisor.email': user.email 
+//       }).select('title status supervisor');
+      
+//       console.log(`Total tasks supervised: ${supervisedTasks.length}`);
+//       if (supervisedTasks.length > 0) {
+//         console.log('Supervised tasks:', supervisedTasks.map(t => ({
+//           title: t.title,
+//           status: t.status,
+//           supervisor: t.supervisor.email
+//         })));
+//       }
+//     }
+
+//     res.json({
+//       success: true,
+//       data: tasks,
+//       pagination: {
+//         current: parseInt(page),
+//         total: Math.ceil(total / limit),
+//         count: tasks.length,
+//         totalRecords: total
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('Get action items error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch action items',
+//       error: error.message
+//     });
+//   }
+// };
+
+
+
 const getActionItems = async (req, res) => {
   try {
     const { status, priority, projectId, assignedTo, view, page = 1, limit = 50 } = req.query;
@@ -1257,8 +1408,7 @@ const getActionItems = async (req, res) => {
 
     let filter = {};
 
-    // ✅ FIX: Check if user IS a supervisor (not if role === 'supervisor')
-    // A user is a supervisor if tasks have their email in the supervisor field
+    // Check if user IS a supervisor (not if role === 'supervisor')
     const isSupervisorOf = await ActionItem.countDocuments({ 
       'supervisor.email': user.email 
     });
@@ -1271,7 +1421,6 @@ const getActionItems = async (req, res) => {
       filter['assignedTo.user'] = req.user.userId;
       
     } else if (view === 'team-tasks') {
-      // ✅ FIX: Show tasks based on actual supervision relationship
       if (['admin', 'supply_chain'].includes(user.role)) {
         // Admins and supply chain see ALL tasks
         // No additional filter
@@ -1303,28 +1452,50 @@ const getActionItems = async (req, res) => {
       filter.projectId = null;
       
     } else if (view === 'my-approvals') {
-      // ✅ CRITICAL FIX: Show tasks awaiting MY approval as supervisor
+      // ✅ CRITICAL FIX: Show ONLY tasks where I'm the supervisor AND they need MY approval
+      // Do NOT show tasks where I'm an assignee
+      
       if (['admin', 'supply_chain'].includes(user.role)) {
-        // Admins see all pending approvals
-        filter.$or = [
-          { status: 'Pending Approval', 'supervisor.email': user.email },
-          { status: 'Pending Completion Approval', 'supervisor.email': user.email },
-          { createdBy: req.user.userId }
-        ];
-      } else if (isSupervisorOf > 0) {
-        // ✅ FIX: Show tasks where I'm the supervisor AND they need approval
+        // Admins see all pending approvals across the system
         filter.$or = [
           {
             'supervisor.email': user.email,
-            status: { $in: ['Pending Approval', 'Pending Completion Approval'] }
+            status: { $in: ['Pending Approval', 'Pending Completion Approval', 'Pending L1 Grading', 'Pending L2 Review', 'Pending L3 Final Approval'] }
           },
           {
-            createdBy: req.user.userId
+            status: { $in: ['Pending Approval', 'Pending Completion Approval', 'Pending L1 Grading', 'Pending L2 Review', 'Pending L3 Final Approval'] }
+          }
+        ];
+      } else if (isSupervisorOf > 0) {
+        // ✅ FIX: Show ONLY tasks where:
+        // 1. I'm the supervisor (supervisor.email matches mine)
+        // 2. The task needs approval (specific statuses)
+        // 3. I am NOT one of the assignees (exclude my own submissions)
+        
+        filter.$and = [
+          {
+            'supervisor.email': user.email
+          },
+          {
+            status: { 
+              $in: [
+                'Pending Approval',              // Creation approval needed
+                'Pending Completion Approval',   // Completion approval needed
+                'Pending L1 Grading',           // Level 1 grading needed
+                'Pending L2 Review',            // Level 2 review needed
+                'Pending L3 Final Approval'     // Level 3 approval needed
+              ] 
+            }
+          },
+          {
+            // ✅ CRITICAL: Exclude tasks where I'm an assignee
+            'assignedTo.user': { $ne: req.user.userId }
           }
         ];
       } else {
-        // Not a supervisor - just show own tasks
-        filter['assignedTo.user'] = req.user.userId;
+        // ✅ FIX: Not a supervisor - show NO tasks in this view
+        // Return empty result instead of showing own tasks
+        filter._id = { $exists: false }; // This will match nothing
       }
       
       console.log('My Approvals Filter:', JSON.stringify(filter, null, 2));
@@ -1354,22 +1525,30 @@ const getActionItems = async (req, res) => {
 
     console.log(`Found ${tasks.length} action items`);
 
-    // ✅ Additional debug for 'my-approvals' view
+    // Additional debug for 'my-approvals' view
     if (view === 'my-approvals' && tasks.length === 0) {
       console.log('=== DEBUG: No tasks found for approval ===');
       
       // Check if there are ANY tasks supervised by this user
       const supervisedTasks = await ActionItem.find({ 
         'supervisor.email': user.email 
-      }).select('title status supervisor');
+      }).select('title status assignedTo');
       
       console.log(`Total tasks supervised: ${supervisedTasks.length}`);
+      
       if (supervisedTasks.length > 0) {
-        console.log('Supervised tasks:', supervisedTasks.map(t => ({
-          title: t.title,
-          status: t.status,
-          supervisor: t.supervisor.email
-        })));
+        console.log('Supervised tasks:');
+        for (const task of supervisedTasks) {
+          const assigneeIds = task.assignedTo.map(a => a.user.toString());
+          const isAssignee = assigneeIds.includes(req.user.userId.toString());
+          
+          console.log({
+            title: task.title,
+            status: task.status,
+            isUserAnAssignee: isAssignee,
+            needsApproval: ['Pending Approval', 'Pending Completion Approval', 'Pending L1 Grading'].includes(task.status)
+          });
+        }
       }
     }
 
