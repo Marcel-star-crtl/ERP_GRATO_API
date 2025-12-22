@@ -1212,6 +1212,30 @@ router.get(
 // );
 
 
+function findFileRecursive(directory, filename) {
+  if (!fs.existsSync(directory)) return null;
+  
+  try {
+    const items = fs.readdirSync(directory, { withFileTypes: true });
+    
+    for (const item of items) {
+      const fullPath = path.join(directory, item.name);
+      
+      if (item.isDirectory()) {
+        const found = findFileRecursive(fullPath, filename);
+        if (found) return found;
+      } else if (item.name === filename) {
+        return fullPath;
+      }
+    }
+  } catch (error) {
+    console.error(`Error searching ${directory}:`, error.message);
+  }
+  
+  return null;
+}
+
+
 router.get(
   '/justification-document/:requestId/:filename',
   authMiddleware,
@@ -1223,6 +1247,7 @@ router.get(
       console.log('Request ID:', requestId);
       console.log('Requested filename:', filename);
       console.log('User:', req.user.userId);
+      console.log('Platform:', process.platform);
       
       // Validate ObjectId format
       if (!requestId.match(/^[0-9a-fA-F]{24}$/)) {
@@ -1262,17 +1287,15 @@ router.get(
       const decodedFilename = decodeURIComponent(filename);
       console.log('Decoded filename:', decodedFilename);
       
-      // ✅ FIX: Search by BOTH name AND publicId
+      // Find document by name, publicId, or path basename
       const doc = request.justification?.documents?.find(d => {
-        // Try to match by original name
         if (d.name === decodedFilename) return true;
-        
-        // Try to match by publicId
         if (d.publicId === decodedFilename) return true;
         
-        // Try to match by filename in localPath
-        const pathFilename = path.basename(d.localPath || '');
-        if (pathFilename === decodedFilename) return true;
+        if (d.localPath) {
+          const pathFilename = path.basename(d.localPath);
+          if (pathFilename === decodedFilename) return true;
+        }
         
         return false;
       });
@@ -1281,8 +1304,7 @@ router.get(
         console.log('❌ Document not found in request');
         console.log('Available documents:', request.justification?.documents?.map(d => ({
           name: d.name,
-          publicId: d.publicId,
-          localPath: d.localPath
+          publicId: d.publicId
         })));
         
         return res.status(404).json({
@@ -1297,77 +1319,158 @@ router.get(
       console.log('   Public ID:', doc.publicId);
       console.log('   Local Path:', doc.localPath);
       
-      // ✅ FIX: Use localPath if it exists and is valid
-      let filePath = doc.localPath;
+      // ✅ BUILD CORRECT PATH FOR CURRENT ENVIRONMENT
+      let filePath = null;
       
-      // If localPath doesn't exist, try to construct it from publicId
-      if (!filePath || !fs.existsSync(filePath)) {
-        console.log('⚠️  Stored path invalid or missing');
+      // Strategy 1: Use stored localPath if it exists
+      if (doc.localPath && fs.existsSync(doc.localPath)) {
+        console.log('✅ Using stored localPath');
+        filePath = doc.localPath;
+      } 
+      // Strategy 2: Build path from publicId
+      else {
+        console.log('⚠️  Stored path not found, building from publicId');
         
-        // Try to find file by publicId
-        const uploadsDir = path.join(__dirname, '../uploads/justifications');
-        const publicIdPath = path.join(uploadsDir, doc.publicId);
+        // Get absolute path to uploads directory
+        const uploadsDir = path.resolve(__dirname, '../uploads/justifications');
+        const builtPath = path.join(uploadsDir, doc.publicId);
         
-        if (fs.existsSync(publicIdPath)) {
-          console.log('✅ Found file by publicId:', publicIdPath);
-          filePath = publicIdPath;
+        console.log('   Uploads dir:', uploadsDir);
+        console.log('   Built path:', builtPath);
+        console.log('   File exists:', fs.existsSync(builtPath));
+        
+        if (fs.existsSync(builtPath)) {
+          console.log('✅ Found file at built path');
+          filePath = builtPath;
           
           // Update database with correct path
-          doc.localPath = publicIdPath;
+          doc.localPath = builtPath;
           await request.save();
-        } else {
-          // Try recursive search as last resort
-          const { findFileRecursively } = require('../utils/localFileStorage');
-          const uploadsRoot = path.join(__dirname, '../uploads');
-          const foundPath = findFileRecursively(uploadsRoot, doc.publicId);
+          console.log('   Updated database with correct path');
+        }
+      }
+      
+      // Strategy 3: Try alternative uploads locations
+      if (!filePath || !fs.existsSync(filePath)) {
+        console.log('⚠️  Trying alternative locations...');
+        
+        const alternativePaths = [
+          // Try without 'justifications' subfolder
+          path.resolve(__dirname, '../uploads', doc.publicId),
           
-          if (foundPath) {
-            console.log('✅ Found file (recursive search):', foundPath);
-            filePath = foundPath;
+          // Try with 'justifications' subfolder
+          path.resolve(__dirname, '../uploads/justifications', doc.publicId),
+          
+          // Try project root uploads
+          path.resolve(process.cwd(), 'uploads/justifications', doc.publicId),
+          path.resolve(process.cwd(), 'uploads', doc.publicId),
+          
+          // Try src/uploads (Render might use this)
+          path.resolve(process.cwd(), 'src/uploads/justifications', doc.publicId),
+          path.resolve(process.cwd(), 'src/uploads', doc.publicId)
+        ];
+        
+        for (const altPath of alternativePaths) {
+          console.log('   Checking:', altPath);
+          if (fs.existsSync(altPath)) {
+            console.log('   ✅ Found!');
+            filePath = altPath;
             
             // Update database
-            doc.localPath = foundPath;
+            doc.localPath = altPath;
             await request.save();
-          } else {
-            console.log('❌ File not found anywhere');
-            
-            return res.status(404).json({
-              success: false,
-              message: 'File not found on server',
-              details: {
-                requestedFilename: decodedFilename,
-                storedName: doc.name,
-                publicId: doc.publicId,
-                storedPath: doc.localPath,
-                searchedLocations: [
-                  doc.localPath,
-                  publicIdPath,
-                  'Recursive search in uploads/'
-                ]
-              }
-            });
+            break;
           }
         }
       }
       
-      console.log('📂 Final file path:', filePath);
-      console.log('📊 File exists:', fs.existsSync(filePath));
+      // Strategy 4: Last resort - recursive search
+      if (!filePath || !fs.existsSync(filePath)) {
+        console.log('⚠️  Last resort: Recursive search...');
+        
+        const searchRoots = [
+          path.resolve(__dirname, '../uploads'),
+          path.resolve(process.cwd(), 'uploads'),
+          path.resolve(process.cwd(), 'src/uploads')
+        ];
+        
+        for (const root of searchRoots) {
+          if (fs.existsSync(root)) {
+            console.log('   Searching in:', root);
+            const found = findFileRecursive(root, doc.publicId);
+            
+            if (found) {
+              console.log('   ✅ Found at:', found);
+              filePath = found;
+              
+              // Update database
+              doc.localPath = found;
+              await request.save();
+              break;
+            }
+          }
+        }
+      }
       
-      if (!fs.existsSync(filePath)) {
+      // Final check
+      if (!filePath || !fs.existsSync(filePath)) {
+        console.log('❌ File not found anywhere');
+        console.log('   Searched locations:');
+        console.log('   - Stored path:', doc.localPath);
+        console.log('   - __dirname:', __dirname);
+        console.log('   - process.cwd():', process.cwd());
+        
+        // List what's actually in the justifications folder
+        const justificationsDir = path.resolve(__dirname, '../uploads/justifications');
+        console.log('   Justifications dir:', justificationsDir);
+        
+        if (fs.existsSync(justificationsDir)) {
+          try {
+            const files = fs.readdirSync(justificationsDir);
+            console.log('   Files in justifications folder:', files.slice(0, 10));
+          } catch (err) {
+            console.log('   Could not list files:', err.message);
+          }
+        } else {
+          console.log('   Justifications directory does not exist!');
+        }
+        
         return res.status(404).json({
           success: false,
-          message: 'File exists in database but not on server',
-          path: filePath
+          message: 'File not found on server',
+          details: {
+            requestedFilename: decodedFilename,
+            storedName: doc.name,
+            publicId: doc.publicId,
+            storedPath: doc.localPath,
+            platform: process.platform,
+            cwd: process.cwd(),
+            dirname: __dirname
+          }
         });
       }
       
+      console.log('📂 Final file path:', filePath);
       console.log('✅ Serving file');
       
-      // Set proper content type
-      res.setHeader('Content-Type', doc.mimetype || 'application/octet-stream');
-      res.setHeader('Content-Disposition', `inline; filename="${doc.name}"`);
+      // Set proper headers
+      res.setHeader('Content-Type', doc.mimetype || 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.name)}"`);
       
-      res.sendFile(filePath);
+      // Use streaming for better performance
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
+      
+      fileStream.on('error', (error) => {
+        console.error('❌ Stream error:', error);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            message: 'Error streaming file',
+            error: error.message
+          });
+        }
+      });
       
     } catch (error) {
       console.error('❌ Error serving document:', error);
