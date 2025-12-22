@@ -95,6 +95,29 @@ const initializeStorageDirectories = async () => {
   }
 };
 
+// /**
+//  * Generate unique filename
+//  */
+// const generateUniqueFilename = (originalName, prefix = '') => {
+//   const timestamp = Date.now();
+//   const randomString = Math.random().toString(36).substring(2, 15);
+//   const ext = path.extname(originalName);
+//   const baseName = path.basename(originalName, ext)
+//     .replace(/[^a-zA-Z0-9]/g, '_')
+//     .substring(0, 50); // Limit length
+  
+//   return `${prefix}${prefix ? '-' : ''}${baseName}-${timestamp}-${randomString}${ext}`;
+// };
+
+
+/**
+ * Helper function to get category path
+ */
+const getCategoryPath = (category) => {
+  const uploadsBase = path.resolve(process.cwd(), 'uploads');
+  return path.join(uploadsBase, category);
+};
+
 /**
  * Generate unique filename
  */
@@ -104,10 +127,11 @@ const generateUniqueFilename = (originalName, prefix = '') => {
   const ext = path.extname(originalName);
   const baseName = path.basename(originalName, ext)
     .replace(/[^a-zA-Z0-9]/g, '_')
-    .substring(0, 50); // Limit length
+    .substring(0, 50);
   
-  return `${prefix}${prefix ? '-' : ''}${baseName}-${timestamp}-${randomString}${ext}`;
+  return `${prefix}${prefix ? '_' : ''}${baseName}-${timestamp}-${randomString}${ext}`;
 };
+
 
 /**
  * Save file to local storage
@@ -168,27 +192,44 @@ const generateUniqueFilename = (originalName, prefix = '') => {
 // };
 
 
-const saveFile = async (file, category = 'general') => {
+const saveFile = async (file, category = 'general', subfolder = '') => {
   try {
-    // Ensure category directory exists
-    const categoryDir = getCategoryPath(category);
-    await fs.mkdir(categoryDir, { recursive: true });
+    // Get base directory (relative to project root)
+    const uploadsBase = path.resolve(process.cwd(), 'uploads');
+    
+    // Build category path
+    const categoryDir = subfolder 
+      ? path.join(uploadsBase, category, subfolder)
+      : path.join(uploadsBase, category);
+    
+    // Ensure directory exists
+    await fs.mkdir(categoryDir, { recursive: true, mode: 0o755 });
     
     // Generate unique filename
     const uniqueFilename = generateUniqueFilename(file.originalname);
     
-    // Build ABSOLUTE path
-    const filePath = path.resolve(categoryDir, uniqueFilename);
+    // Build ABSOLUTE path for file storage
+    const filePath = path.join(categoryDir, uniqueFilename);
     
     console.log('💾 Saving file:');
     console.log('   Category:', category);
+    console.log('   Subfolder:', subfolder || 'none');
     console.log('   Original name:', file.originalname);
     console.log('   Unique name:', uniqueFilename);
-    console.log('   Absolute path:', filePath);
+    console.log('   Directory:', categoryDir);
+    console.log('   Full path:', filePath);
     console.log('   Platform:', process.platform);
     
-    // Save file
-    await fs.writeFile(filePath, file.buffer);
+    // Save file (handle both buffer and path-based files)
+    if (file.buffer) {
+      // Multer memoryStorage
+      await fs.writeFile(filePath, file.buffer);
+    } else if (file.path) {
+      // Multer diskStorage - copy from temp location
+      await fs.copyFile(file.path, filePath);
+    } else {
+      throw new Error('No file buffer or path provided');
+    }
     
     // Verify file was saved
     const exists = fsSync.existsSync(filePath);
@@ -198,16 +239,31 @@ const saveFile = async (file, category = 'general') => {
       throw new Error('File was not saved successfully');
     }
     
+    // Get file stats
+    const stats = await fs.stat(filePath);
+    
+    // Generate relative path for URL
+    const relativePath = path.relative(uploadsBase, filePath).replace(/\\/g, '/');
+    const fileUrl = `/uploads/${relativePath}`;
+    
+    console.log('   ✅ File saved successfully');
+    console.log('   ✅ URL:', fileUrl);
+    
+    // Return metadata (compatible with Cloudinary format)
     return {
-      filename: uniqueFilename,
+      publicId: uniqueFilename,           // Use unique filename as publicId
+      url: fileUrl,                        // URL for accessing file
+      localPath: filePath,                 // Absolute path for direct access
       originalName: file.originalname,
-      path: filePath,  // Return absolute path
-      size: file.size,
-      mimetype: file.mimetype
+      format: path.extname(file.originalname).substring(1),
+      resourceType: file.mimetype.startsWith('image/') ? 'image' : 'raw',
+      bytes: stats.size,
+      mimetype: file.mimetype,
+      uploadedAt: new Date()
     };
   } catch (error) {
     console.error('❌ Error saving file:', error);
-    throw error;
+    throw new Error(`Failed to save file: ${error.message}`);
   }
 };
 

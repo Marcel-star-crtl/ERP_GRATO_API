@@ -1212,6 +1212,7 @@ router.get(
 // );
 
 
+// FIXED: Justification document serving route
 router.get(
   '/justification-document/:requestId/:filename',
   authMiddleware,
@@ -1263,27 +1264,18 @@ router.get(
       const decodedFilename = decodeURIComponent(filename);
       console.log('Decoded filename:', decodedFilename);
       
-      // ✅ FIX: Search by BOTH name AND publicId
-      const doc = request.justification?.documents?.find(d => {
-        // Try to match by original name
-        if (d.name === decodedFilename) return true;
-        
-        // Try to match by publicId
-        if (d.publicId === decodedFilename) return true;
-        
-        // Try to match by filename in localPath
-        const pathFilename = path.basename(d.localPath || '');
-        if (pathFilename === decodedFilename) return true;
-        
-        return false;
-      });
+      // ✅ Find document by publicId (most reliable)
+      const doc = request.justification?.documents?.find(d => 
+        d.publicId === decodedFilename ||
+        d.name === decodedFilename ||
+        path.basename(d.localPath || '') === decodedFilename
+      );
       
       if (!doc) {
         console.log('❌ Document not found in request');
         console.log('Available documents:', request.justification?.documents?.map(d => ({
           name: d.name,
-          publicId: d.publicId,
-          localPath: d.localPath
+          publicId: d.publicId
         })));
         
         return res.status(404).json({
@@ -1296,97 +1288,92 @@ router.get(
       console.log('✅ Document found:');
       console.log('   Name:', doc.name);
       console.log('   Public ID:', doc.publicId);
-      console.log('   Local Path:', doc.localPath);
+      console.log('   Stored Local Path:', doc.localPath);
       
-      // ✅ FIX: Use absolute path resolution for production
-      let filePath;
+      // ✅ CRITICAL FIX: Build path dynamically from BASE_UPLOAD_DIR
+      const { BASE_UPLOAD_DIR, STORAGE_CATEGORIES } = require('../utils/localFileStorage');
       
-      if (doc.localPath) {
-        // Use path.resolve to ensure absolute path
-        filePath = path.isAbsolute(doc.localPath) 
-          ? doc.localPath 
-          : path.resolve(doc.localPath);
-        
-        console.log('📂 Resolved file path:', filePath);
-      }
+      // Strategy 1: Try stored path (if it's already absolute and correct)
+      let filePath = null;
       
-      // Check if file exists
-      if (!filePath || !fs.existsSync(filePath)) {
-        console.log('⚠️  File not found at stored path');
-        console.log('   Stored path:', doc.localPath);
-        console.log('   Resolved path:', filePath);
-        console.log('   File exists:', filePath ? fs.existsSync(filePath) : false);
-        
-        // ✅ FIX: Try to find file in uploads directory
-        const uploadsDir = path.resolve(__dirname, '../uploads/justifications');
-        console.log('   Searching in:', uploadsDir);
-        
-        // Try by publicId first (most reliable)
-        const publicIdPath = path.join(uploadsDir, doc.publicId);
-        console.log('   Trying publicId path:', publicIdPath);
-        
-        if (fs.existsSync(publicIdPath)) {
-          console.log('✅ Found file by publicId');
-          filePath = publicIdPath;
-          
-          // Update database with correct path
-          doc.localPath = filePath;
-          await request.save();
-          console.log('   ✅ Database updated with correct path');
-        } else {
-          // Fallback: recursive search (expensive, but thorough)
-          console.log('   ⚠️  publicId path not found, trying recursive search...');
-          const { findFileRecursively } = require('../utils/localFileStorage');
-          const uploadsRoot = path.resolve(__dirname, '../uploads');
-          const foundPath = findFileRecursively(uploadsRoot, doc.publicId);
-          
-          if (foundPath) {
-            console.log('✅ Found file (recursive search):', foundPath);
-            filePath = foundPath;
-            
-            // Update database
-            doc.localPath = foundPath;
-            await request.save();
-            console.log('   ✅ Database updated');
-          } else {
-            console.log('❌ File not found anywhere');
-            
-            return res.status(404).json({
-              success: false,
-              message: 'File not found on server',
-              details: {
-                requestedFilename: decodedFilename,
-                storedName: doc.name,
-                publicId: doc.publicId,
-                storedPath: doc.localPath,
-                searchedLocations: [
-                  doc.localPath,
-                  publicIdPath,
-                  'Recursive search in uploads/'
-                ]
-              }
-            });
-          }
+      if (doc.localPath && path.isAbsolute(doc.localPath)) {
+        const testPath = doc.localPath;
+        if (fsSync.existsSync(testPath)) {
+          filePath = testPath;
+          console.log('✓ Found file at stored absolute path');
         }
       }
       
-      console.log('📂 Final file path:', filePath);
-      console.log('📊 File exists:', fs.existsSync(filePath));
+      // Strategy 2: Reconstruct path from BASE_UPLOAD_DIR + publicId
+      if (!filePath) {
+        const reconstructedPath = path.join(
+          BASE_UPLOAD_DIR,
+          STORAGE_CATEGORIES.JUSTIFICATIONS,
+          doc.publicId
+        );
+        
+        console.log('📂 Trying reconstructed path:', reconstructedPath);
+        
+        if (fsSync.existsSync(reconstructedPath)) {
+          filePath = reconstructedPath;
+          console.log('✓ Found file at reconstructed path');
+          
+          // Update database with correct path
+          doc.localPath = reconstructedPath;
+          request.markModified('justification.documents');
+          await request.save();
+          console.log('   ✓ Database updated with correct path');
+        }
+      }
+      
+      // Strategy 3: Search entire justifications directory
+      if (!filePath) {
+        console.log('   ⚠️  File not found, trying recursive search...');
+        const { findFileRecursively } = require('../utils/localFileStorage');
+        const justificationsDir = path.join(BASE_UPLOAD_DIR, STORAGE_CATEGORIES.JUSTIFICATIONS);
+        
+        const foundPath = findFileRecursively(justificationsDir, doc.publicId);
+        
+        if (foundPath) {
+          filePath = foundPath;
+          console.log('✓ Found file via recursive search:', foundPath);
+          
+          // Update database
+          doc.localPath = foundPath;
+          request.markModified('justification.documents');
+          await request.save();
+          console.log('   ✓ Database updated');
+        }
+      }
       
       // Final check
-      if (!fs.existsSync(filePath)) {
+      if (!filePath || !fsSync.existsSync(filePath)) {
+        console.log('❌ File not found anywhere');
+        console.log('   Searched locations:');
+        console.log('   1. Stored path:', doc.localPath);
+        console.log('   2. Reconstructed path');
+        console.log('   3. Recursive search in justifications/');
+        
         return res.status(404).json({
           success: false,
-          message: 'File exists in database but not on server',
-          path: filePath
+          message: 'File not found on server. It may have been deleted or lost during server restart.',
+          details: {
+            requestedFilename: decodedFilename,
+            storedName: doc.name,
+            publicId: doc.publicId,
+            note: 'Files stored locally are lost when the server restarts. Consider using persistent storage like Cloudflare R2 or AWS S3.'
+          }
         });
       }
       
+      console.log('📂 Final file path:', filePath);
+      console.log('📊 File exists:', fsSync.existsSync(filePath));
       console.log('✅ Serving file');
       
-      // Set proper content type
+      // Set proper headers
       res.setHeader('Content-Type', doc.mimetype || 'application/octet-stream');
       res.setHeader('Content-Disposition', `inline; filename="${doc.name}"`);
+      res.setHeader('Cache-Control', 'private, max-age=3600');
       
       // Send file
       res.sendFile(filePath);
