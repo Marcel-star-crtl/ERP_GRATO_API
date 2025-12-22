@@ -168,59 +168,46 @@ const generateUniqueFilename = (originalName, prefix = '') => {
 // };
 
 
-const saveFile = async (file, category, subfolder = '', customFilename = null) => {
+const saveFile = async (file, category = 'general') => {
   try {
-    console.log(`\n💾 Saving file to local storage...`);
-    console.log(`   Category: ${category}`);
-    console.log(`   Subfolder: ${subfolder || 'none'}`);
-    console.log(`   Original: ${file.originalname}`);
+    // Ensure category directory exists
+    const categoryDir = getCategoryPath(category);
+    await fs.mkdir(categoryDir, { recursive: true });
     
-    // ✅ FIX: Construct destination path correctly
-    const destDir = subfolder 
-      ? path.join(BASE_UPLOAD_DIR, category, subfolder)
-      : path.join(BASE_UPLOAD_DIR, category);
+    // Generate unique filename
+    const uniqueFilename = generateUniqueFilename(file.originalname);
     
-    // Ensure directory exists
-    await fs.mkdir(destDir, { recursive: true, mode: 0o755 });
+    // Build ABSOLUTE path
+    const filePath = path.resolve(categoryDir, uniqueFilename);
     
-    // Generate filename
-    const filename = customFilename || generateUniqueFilename(file.originalname);
+    console.log('💾 Saving file:');
+    console.log('   Category:', category);
+    console.log('   Original name:', file.originalname);
+    console.log('   Unique name:', uniqueFilename);
+    console.log('   Absolute path:', filePath);
+    console.log('   Platform:', process.platform);
     
-    // ✅ FIX: Use path.resolve to get absolute path
-    const destPath = path.resolve(destDir, filename);
+    // Save file
+    await fs.writeFile(filePath, file.buffer);
     
-    console.log(`   📂 Destination directory: ${destDir}`);
-    console.log(`   📄 Filename: ${filename}`);
-    console.log(`   📍 Full path: ${destPath}`);
+    // Verify file was saved
+    const exists = fsSync.existsSync(filePath);
+    console.log('   File saved:', exists);
     
-    // Copy file from temp location
-    await fs.copyFile(file.path, destPath);
+    if (!exists) {
+      throw new Error('File was not saved successfully');
+    }
     
-    // Get file stats
-    const stats = await fs.stat(destPath);
-    
-    // Generate URL for accessing the file
-    const relativePath = path.relative(BASE_UPLOAD_DIR, destPath).replace(/\\/g, '/');
-    const fileUrl = `/uploads/${relativePath}`;
-    
-    console.log(`   ✅ Saved successfully`);
-    console.log(`   🔗 URL: ${fileUrl}`);
-    console.log(`   💾 Local path: ${destPath}`);
-    
-    // Return metadata
     return {
-      publicId: filename,
-      url: fileUrl,
-      localPath: destPath,  // ✅ Absolute path
-      format: path.extname(file.originalname).substring(1),
-      resourceType: file.mimetype.startsWith('image/') ? 'image' : 'raw',
-      bytes: stats.size,
+      filename: uniqueFilename,
       originalName: file.originalname,
-      uploadedAt: new Date()
+      path: filePath,  // Return absolute path
+      size: file.size,
+      mimetype: file.mimetype
     };
   } catch (error) {
-    console.error(`❌ Failed to save file:`, error);
-    throw new Error(`Failed to save file: ${error.message}`);
+    console.error('❌ Error saving file:', error);
+    throw error;
   }
 };
 
