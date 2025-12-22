@@ -945,6 +945,7 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
+const fsSync = require('fs');
 const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware');
 const upload = require('../middlewares/uploadMiddleware');
 const cashRequestController = require('../controllers/cashRequestController');
