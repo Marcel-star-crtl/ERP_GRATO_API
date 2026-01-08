@@ -10,6 +10,318 @@ const { sendEmail } = require('../services/emailService');
  * Process supplier approval/rejection
  * Handles the 3-level approval workflow
  */
+// const processSupplierApproval = async (req, res) => {
+//   try {
+//     console.log('=== PROCESS SUPPLIER APPROVAL ===');
+//     const { supplierId } = req.params;
+//     const { decision, comments } = req.body;
+
+//     if (!['approved', 'rejected'].includes(decision)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid decision. Must be "approved" or "rejected"'
+//       });
+//     }
+
+//     // Find supplier
+//     let supplier = await User.findById(supplierId);
+    
+//     if (!supplier || supplier.role !== 'supplier') {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Supplier not found'
+//       });
+//     }
+
+//     // Get user information
+//     const user = await User.findById(req.user.userId);
+
+//     // Validate approval permission
+//     const validation = validateSupplierApproval(user, supplier);
+//     if (!validation.canApprove) {
+//       return res.status(403).json({
+//         success: false,
+//         message: validation.reason
+//       });
+//     }
+
+//     // Find current approval step
+//     const currentStep = supplier.approvalChain.find(step => step.status === 'pending');
+//     if (!currentStep) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'No pending approval step found'
+//       });
+//     }
+
+//     // Update current step
+//     currentStep.status = decision === 'approved' ? 'approved' : 'rejected';
+//     currentStep.decision = decision;
+//     currentStep.comments = comments;
+//     currentStep.actionDate = new Date();
+//     currentStep.actionTime = new Date().toLocaleTimeString('en-US', { 
+//       hour: '2-digit', 
+//       minute: '2-digit',
+//       hour12: true 
+//     });
+
+//     // Attach signature if user has one
+//     if (user.signature && user.signature.url) {
+//       currentStep.signature = {
+//         url: user.signature.url,
+//         signedAt: new Date(),
+//         signedBy: user.fullName
+//       };
+//     }
+
+//     if (decision === 'rejected') {
+//       // Handle rejection
+//       supplier.supplierStatus.accountStatus = 'rejected';
+//       supplier.supplierStatus.rejectionReason = comments;
+//       supplier.supplierStatus.rejectedBy = req.user.userId;
+//       supplier.supplierStatus.rejectionDate = new Date();
+//       supplier.isActive = false;
+
+//       await supplier.save();
+
+//       // Notify supplier of rejection
+//       await sendSupplierRejectionEmail(
+//         supplier.email,
+//         supplier.supplierDetails.contactName,
+//         supplier,
+//         user.fullName,
+//         comments
+//       );
+
+//       return res.json({
+//         success: true,
+//         message: 'Supplier rejected',
+//         data: supplier
+//       });
+//     }
+
+//     // Handle approval
+//     const nextStepIndex = supplier.approvalChain.findIndex(
+//       step => step.level === currentStep.level + 1
+//     );
+
+//     if (nextStepIndex !== -1) {
+//       // Move to next approval level
+//       const nextStep = supplier.approvalChain[nextStepIndex];
+//       supplier.supplierStatus.accountStatus = getNextSupplierStatus(
+//         currentStep.level, 
+//         supplier.approvalChain.length
+//       );
+
+//       await supplier.save();
+
+//       // Notify next approver
+//       await sendSupplierApprovalEmail(
+//         nextStep.approver.email,
+//         nextStep.approver.name,
+//         supplier,
+//         user.fullName,
+//         currentStep.level
+//       );
+
+//       return res.json({
+//         success: true,
+//         message: `Supplier approved. Moved to next approval level (${nextStep.approver.role})`,
+//         data: supplier
+//       });
+//     } else {
+//       // Final approval - activate supplier
+//       supplier.supplierStatus.accountStatus = 'approved';
+//       supplier.supplierStatus.approvalDate = new Date();
+//       supplier.supplierStatus.approvedBy = req.user.userId;
+//       supplier.isActive = true;
+
+//       await supplier.save();
+
+//       // Notify supplier of activation
+//       await sendSupplierActivationEmail(
+//         supplier.email,
+//         supplier.supplierDetails.contactName,
+//         supplier,
+//         user.fullName
+//       );
+
+//       return res.json({
+//         success: true,
+//         message: 'Supplier fully approved and activated',
+//         data: supplier
+//       });
+//     }
+
+//   } catch (error) {
+//     console.error('Process supplier approval error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to process approval',
+//       error: error.message
+//     });
+//   }
+// };
+
+
+
+// const processSupplierApproval = async (req, res) => {
+//   try {
+//     console.log('=== PROCESS SUPPLIER APPROVAL ===');
+//     const { supplierId } = req.params;
+//     const { decision, comments } = req.body;
+
+//     if (!['approved', 'rejected'].includes(decision)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Invalid decision. Must be "approved" or "rejected"'
+//       });
+//     }
+
+//     const supplier = await User.findById(supplierId);
+    
+//     if (!supplier || supplier.role !== 'supplier') {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Supplier not found'
+//       });
+//     }
+
+//     const user = await User.findById(req.user.userId);
+
+//     // Validate approval permission
+//     const validation = validateSupplierApproval(user, supplier);
+//     if (!validation.canApprove) {
+//       return res.status(403).json({
+//         success: false,
+//         message: validation.reason
+//       });
+//     }
+
+//     // Find current approval step
+//     const currentStep = supplier.approvalChain.find(step => step.status === 'pending');
+//     if (!currentStep) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'No pending approval step found'
+//       });
+//     }
+
+//     console.log(`Processing ${decision} at level ${currentStep.level}`);
+
+//     // Update current step
+//     currentStep.status = decision === 'approved' ? 'approved' : 'rejected';
+//     currentStep.decision = decision;
+//     currentStep.comments = comments;
+//     currentStep.actionDate = new Date();
+//     currentStep.actionTime = new Date().toLocaleTimeString('en-US', { 
+//       hour: '2-digit', 
+//       minute: '2-digit',
+//       hour12: true 
+//     });
+
+//     if (user.signature && user.signature.url) {
+//       currentStep.signature = {
+//         url: user.signature.url,
+//         signedAt: new Date(),
+//         signedBy: user.fullName
+//       };
+//     }
+
+//     if (decision === 'rejected') {
+//       supplier.supplierStatus.accountStatus = 'rejected';
+//       supplier.supplierStatus.rejectionReason = comments;
+//       supplier.supplierStatus.rejectedBy = req.user.userId;
+//       supplier.supplierStatus.rejectionDate = new Date();
+//       supplier.isActive = false;
+
+//       await supplier.save();
+
+//       await sendSupplierRejectionEmail(
+//         supplier.email,
+//         supplier.supplierDetails.contactName,
+//         supplier,
+//         user.fullName,
+//         comments
+//       );
+
+//       return res.json({
+//         success: true,
+//         message: 'Supplier rejected',
+//         data: supplier
+//       });
+//     }
+
+//     // Handle approval - move to next level
+//     const nextStepIndex = supplier.approvalChain.findIndex(
+//       step => step.level === currentStep.level + 1
+//     );
+
+//     if (nextStepIndex !== -1) {
+//       const nextStep = supplier.approvalChain[nextStepIndex];
+//       supplier.supplierStatus.accountStatus = getNextSupplierStatus(
+//         currentStep.level, 
+//         supplier.approvalChain.length
+//       );
+//       supplier.currentApprovalLevel = currentStep.level + 1;
+
+//       await supplier.save();
+
+//       console.log(`✅ Moved to level ${nextStep.level}: ${nextStep.approver.role}`);
+
+//       await sendSupplierApprovalEmail(
+//         nextStep.approver.email,
+//         nextStep.approver.name,
+//         supplier,
+//         user.fullName,
+//         currentStep.level
+//       );
+
+//       return res.json({
+//         success: true,
+//         message: `Supplier approved. Moved to next approval level (${nextStep.approver.role})`,
+//         data: supplier
+//       });
+//     } else {
+//       // Final approval
+//       supplier.supplierStatus.accountStatus = 'approved';
+//       supplier.supplierStatus.approvalDate = new Date();
+//       supplier.supplierStatus.approvedBy = req.user.userId;
+//       supplier.isActive = true;
+
+//       await supplier.save();
+
+//       console.log('✅ Supplier fully approved and activated');
+
+//       await sendSupplierActivationEmail(
+//         supplier.email,
+//         supplier.supplierDetails.contactName,
+//         supplier,
+//         user.fullName
+//       );
+
+//       return res.json({
+//         success: true,
+//         message: 'Supplier fully approved and activated',
+//         data: supplier
+//       });
+//     }
+
+//   } catch (error) {
+//     console.error('❌ Process supplier approval error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to process approval',
+//       error: error.message
+//     });
+//   }
+// };
+
+
+
+/**
+ * Process supplier approval/rejection
+ */
 const processSupplierApproval = async (req, res) => {
   try {
     console.log('=== PROCESS SUPPLIER APPROVAL ===');
@@ -100,7 +412,9 @@ const processSupplierApproval = async (req, res) => {
       });
     }
 
-    // Handle approval
+    // Handle approval - move to next level
+    supplier.currentApprovalLevel = currentStep.level + 1;
+    
     const nextStepIndex = supplier.approvalChain.findIndex(
       step => step.level === currentStep.level + 1
     );
@@ -134,6 +448,8 @@ const processSupplierApproval = async (req, res) => {
       supplier.supplierStatus.accountStatus = 'approved';
       supplier.supplierStatus.approvalDate = new Date();
       supplier.supplierStatus.approvedBy = req.user.userId;
+      supplier.supplierStatus.isVerified = true; // ✅ SET VERIFIED
+      supplier.supplierStatus.emailVerified = true; // ✅ SET EMAIL VERIFIED
       supplier.isActive = true;
 
       await supplier.save();
@@ -163,11 +479,53 @@ const processSupplierApproval = async (req, res) => {
   }
 };
 
+
 /**
  * Get suppliers pending approval for current user
  */
+// const getPendingApprovalsForUser = async (req, res) => {
+//   try {
+//     const user = await User.findById(req.user.userId);
+//     if (!user) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'User not found'
+//       });
+//     }
+
+//     const pendingSuppliers = await User.find({
+//       role: 'supplier',
+//       'approvalChain.approver.email': user.email,
+//       'approvalChain.status': 'pending',
+//       'supplierStatus.accountStatus': { $nin: ['approved', 'rejected'] }
+//     }).sort({ createdAt: -1 });
+
+//     // Filter to only show suppliers where current step is for this user
+//     const userPendingSuppliers = pendingSuppliers.filter(supplier => {
+//       const currentStep = supplier.approvalChain.find(step => step.status === 'pending');
+//       return currentStep && currentStep.approver.email === user.email;
+//     });
+
+//     res.json({
+//       success: true,
+//       data: userPendingSuppliers,
+//       count: userPendingSuppliers.length
+//     });
+
+//   } catch (error) {
+//     console.error('Get pending approvals error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch pending approvals',
+//       error: error.message
+//     });
+//   }
+// };
+
+
 const getPendingApprovalsForUser = async (req, res) => {
   try {
+    console.log('=== GET PENDING APPROVALS FOR USER ===');
     const user = await User.findById(req.user.userId);
     if (!user) {
       return res.status(404).json({
@@ -176,18 +534,43 @@ const getPendingApprovalsForUser = async (req, res) => {
       });
     }
 
-    const pendingSuppliers = await User.find({
+    console.log('User:', user.email, 'Role:', user.role);
+
+    // Find suppliers where:
+    // 1. Role is supplier
+    // 2. Account status is NOT approved or rejected
+    // 3. Has approval chain
+    // 4. Current pending step matches this user's email
+    const allPendingSuppliers = await User.find({
       role: 'supplier',
-      'approvalChain.approver.email': user.email,
-      'approvalChain.status': 'pending',
-      'supplierStatus.accountStatus': { $nin: ['approved', 'rejected'] }
+      'supplierStatus.accountStatus': { 
+        $in: ['pending', 'pending_supply_chain', 'pending_head_of_business', 'pending_finance'] 
+      },
+      approvalChain: { $exists: true, $ne: [] }
     }).sort({ createdAt: -1 });
 
-    // Filter to only show suppliers where current step is for this user
-    const userPendingSuppliers = pendingSuppliers.filter(supplier => {
+    console.log(`Found ${allPendingSuppliers.length} pending suppliers`);
+
+    // Filter to only show suppliers where current user is the pending approver
+    const userPendingSuppliers = allPendingSuppliers.filter(supplier => {
+      // Find the first pending step in the approval chain
       const currentStep = supplier.approvalChain.find(step => step.status === 'pending');
-      return currentStep && currentStep.approver.email === user.email;
+      
+      if (!currentStep) {
+        console.log(`Supplier ${supplier.supplierDetails?.companyName} has no pending step`);
+        return false;
+      }
+
+      const isMatch = currentStep.approver.email === user.email;
+      
+      if (isMatch) {
+        console.log(`✅ Match: ${supplier.supplierDetails?.companyName} - Level ${currentStep.level} - ${currentStep.approver.role}`);
+      }
+      
+      return isMatch;
     });
+
+    console.log(`Filtered to ${userPendingSuppliers.length} suppliers for this user`);
 
     res.json({
       success: true,
@@ -196,7 +579,7 @@ const getPendingApprovalsForUser = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get pending approvals error:', error);
+    console.error('❌ Get pending approvals error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch pending approvals',
@@ -204,6 +587,7 @@ const getPendingApprovalsForUser = async (req, res) => {
     });
   }
 };
+
 
 /**
  * Get single supplier with approval details
@@ -239,26 +623,141 @@ const getSupplierWithApprovalDetails = async (req, res) => {
   }
 };
 
-// Email notification functions
+// // Email notification functions
+// async function sendSupplierApprovalEmail(approverEmail, approverName, supplier, requestorName, previousLevel = 0) {
+//   try {
+//     const subject = `Supplier Approval Required: ${supplier.supplierDetails.companyName}`;
+//     const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+//     const approvalLink = `${clientUrl}/admin/suppliers/${supplier._id}/approve`;
+
+//     const html = `
+//       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+//         <h2 style="color: #1890ff;">Supplier Approval Required</h2>
+//         <p>Dear ${approverName},</p>
+//         <p>A new supplier requires your approval:</p>
+        
+//         <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+//           <p><strong>Company Name:</strong> ${supplier.supplierDetails.companyName}</p>
+//           <p><strong>Contact Person:</strong> ${supplier.supplierDetails.contactName}</p>
+//           <p><strong>Email:</strong> ${supplier.email}</p>
+//           <p><strong>Supplier Type:</strong> ${supplier.supplierDetails.supplierType}</p>
+//           <p><strong>Business Type:</strong> ${supplier.supplierDetails.businessType || 'N/A'}</p>
+//           <p><strong>Registration Number:</strong> ${supplier.supplierDetails.businessRegistrationNumber || 'N/A'}</p>
+//         </div>
+
+//         ${previousLevel > 0 ? `<p><strong>Previous Approver:</strong> ${requestorName}</p>` : ''}
+
+//         <p style="text-align: center;">
+//           <a href="${approvalLink}" style="background-color: #1890ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+//             Review Supplier
+//           </a>
+//         </p>
+//       </div>
+//     `;
+
+//     await sendEmail({
+//       to: approverEmail,
+//       subject,
+//       html
+//     });
+//   } catch (error) {
+//     console.error('Failed to send supplier approval email:', error);
+//   }
+// }
+
+// async function sendSupplierRejectionEmail(userEmail, userName, supplier, rejectedBy, reason) {
+//   try {
+//     const subject = `Supplier Application Rejected: ${supplier.supplierDetails.companyName}`;
+    
+//     const html = `
+//       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+//         <h2 style="color: #ff4d4f;">Supplier Application Rejected</h2>
+//         <p>Dear ${userName},</p>
+//         <p>Your supplier application has been rejected:</p>
+        
+//         <div style="background-color: #fff2f0; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #ff4d4f;">
+//           <p><strong>Company:</strong> ${supplier.supplierDetails.companyName}</p>
+//           <p><strong>Rejected by:</strong> ${rejectedBy}</p>
+//           <p><strong>Reason:</strong> ${reason}</p>
+//         </div>
+
+//         <p>If you believe this is an error or have additional information, please contact our supply chain team.</p>
+//       </div>
+//     `;
+
+//     await sendEmail({
+//       to: userEmail,
+//       subject,
+//       html
+//     });
+//   } catch (error) {
+//     console.error('Failed to send supplier rejection email:', error);
+//   }
+// }
+
+// async function sendSupplierActivationEmail(userEmail, userName, supplier, approvedBy) {
+//   try {
+//     const subject = `Supplier Account Activated: ${supplier.supplierDetails.companyName}`;
+//     const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+    
+//     const html = `
+//       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+//         <h2 style="color: #52c41a;">Supplier Account Activated</h2>
+//         <p>Dear ${userName},</p>
+//         <p>Your supplier account has been fully approved and activated:</p>
+        
+//         <div style="background-color: #f6ffed; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #52c41a;">
+//           <p><strong>Company:</strong> ${supplier.supplierDetails.companyName}</p>
+//           <p><strong>Supplier Type:</strong> ${supplier.supplierDetails.supplierType}</p>
+//           <p><strong>Final Approved by:</strong> ${approvedBy}</p>
+//         </div>
+
+//         <p>You can now access the supplier portal and:</p>
+//         <ul>
+//           <li>Submit invoices</li>
+//           <li>Respond to RFQs</li>
+//           <li>View contracts</li>
+//           <li>Track payments</li>
+//         </ul>
+
+//         <p style="text-align: center;">
+//           <a href="${clientUrl}/supplier/login" style="background-color: #52c41a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+//             Access Supplier Portal
+//           </a>
+//         </p>
+//       </div>
+//     `;
+
+//     await sendEmail({
+//       to: userEmail,
+//       subject,
+//       html
+//     });
+//   } catch (error) {
+//     console.error('Failed to send supplier activation email:', error);
+//   }
+// }
+
+
+
+// Email functions
 async function sendSupplierApprovalEmail(approverEmail, approverName, supplier, requestorName, previousLevel = 0) {
   try {
     const subject = `Supplier Approval Required: ${supplier.supplierDetails.companyName}`;
-    const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
-    const approvalLink = `${clientUrl}/admin/suppliers/${supplier._id}/approve`;
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+    const approvalLink = `${clientUrl}/admin/suppliers/approvals`;
 
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #1890ff;">Supplier Approval Required</h2>
         <p>Dear ${approverName},</p>
-        <p>A new supplier requires your approval:</p>
+        <p>A supplier requires your approval:</p>
         
         <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
           <p><strong>Company Name:</strong> ${supplier.supplierDetails.companyName}</p>
           <p><strong>Contact Person:</strong> ${supplier.supplierDetails.contactName}</p>
           <p><strong>Email:</strong> ${supplier.email}</p>
           <p><strong>Supplier Type:</strong> ${supplier.supplierDetails.supplierType}</p>
-          <p><strong>Business Type:</strong> ${supplier.supplierDetails.businessType || 'N/A'}</p>
-          <p><strong>Registration Number:</strong> ${supplier.supplierDetails.businessRegistrationNumber || 'N/A'}</p>
         </div>
 
         ${previousLevel > 0 ? `<p><strong>Previous Approver:</strong> ${requestorName}</p>` : ''}
@@ -271,13 +770,9 @@ async function sendSupplierApprovalEmail(approverEmail, approverName, supplier, 
       </div>
     `;
 
-    await sendEmail({
-      to: approverEmail,
-      subject,
-      html
-    });
+    await sendEmail({ to: approverEmail, subject, html });
   } catch (error) {
-    console.error('Failed to send supplier approval email:', error);
+    console.error('Failed to send approval email:', error);
   }
 }
 
@@ -297,17 +792,13 @@ async function sendSupplierRejectionEmail(userEmail, userName, supplier, rejecte
           <p><strong>Reason:</strong> ${reason}</p>
         </div>
 
-        <p>If you believe this is an error or have additional information, please contact our supply chain team.</p>
+        <p>If you believe this is an error, please contact our supply chain team.</p>
       </div>
     `;
 
-    await sendEmail({
-      to: userEmail,
-      subject,
-      html
-    });
+    await sendEmail({ to: userEmail, subject, html });
   } catch (error) {
-    console.error('Failed to send supplier rejection email:', error);
+    console.error('Failed to send rejection email:', error);
   }
 }
 
@@ -318,28 +809,49 @@ async function sendSupplierActivationEmail(userEmail, userName, supplier, approv
     
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #52c41a;">Supplier Account Activated</h2>
+        <h2 style="color: #52c41a;">✅ Supplier Account Activated</h2>
         <p>Dear ${userName},</p>
-        <p>Your supplier account has been fully approved and activated:</p>
+        <p>Congratulations! Your supplier account has been fully approved and activated:</p>
         
         <div style="background-color: #f6ffed; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #52c41a;">
           <p><strong>Company:</strong> ${supplier.supplierDetails.companyName}</p>
           <p><strong>Supplier Type:</strong> ${supplier.supplierDetails.supplierType}</p>
           <p><strong>Final Approved by:</strong> ${approvedBy}</p>
+          <p><strong>Approval Date:</strong> ${new Date().toLocaleDateString()}</p>
         </div>
 
-        <p>You can now access the supplier portal and:</p>
-        <ul>
-          <li>Submit invoices</li>
-          <li>Respond to RFQs</li>
-          <li>View contracts</li>
-          <li>Track payments</li>
-        </ul>
+        <div style="background-color: #e6f7ff; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #1890ff;">
+          <h3 style="margin-top: 0;">Login Credentials</h3>
+          <p><strong>Email:</strong> ${userEmail}</p>
+          <p><strong>Temporary Password:</strong> ChangeMe123!</p>
+          <p style="color: #d46b08; font-size: 12px;">⚠️ Please change your password after first login</p>
+        </div>
 
-        <p style="text-align: center;">
-          <a href="${clientUrl}/supplier/login" style="background-color: #52c41a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
-            Access Supplier Portal
+        <div style="background-color: #fff; padding: 15px; border: 1px solid #d9d9d9; border-radius: 5px; margin: 20px 0;">
+          <h3 style="margin-top: 0;">What You Can Do Now:</h3>
+          <ul style="padding-left: 20px;">
+            <li>✓ Submit invoices for payment processing</li>
+            <li>✓ Respond to RFQ requests</li>
+            <li>✓ View and manage contracts</li>
+            <li>✓ Track payment status</li>
+            <li>✓ Update company profile</li>
+          </ul>
+        </div>
+
+        <p style="text-align: center; margin: 30px 0;">
+          <a href="${clientUrl}/supplier/login" style="background-color: #52c41a; color: white; padding: 14px 28px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
+            Access Supplier Portal →
           </a>
+        </p>
+
+        <div style="background-color: #fffbe6; padding: 10px; border-radius: 5px; margin: 20px 0; font-size: 12px;">
+          <p style="margin: 5px 0;"><strong>Need Help?</strong></p>
+          <p style="margin: 5px 0;">Contact our Supply Chain Team if you have any questions.</p>
+        </div>
+
+        <p style="color: #595959; font-size: 12px; border-top: 1px solid #d9d9d9; padding-top: 15px; margin-top: 30px;">
+          Best regards,<br>
+          <strong>Grato Engineering Supply Chain Team</strong>
         </p>
       </div>
     `;
@@ -763,6 +1275,41 @@ const bulkProcessSupplierApprovals = async (req, res) => {
   }
 };
 
+
+/**
+ * Get supplier approval statistics
+ * Returns counts by approval status for dashboard metrics
+ */
+const getSupplierApprovalStats = async (req, res) => {
+  try {
+    console.log('=== GET SUPPLIER APPROVAL STATISTICS ===');
+    
+    const User = require('../models/User');
+    const { getSupplierApprovalStats: calculateStats } = require('../config/supplierApprovalChain');
+    
+    // Get all suppliers
+    const suppliers = await User.find({ role: 'supplier' });
+    
+    // Calculate statistics
+    const stats = calculateStats(suppliers);
+    
+    console.log('Approval statistics:', stats);
+    
+    res.json({
+      success: true,
+      data: stats
+    });
+    
+  } catch (error) {
+    console.error('Get supplier approval statistics error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch approval statistics',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   processSupplierApproval,
   getPendingApprovalsForUser,
@@ -770,5 +1317,6 @@ module.exports = {
 
   getSupplierApprovalDashboard,
   getSupplierApprovalTimeline,
-  bulkProcessSupplierApprovals
+  bulkProcessSupplierApprovals,
+  getSupplierApprovalStats
 };

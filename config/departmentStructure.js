@@ -321,7 +321,7 @@ const DEPARTMENT_STRUCTURE = {
         }
       },
       'Warehouse Assistant': {
-        email: 'aghangu.marie@gratoengineering.com',
+        email: 'marie.shurinani@gratoglobal.com',
         name: 'Ms. Aghangu Marie',
         reportsTo: 'pryde.mua@gratoglobal.com',
         hierarchyLevel: 1,
@@ -347,7 +347,9 @@ const DEPARTMENT_STRUCTURE = {
       name: 'Mrs. Bruiline Tsitoh',
       position: 'HR & Admin Head',
       reportsTo: 'kelvin.eyong@gratoglobal.com', 
-      hierarchyLevel: 4
+      hierarchyLevel: 4,
+      canApprove: true,            
+      approvalAuthority: 'hr_head'
     },
     positions: {
       'Office Driver/Logistics Assistant': {

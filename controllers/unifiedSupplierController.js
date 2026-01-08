@@ -1,5 +1,3 @@
-// controllers/unifiedSupplierController.js
-
 const User = require('../models/User');
 const Contract = require('../models/Contract');
 const SupplierInvoice = require('../models/SupplierInvoice');
@@ -99,7 +97,7 @@ exports.registerAndOnboardSupplier = async (req, res) => {
       password,
       fullName,
       role: 'supplier',
-      isActive: false, // Inactive until approved
+      isActive: false, 
       
       supplierDetails: {
         companyName,

@@ -19,6 +19,38 @@ const milestoneSchema = new mongoose.Schema({
   notes: String
 }, { timestamps: true });
 
+// const amendmentSchema = new mongoose.Schema({
+//   type: {
+//     type: String,
+//     enum: ['Price Adjustment', 'Scope Change', 'Term Extension', 'Performance Modification', 'Compliance Update', 'General Amendment'],
+//     required: true
+//   },
+//   description: { type: String, required: true },
+//   effectiveDate: { type: Date, required: true },
+//   financialImpact: {
+//     amount: Number,
+//     type: {
+//       type: String,
+//       enum: ['increase', 'decrease', 'neutral']
+//     }
+//   },
+//   documents: [{
+//     name: String,
+//     url: String,
+//     publicId: String,
+//     uploadedAt: Date
+//   }],
+//   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+//   approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+//   approvalDate: Date,
+//   status: {
+//     type: String,
+//     enum: ['draft', 'pending_approval', 'approved', 'rejected'],
+//     default: 'draft'
+//   }
+// }, { timestamps: true });
+
+
 const amendmentSchema = new mongoose.Schema({
   type: {
     type: String,
@@ -38,6 +70,7 @@ const amendmentSchema = new mongoose.Schema({
     name: String,
     url: String,
     publicId: String,
+    localPath: String, // ADD THIS
     uploadedAt: Date
   }],
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -168,6 +201,7 @@ const ContractSchema = new mongoose.Schema({
     type: String,
     url: String,
     publicId: String,
+    localPath: String, 
     uploadedAt: Date,
     uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
   }],

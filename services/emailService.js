@@ -775,6 +775,357 @@ const sendCashRequestEmail = {
         error: error.message
       };
     }
+  },
+
+  /**
+   * ✅ NEW: Notify HR of new request requiring approval
+   * @param {string} hrEmail 
+   * @param {string} employeeName 
+   * @param {number} amount 
+   * @param {string} requestId 
+   * @param {string} purpose 
+   * @returns {Promise<Object>}
+   */
+  newRequestToHR: async (hrEmail, employeeName, amount, requestId, purpose = '') => {
+    try {
+      const formattedAmount = Number(amount).toFixed(2);
+      const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+      const approvalLink = `${clientUrl}/hr/request/${requestId}`;
+      
+      const subject = '👥 Cash Request - HR Review Required';
+      const text = `Hello,\n\nA cash request requires HR review and approval.\n\nEmployee: ${employeeName}\nAmount: XAF ${formattedAmount}\nRequest ID: REQ-${requestId.toString().slice(-6).toUpperCase()}\n${purpose ? `Purpose: ${purpose}\n` : ''}\nReview: ${approvalLink}\n\nBest regards,\nFinance System`;
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #e7f3ff; padding: 20px; border-radius: 8px; border-left: 4px solid #007bff;">
+            <h2 style="color: #333; margin-top: 0;">👥 Cash Request - HR Review Required</h2>
+            <p style="color: #555; line-height: 1.6;">
+              Dear HR Team,
+            </p>
+            <p style="color: #555; line-height: 1.6;">
+              A cash request has been approved by the department and requires HR review and approval.
+            </p>
+            
+            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #007bff; padding-bottom: 10px;">Request Details</h3>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Employee:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${employeeName}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Amount:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; color: #007bff; font-weight: bold;">XAF ${formattedAmount}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Request ID:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">REQ-${requestId.toString().slice(-6).toUpperCase()}</td>
+                </tr>
+                ${purpose ? `
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Purpose:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${purpose}</td>
+                </tr>
+                ` : ''}
+                <tr>
+                  <td style="padding: 8px 0;"><strong>Status:</strong></td>
+                  <td style="padding: 8px 0;"><span style="background-color: #007bff; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">AWAITING HR APPROVAL</span></td>
+                </tr>
+              </table>
+            </div>
+            
+            <div style="background-color: #fff3cd; padding: 15px; border-radius: 6px; margin: 15px 0; border-left: 4px solid #ffc107;">
+              <p style="color: #856404; margin: 0; font-size: 14px;">
+                <strong>📋 Your Review:</strong> Please verify compliance with HR policies, employment terms, and company regulations before approval.
+              </p>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${approvalLink}" 
+                 style="display: inline-block; background-color: #007bff; color: white; 
+                        padding: 15px 30px; text-decoration: none; border-radius: 8px;
+                        font-weight: bold; font-size: 16px;">
+                👀 Review & Process Request
+              </a>
+            </div>
+            
+            <div style="background-color: #e9ecef; padding: 15px; border-radius: 6px; margin-top: 20px;">
+              <p style="color: #6c757d; margin: 0; font-size: 14px;">
+                <strong>Direct Link:</strong> <a href="${approvalLink}" style="color: #007bff;">${approvalLink}</a>
+              </p>
+            </div>
+            
+            <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+            <p style="color: #888; font-size: 12px; margin-bottom: 0; text-align: center;">
+              This is an automated message from the Finance Management System.
+            </p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({
+        to: hrEmail,
+        subject,
+        text,
+        html
+      });
+
+    } catch (error) {
+      console.error('❌ Error in newRequestToHR:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  },
+
+  /**
+   * ✅ NEW: Notify Finance after HR approval
+   * @param {string} financeEmail 
+   * @param {string} employeeName 
+   * @param {number} amount 
+   * @param {string} requestId 
+   * @param {string} hrComments 
+   * @returns {Promise<Object>}
+   */
+  hrApprovalToFinance: async (financeEmail, employeeName, amount, requestId, hrComments = '') => {
+    try {
+      const formattedAmount = Number(amount).toFixed(2);
+      const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+      const financeLink = `${clientUrl}/finance/request/${requestId}`;
+      
+      const subject = '💰 Cash Request - Approved by HR, Ready for Finance Review';
+      const text = `Hello Finance Team,\n\nA cash request has been approved by HR and requires your review.\n\nEmployee: ${employeeName}\nAmount: XAF ${formattedAmount}\nRequest ID: REQ-${requestId.toString().slice(-6).toUpperCase()}\n${hrComments ? `HR Comments: ${hrComments}\n` : ''}\nReview: ${financeLink}\n\nBest regards,\nFinance System`;
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #d1ecf1; padding: 20px; border-radius: 8px; border-left: 4px solid #17a2b8;">
+            <h2 style="color: #333; margin-top: 0;">💰 Cash Request - HR Approved</h2>
+            <p style="color: #555; line-height: 1.6;">
+              Dear Finance Team,
+            </p>
+            <p style="color: #555; line-height: 1.6;">
+              A cash request has been <strong style="color: #28a745;">approved by HR</strong> and is now ready for your financial review and budget allocation.
+            </p>
+            
+            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #17a2b8; padding-bottom: 10px;">Request Details</h3>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Employee:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${employeeName}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Amount:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; color: #28a745; font-weight: bold;">XAF ${formattedAmount}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Request ID:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">REQ-${requestId.toString().slice(-6).toUpperCase()}</td>
+                </tr>
+                ${hrComments ? `
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>HR Notes:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; font-style: italic;">${hrComments}</td>
+                </tr>
+                ` : ''}
+                <tr>
+                  <td style="padding: 8px 0;"><strong>Status:</strong></td>
+                  <td style="padding: 8px 0;"><span style="background-color: #28a745; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">✅ HR APPROVED</span></td>
+                </tr>
+              </table>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${financeLink}" 
+                 style="display: inline-block; background-color: #17a2b8; color: white; 
+                        padding: 15px 30px; text-decoration: none; border-radius: 8px;
+                        font-weight: bold; font-size: 16px;">
+                💼 Review & Allocate Budget
+              </a>
+            </div>
+            
+            <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+            <p style="color: #888; font-size: 12px; margin-bottom: 0; text-align: center;">
+              This is an automated message from the Finance Management System.
+            </p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({
+        to: financeEmail,
+        subject,
+        text,
+        html
+      });
+
+    } catch (error) {
+      console.error('❌ Error in hrApprovalToFinance:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  },
+
+  /**
+   * ✅ NEW: Notify employee of HR approval
+   * @param {string} employeeEmail 
+   * @param {string} employeeName 
+   * @param {string} requestId 
+   * @returns {Promise<Object>}
+   */
+  hrApprovalToEmployee: async (employeeEmail, employeeName, requestId) => {
+    try {
+      const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+      const trackingLink = `${clientUrl}/employee/request/${requestId}`;
+      
+      const subject = '✅ HR Approved - Request Progressing';
+      const text = `Hello ${employeeName},\n\nYour cash request has been approved by HR and is moving to Finance for final review.\n\nRequest ID: REQ-${requestId.toString().slice(-6).toUpperCase()}\n\nTrack your request: ${trackingLink}\n\nBest regards,\nFinance System`;
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #d4edda; padding: 20px; border-radius: 8px; border-left: 4px solid #28a745;">
+            <h2 style="color: #155724; margin-top: 0;">✅ HR Approved Your Request!</h2>
+            <p style="color: #155724; line-height: 1.6;">
+              Dear ${employeeName},
+            </p>
+            <p style="color: #155724; line-height: 1.6;">
+              Great progress! Your cash request has been approved by HR and is now with Finance for budget allocation and final approval.
+            </p>
+            
+            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #28a745; padding-bottom: 10px;">Progress Update</h3>
+              <ul style="list-style: none; padding: 0;">
+                <li style="padding: 8px 0; border-bottom: 1px solid #eee;">✅ Supervisor - Approved</li>
+                <li style="padding: 8px 0; border-bottom: 1px solid #eee;">✅ Department Head - Approved</li>
+                <li style="padding: 8px 0; border-bottom: 1px solid #eee;">✅ HR - Approved</li>
+                <li style="padding: 8px 0; border-bottom: 1px solid #eee;">⏳ Finance - Pending Review</li>
+                <li style="padding: 8px 0;">⏳ Head of Business - Pending</li>
+              </ul>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${trackingLink}" 
+                 style="display: inline-block; background-color: #007bff; color: white; 
+                        padding: 12px 25px; text-decoration: none; border-radius: 6px;
+                        font-weight: bold; font-size: 14px;">
+                📊 Track Your Request
+              </a>
+            </div>
+            
+            <hr style="border: none; border-top: 1px solid #c3e6cb; margin: 20px 0;">
+            <p style="color: #6c757d; font-size: 12px; margin-bottom: 0; text-align: center;">
+              This is an automated message from the Finance Management System.
+            </p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({
+        to: employeeEmail,
+        subject,
+        text,
+        html
+      });
+
+    } catch (error) {
+      console.error('❌ Error in hrApprovalToEmployee:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  },
+
+  /**
+   * ✅ NEW: Notify HR of justification requiring approval
+   * @param {string} hrEmail 
+   * @param {string} employeeName 
+   * @param {number} amountSpent 
+   * @param {number} balanceReturned 
+   * @param {string} requestId 
+   * @returns {Promise<Object>}
+   */
+  justificationToHR: async (hrEmail, employeeName, amountSpent, balanceReturned, requestId) => {
+    try {
+      const formattedSpent = Number(amountSpent).toFixed(2);
+      const formattedReturned = Number(balanceReturned).toFixed(2);
+      const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
+      const reviewLink = `${clientUrl}/hr/justification/${requestId}`;
+      
+      const subject = '📄 Cash Justification - HR Review Required';
+      const text = `Hello HR Team,\n\nA cash justification has been approved by the department and requires HR review.\n\nEmployee: ${employeeName}\nAmount Spent: XAF ${formattedSpent}\nBalance Returned: XAF ${formattedReturned}\nRequest ID: REQ-${requestId.toString().slice(-6).toUpperCase()}\n\nReview: ${reviewLink}\n\nBest regards,\nFinance System`;
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #e7f3ff; padding: 20px; border-radius: 8px; border-left: 4px solid #007bff;">
+            <h2 style="color: #333; margin-top: 0;">📄 Cash Justification - HR Review</h2>
+            <p style="color: #555; line-height: 1.6;">
+              Dear HR Team,
+            </p>
+            <p style="color: #555; line-height: 1.6;">
+              A cash justification has been approved by the department and requires HR review before final Finance approval.
+            </p>
+            
+            <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+              <h3 style="color: #333; margin-top: 0; border-bottom: 2px solid #007bff; padding-bottom: 10px;">Justification Summary</h3>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Employee:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">${employeeName}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Amount Spent:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; color: #dc3545; font-weight: bold;">XAF ${formattedSpent}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Balance Returned:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee; color: #28a745; font-weight: bold;">XAF ${formattedReturned}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;"><strong>Request ID:</strong></td>
+                  <td style="padding: 8px 0; border-bottom: 1px solid #eee;">REQ-${requestId.toString().slice(-6).toUpperCase()}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 8px 0;"><strong>Status:</strong></td>
+                  <td style="padding: 8px 0;"><span style="background-color: #007bff; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">AWAITING HR REVIEW</span></td>
+                </tr>
+              </table>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${reviewLink}" 
+                 style="display: inline-block; background-color: #007bff; color: white; 
+                        padding: 15px 30px; text-decoration: none; border-radius: 8px;
+                        font-weight: bold; font-size: 16px;">
+                📋 Review Justification Documents
+              </a>
+            </div>
+            
+            <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+            <p style="color: #888; font-size: 12px; margin-bottom: 0; text-align: center;">
+              This is an automated message from the Finance Management System.
+            </p>
+          </div>
+        </div>
+      `;
+
+      return await sendEmail({
+        to: hrEmail,
+        subject,
+        text,
+        html
+      });
+
+    } catch (error) {
+      console.error('❌ Error in justificationToHR:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
   }
 };
 

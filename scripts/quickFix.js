@@ -1,4 +1,3 @@
-// scripts/quickFix.js - Fix Validation Issues
 require('dotenv').config();
 const mongoose = require('mongoose');
 const User = require('../models/User');

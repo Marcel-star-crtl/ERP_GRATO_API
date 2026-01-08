@@ -95,20 +95,6 @@ const initializeStorageDirectories = async () => {
   }
 };
 
-// /**
-//  * Generate unique filename
-//  */
-// const generateUniqueFilename = (originalName, prefix = '') => {
-//   const timestamp = Date.now();
-//   const randomString = Math.random().toString(36).substring(2, 15);
-//   const ext = path.extname(originalName);
-//   const baseName = path.basename(originalName, ext)
-//     .replace(/[^a-zA-Z0-9]/g, '_')
-//     .substring(0, 50); // Limit length
-  
-//   return `${prefix}${prefix ? '-' : ''}${baseName}-${timestamp}-${randomString}${ext}`;
-// };
-
 
 /**
  * Helper function to get category path
@@ -131,65 +117,6 @@ const generateUniqueFilename = (originalName, prefix = '') => {
   
   return `${prefix}${prefix ? '_' : ''}${baseName}-${timestamp}-${randomString}${ext}`;
 };
-
-
-/**
- * Save file to local storage
- * @param {Object} file - Multer file object
- * @param {String} category - Storage category (from STORAGE_CATEGORIES)
- * @param {String} subfolder - Optional subfolder within category
- * @param {String} customFilename - Optional custom filename
- * @returns {Object} File metadata
- */
-// const saveFile = async (file, category, subfolder = '', customFilename = null) => {
-//   try {
-//     console.log(`\n💾 Saving file to local storage...`);
-//     console.log(`   Category: ${category}`);
-//     console.log(`   Subfolder: ${subfolder || 'none'}`);
-//     console.log(`   Original: ${file.originalname}`);
-    
-//     // Construct destination path
-//     const destDir = subfolder 
-//       ? path.join(BASE_UPLOAD_DIR, category, subfolder)
-//       : path.join(BASE_UPLOAD_DIR, category);
-    
-//     // Ensure directory exists
-//     await fs.mkdir(destDir, { recursive: true, mode: 0o755 });
-    
-//     // Generate filename
-//     const filename = customFilename || generateUniqueFilename(file.originalname);
-//     const destPath = path.join(destDir, filename);
-    
-//     // Copy file from temp location
-//     await fs.copyFile(file.path, destPath);
-    
-//     // Get file stats
-//     const stats = await fs.stat(destPath);
-    
-//     // Generate URL for accessing the file
-//     // This will be used by your Express static file server
-//     const relativePath = path.relative(BASE_UPLOAD_DIR, destPath).replace(/\\/g, '/');
-//     const fileUrl = `/uploads/${relativePath}`;
-    
-//     console.log(`   ✓ Saved to: ${destPath}`);
-//     console.log(`   ✓ URL: ${fileUrl}`);
-    
-//     // Return metadata similar to Cloudinary format for compatibility
-//     return {
-//       publicId: filename,
-//       url: fileUrl,
-//       localPath: destPath,
-//       format: path.extname(file.originalname).substring(1),
-//       resourceType: file.mimetype.startsWith('image/') ? 'image' : 'raw',
-//       bytes: stats.size,
-//       originalName: file.originalname,
-//       uploadedAt: new Date()
-//     };
-//   } catch (error) {
-//     console.error(`❌ Failed to save file:`, error);
-//     throw new Error(`Failed to save file: ${error.message}`);
-//   }
-// };
 
 
 const saveFile = async (file, category = 'general', subfolder = '') => {

@@ -6,7 +6,7 @@ const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware'
 // Dashboard
 router.get('/dashboard',
   authMiddleware,
-  requireRoles('admin', 'supply_chain'),
+  requireRoles('admin', 'supply_chain', 'buyer'),
   inventoryController.getInventoryDashboard
 );
 
@@ -40,7 +40,7 @@ router.get('/items/:itemId/stock-movement',
 
 router.get('/items/:itemId/audit',
   authMiddleware,
-  requireRoles('admin', 'supply_chain'),
+  requireRoles('admin', 'supply_chain', 'buyer'),
   inventoryController.getItemAuditTrail
 );
 
@@ -51,7 +51,7 @@ router.get('/items/:itemId/analytics',
 
 router.patch('/items/:itemId',
   authMiddleware,
-  requireRoles('admin', 'supply_chain'),
+  requireRoles('admin', 'supply_chain', 'buyer'),
   inventoryController.updateItemDetails
 );
 
@@ -63,26 +63,26 @@ router.get('/transactions',
 
 router.post('/inbound',
   authMiddleware,
-  requireRoles('admin', 'supply_chain'),
+  requireRoles('admin', 'supply_chain', 'buyer'),
   inventoryController.recordInbound
 );
 
 router.post('/outbound',
   authMiddleware,
-  requireRoles('admin', 'supply_chain'),
+  requireRoles('admin', 'supply_chain', 'buyer'),
   inventoryController.recordOutbound
 );
 
 // Stock Adjustments
 router.post('/adjustment',
   authMiddleware,
-  requireRoles('admin', 'supply_chain'),
+  requireRoles('admin', 'supply_chain', 'buyer'),
   inventoryController.createStockAdjustment
 );
 
 router.patch('/adjustment/:adjustmentId/approve',
   authMiddleware,
-  requireRoles('admin', 'supply_chain'),
+  requireRoles('admin', 'supply_chain', 'buyer'),
   inventoryController.approveStockAdjustment
 );
 
@@ -99,7 +99,7 @@ router.get('/reorder-alerts',
 
 router.get('/valuation',
   authMiddleware,
-  requireRoles('admin', 'supply_chain', 'finance'),
+  requireRoles('admin', 'supply_chain', 'finance', 'buyer'),
   inventoryController.getInventoryValuation
 );
 

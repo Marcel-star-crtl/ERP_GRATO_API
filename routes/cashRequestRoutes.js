@@ -941,11 +941,13 @@
 
 
 
+
+
+
 const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
-const fsSync = require('fs');
 const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware');
 const upload = require('../middlewares/uploadMiddleware');
 const cashRequestController = require('../controllers/cashRequestController');
@@ -1124,96 +1126,6 @@ router.get(
 // MULTI-SEGMENT ROUTES WITH PARAMETERS (BEFORE SINGLE-SEGMENT ROUTES)
 // ============================================
 
-// CRITICAL: This must come before /employee, /finance, /supervisor routes
-// router.get(
-//   '/justification-document/:requestId/:filename',
-//   authMiddleware,
-//   async (req, res) => {
-//     try {
-//       const { requestId, filename } = req.params;
-      
-//       console.log('\n=== SERVING JUSTIFICATION DOCUMENT ===');
-//       console.log('Request ID:', requestId);
-//       console.log('Filename:', filename);
-//       console.log('User:', req.user.userId);
-      
-//       // Validate ObjectId format
-//       if (!requestId.match(/^[0-9a-fA-F]{24}$/)) {
-//         return res.status(400).json({
-//           success: false,
-//           message: 'Invalid request ID format'
-//         });
-//       }
-      
-//       // Find the request
-//       const request = await CashRequest.findById(requestId).populate('employee', '_id');
-      
-//       if (!request) {
-//         console.log('❌ Request not found');
-//         return res.status(404).json({
-//           success: false,
-//           message: 'Request not found'
-//         });
-//       }
-      
-//       // Check if user has permission to view this document
-//       const canView = 
-//         request.employee._id.toString() === req.user.userId.toString() ||
-//         req.user.role === 'admin' ||
-//         req.user.role === 'finance' ||
-//         req.user.role === 'supervisor';
-      
-//       if (!canView) {
-//         console.log('❌ Access denied');
-//         return res.status(403).json({
-//           success: false,
-//           message: 'Not authorized to view this document'
-//         });
-//       }
-      
-//       // Find the document in the justification
-//       const doc = request.justification?.documents?.find(d => d.name === filename);
-      
-//       if (!doc) {
-//         console.log('❌ Document not found in request');
-//         console.log('Available documents:', request.justification?.documents?.map(d => d.name));
-//         return res.status(404).json({
-//           success: false,
-//           message: 'Document not found'
-//         });
-//       }
-      
-//       // Serve the file
-//       const filePath = path.join(__dirname, '..', doc.localPath || doc.url);
-      
-//       console.log('File path:', filePath);
-//       console.log('File exists:', fs.existsSync(filePath));
-      
-//       if (!fs.existsSync(filePath)) {
-//         console.log('❌ File not found on server');
-//         return res.status(404).json({
-//           success: false,
-//           message: 'File not found on server',
-//           path: filePath
-//         });
-//       }
-      
-//       console.log('✅ Serving file');
-//       res.sendFile(filePath);
-      
-//     } catch (error) {
-//       console.error('Error serving document:', error);
-//       res.status(500).json({
-//         success: false,
-//         message: 'Error retrieving document',
-//         error: error.message
-//       });
-//     }
-//   }
-// );
-
-
-// FIXED: Justification document serving route
 router.get(
   '/justification-document/:requestId/:filename',
   authMiddleware,
@@ -1225,7 +1137,6 @@ router.get(
       console.log('Request ID:', requestId);
       console.log('Requested filename:', filename);
       console.log('User:', req.user.userId);
-      console.log('Platform:', process.platform);
       
       // Validate ObjectId format
       if (!requestId.match(/^[0-9a-fA-F]{24}$/)) {
@@ -1265,18 +1176,27 @@ router.get(
       const decodedFilename = decodeURIComponent(filename);
       console.log('Decoded filename:', decodedFilename);
       
-      // ✅ Find document by publicId (most reliable)
-      const doc = request.justification?.documents?.find(d => 
-        d.publicId === decodedFilename ||
-        d.name === decodedFilename ||
-        path.basename(d.localPath || '') === decodedFilename
-      );
+      // ✅ FIX: Search by BOTH name AND publicId
+      const doc = request.justification?.documents?.find(d => {
+        // Try to match by original name
+        if (d.name === decodedFilename) return true;
+        
+        // Try to match by publicId
+        if (d.publicId === decodedFilename) return true;
+        
+        // Try to match by filename in localPath
+        const pathFilename = path.basename(d.localPath || '');
+        if (pathFilename === decodedFilename) return true;
+        
+        return false;
+      });
       
       if (!doc) {
         console.log('❌ Document not found in request');
         console.log('Available documents:', request.justification?.documents?.map(d => ({
           name: d.name,
-          publicId: d.publicId
+          publicId: d.publicId,
+          localPath: d.localPath
         })));
         
         return res.status(404).json({
@@ -1289,94 +1209,78 @@ router.get(
       console.log('✅ Document found:');
       console.log('   Name:', doc.name);
       console.log('   Public ID:', doc.publicId);
-      console.log('   Stored Local Path:', doc.localPath);
+      console.log('   Local Path:', doc.localPath);
       
-      // ✅ CRITICAL FIX: Build path dynamically from BASE_UPLOAD_DIR
-      const { BASE_UPLOAD_DIR, STORAGE_CATEGORIES } = require('../utils/localFileStorage');
+      // ✅ FIX: Use localPath if it exists and is valid
+      let filePath = doc.localPath;
       
-      // Strategy 1: Try stored path (if it's already absolute and correct)
-      let filePath = null;
-      
-      if (doc.localPath && path.isAbsolute(doc.localPath)) {
-        const testPath = doc.localPath;
-        if (fsSync.existsSync(testPath)) {
-          filePath = testPath;
-          console.log('✓ Found file at stored absolute path');
-        }
-      }
-      
-      // Strategy 2: Reconstruct path from BASE_UPLOAD_DIR + publicId
-      if (!filePath) {
-        const reconstructedPath = path.join(
-          BASE_UPLOAD_DIR,
-          STORAGE_CATEGORIES.JUSTIFICATIONS,
-          doc.publicId
-        );
+      // If localPath doesn't exist, try to construct it from publicId
+      if (!filePath || !fs.existsSync(filePath)) {
+        console.log('⚠️  Stored path invalid or missing');
         
-        console.log('📂 Trying reconstructed path:', reconstructedPath);
+        // Try to find file by publicId
+        const uploadsDir = path.join(__dirname, '../uploads/justifications');
+        const publicIdPath = path.join(uploadsDir, doc.publicId);
         
-        if (fsSync.existsSync(reconstructedPath)) {
-          filePath = reconstructedPath;
-          console.log('✓ Found file at reconstructed path');
+        if (fs.existsSync(publicIdPath)) {
+          console.log('✅ Found file by publicId:', publicIdPath);
+          filePath = publicIdPath;
           
           // Update database with correct path
-          doc.localPath = reconstructedPath;
-          request.markModified('justification.documents');
+          doc.localPath = publicIdPath;
           await request.save();
-          console.log('   ✓ Database updated with correct path');
-        }
-      }
-      
-      // Strategy 3: Search entire justifications directory
-      if (!filePath) {
-        console.log('   ⚠️  File not found, trying recursive search...');
-        const { findFileRecursively } = require('../utils/localFileStorage');
-        const justificationsDir = path.join(BASE_UPLOAD_DIR, STORAGE_CATEGORIES.JUSTIFICATIONS);
-        
-        const foundPath = findFileRecursively(justificationsDir, doc.publicId);
-        
-        if (foundPath) {
-          filePath = foundPath;
-          console.log('✓ Found file via recursive search:', foundPath);
+        } else {
+          // Try recursive search as last resort
+          const { findFileRecursively } = require('../utils/localFileStorage');
+          const uploadsRoot = path.join(__dirname, '../uploads');
+          const foundPath = findFileRecursively(uploadsRoot, doc.publicId);
           
-          // Update database
-          doc.localPath = foundPath;
-          request.markModified('justification.documents');
-          await request.save();
-          console.log('   ✓ Database updated');
-        }
-      }
-      
-      // Final check
-      if (!filePath || !fsSync.existsSync(filePath)) {
-        console.log('❌ File not found anywhere');
-        console.log('   Searched locations:');
-        console.log('   1. Stored path:', doc.localPath);
-        console.log('   2. Reconstructed path');
-        console.log('   3. Recursive search in justifications/');
-        
-        return res.status(404).json({
-          success: false,
-          message: 'File not found on server. It may have been deleted or lost during server restart.',
-          details: {
-            requestedFilename: decodedFilename,
-            storedName: doc.name,
-            publicId: doc.publicId,
-            note: 'Files stored locally are lost when the server restarts. Consider using persistent storage like Cloudflare R2 or AWS S3.'
+          if (foundPath) {
+            console.log('✅ Found file (recursive search):', foundPath);
+            filePath = foundPath;
+            
+            // Update database
+            doc.localPath = foundPath;
+            await request.save();
+          } else {
+            console.log('❌ File not found anywhere');
+            
+            return res.status(404).json({
+              success: false,
+              message: 'File not found on server',
+              details: {
+                requestedFilename: decodedFilename,
+                storedName: doc.name,
+                publicId: doc.publicId,
+                storedPath: doc.localPath,
+                searchedLocations: [
+                  doc.localPath,
+                  publicIdPath,
+                  'Recursive search in uploads/'
+                ]
+              }
+            });
           }
-        });
+        }
       }
       
       console.log('📂 Final file path:', filePath);
-      console.log('📊 File exists:', fsSync.existsSync(filePath));
+      console.log('📊 File exists:', fs.existsSync(filePath));
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({
+          success: false,
+          message: 'File exists in database but not on server',
+          path: filePath
+        });
+      }
+      
       console.log('✅ Serving file');
       
-      // Set proper headers
+      // Set proper content type
       res.setHeader('Content-Type', doc.mimetype || 'application/octet-stream');
       res.setHeader('Content-Disposition', `inline; filename="${doc.name}"`);
-      res.setHeader('Cache-Control', 'private, max-age=3600');
       
-      // Send file
       res.sendFile(filePath);
       
     } catch (error) {
@@ -1477,6 +1381,13 @@ router.get(
 
 router.put(
   '/finance/justification/:requestId',
+  authMiddleware,
+  requireRoles('finance', 'admin'),
+  cashRequestController.processFinanceJustificationDecision
+);
+
+router.put(
+  '/:requestId/finance/justification',
   authMiddleware,
   requireRoles('finance', 'admin'),
   cashRequestController.processFinanceJustificationDecision
@@ -1754,6 +1665,254 @@ router.put(
   authMiddleware,
   requireRoles('finance', 'admin'),
   cashRequestController.processFinanceDecision
+);
+
+/**
+ * Get pending HR approvals
+ * GET /api/cash-requests/hr/pending
+ */
+router.get(
+  '/hr/pending',
+  authMiddleware,
+  requireRoles('admin', 'hr'),
+  async (req, res) => {
+    try {
+      const user = await User.findById(req.user.userId);
+      
+      console.log('=== GET HR PENDING APPROVALS ===');
+      console.log(`User: ${user.fullName} (${user.email})`);
+
+      // Find requests where HR is pending
+      const requests = await CashRequest.find({
+        status: 'pending_hr',
+        'approvalChain': {
+          $elemMatch: {
+            'approver.email': user.email,
+            'approver.role': 'HR Head',
+            'status': 'pending'
+          }
+        }
+      })
+      .populate('employee', 'fullName email department position')
+      .sort({ createdAt: -1 });
+
+      console.log(`Found ${requests.length} requests pending HR approval`);
+
+      res.json({
+        success: true,
+        data: requests,
+        count: requests.length,
+        userInfo: {
+          name: user.fullName,
+          email: user.email,
+          role: user.role
+        }
+      });
+
+    } catch (error) {
+      console.error('Get HR pending approvals error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch HR approvals',
+        error: error.message
+      });
+    }
+  }
+);
+
+/**
+ * Get HR justification approvals
+ * GET /api/cash-requests/hr/justifications
+ */
+router.get(
+  '/hr/justifications',
+  authMiddleware,
+  requireRoles('admin', 'hr'),
+  async (req, res) => {
+    try {
+      const user = await User.findById(req.user.userId);
+      
+      console.log('=== GET HR JUSTIFICATION APPROVALS ===');
+      console.log(`User: ${user.fullName} (${user.email})`);
+
+      const requests = await CashRequest.find({
+        status: 'justification_pending_hr',
+        'justificationApprovalChain': {
+          $elemMatch: {
+            'approver.email': user.email,
+            'approver.role': 'HR Head',
+            'status': 'pending'
+          }
+        }
+      })
+      .populate('employee', 'fullName email department')
+      .sort({ 'justification.justificationDate': -1 });
+
+      console.log(`Found ${requests.length} justifications pending HR approval`);
+
+      res.json({
+        success: true,
+        data: requests,
+        count: requests.length
+      });
+
+    } catch (error) {
+      console.error('Get HR justifications error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch HR justifications',
+        error: error.message
+      });
+    }
+  }
+);
+
+/**
+ * Get single request for HR review
+ * GET /api/cash-requests/hr/:requestId
+ */
+router.get(
+  '/hr/:requestId',
+  authMiddleware,
+  requireRoles('admin', 'hr'),
+  async (req, res) => {
+    try {
+      const { requestId } = req.params;
+      const user = await User.findById(req.user.userId);
+
+      const request = await CashRequest.findById(requestId)
+        .populate('employee', 'fullName email department position')
+        .populate('approvalChain.decidedBy', 'fullName email')
+        .populate('projectId', 'name code');
+
+      if (!request) {
+        return res.status(404).json({
+          success: false,
+          message: 'Request not found'
+        });
+      }
+
+      // Check if user has HR approval authority
+      const canView = 
+        user.role === 'admin' ||
+        request.approvalChain.some(step => 
+          step.approver.email === user.email && step.approver.role === 'HR Head'
+        );
+
+      if (!canView) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied'
+        });
+      }
+
+      res.json({
+        success: true,
+        data: request
+      });
+
+    } catch (error) {
+      console.error('Get HR request error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch request',
+        error: error.message
+      });
+    }
+  }
+);
+
+/**
+ * Process HR approval decision
+ * PUT /api/cash-requests/hr/:requestId
+ */
+router.put(
+  '/hr/:requestId',
+  authMiddleware,
+  requireRoles('admin', 'hr'),
+  cashRequestController.processSupervisorDecision  // ✅ Reuses same function with version control
+);
+
+/**
+ * Get HR dashboard stats
+ * GET /api/cash-requests/hr/dashboard/stats
+ */
+router.get(
+  '/hr/dashboard/stats',
+  authMiddleware,
+  requireRoles('admin', 'hr'),
+  async (req, res) => {
+    try {
+      const user = await User.findById(req.user.userId);
+
+      const [
+        pendingApprovals,
+        pendingJustifications,
+        approvedThisMonth,
+        rejectedThisMonth
+      ] = await Promise.all([
+        // Pending approvals
+        CashRequest.countDocuments({
+          status: 'pending_hr',
+          'approvalChain': {
+            $elemMatch: {
+              'approver.email': user.email,
+              'status': 'pending'
+            }
+          }
+        }),
+        // Pending justifications
+        CashRequest.countDocuments({
+          status: 'justification_pending_hr',
+          'justificationApprovalChain': {
+            $elemMatch: {
+              'approver.email': user.email,
+              'status': 'pending'
+            }
+          }
+        }),
+        // Approved this month
+        CashRequest.countDocuments({
+          'approvalChain': {
+            $elemMatch: {
+              'approver.email': user.email,
+              'status': 'approved',
+              'actionDate': { $gte: new Date(new Date().setDate(1)) }
+            }
+          }
+        }),
+        // Rejected this month
+        CashRequest.countDocuments({
+          'approvalChain': {
+            $elemMatch: {
+              'approver.email': user.email,
+              'status': 'rejected',
+              'actionDate': { $gte: new Date(new Date().setDate(1)) }
+            }
+          }
+        })
+      ]);
+
+      res.json({
+        success: true,
+        data: {
+          pendingApprovals,
+          pendingJustifications,
+          approvedThisMonth,
+          rejectedThisMonth,
+          totalPending: pendingApprovals + pendingJustifications
+        }
+      });
+
+    } catch (error) {
+      console.error('Get HR dashboard stats error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch HR stats',
+        error: error.message
+      });
+    }
+  }
 );
 
 // Delete request

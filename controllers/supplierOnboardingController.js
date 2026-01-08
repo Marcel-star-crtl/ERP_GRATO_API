@@ -6,6 +6,213 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 
+
+// Helper function
+function normalizeDocuments(documents) {
+  if (!documents) return {};
+  
+  const normalized = {};
+  
+  Object.keys(documents).forEach(key => {
+    const doc = documents[key];
+    
+    if (typeof doc === 'string') {
+      normalized[key] = {
+        name: doc,
+        url: `/uploads/attachments/${doc}`,
+        publicId: doc,
+        size: null,
+        mimetype: null
+      };
+    } else if (Array.isArray(doc)) {
+      normalized[key] = doc.map(item => {
+        if (typeof item === 'string') {
+          return {
+            name: item,
+            url: `/uploads/attachments/${item}`,
+            publicId: item,
+            size: null,
+            mimetype: null
+          };
+        }
+        return item;
+      });
+    } else {
+      normalized[key] = doc;
+    }
+  });
+  
+  return normalized;
+}
+
+
+// exports.submitApplication = async (req, res) => {
+//   try {
+//     const {
+//       companyName,
+//       contactName,
+//       email,
+//       phoneNumber,
+//       address,
+//       businessRegistrationNumber,
+//       taxIdNumber,
+//       bankDetails,
+//       supplierType
+//     } = req.body;
+
+//     if (!companyName || !contactName || !email || !phoneNumber) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Missing required fields'
+//       });
+//     }
+
+//     const existingApplication = await SupplierOnboardingApplication.findOne({
+//       email: email.toLowerCase(),
+//       status: { $nin: ['rejected'] }
+//     });
+
+//     if (existingApplication) {
+//       return res.status(409).json({
+//         success: false,
+//         message: 'An application with this email already exists',
+//       });
+//     }
+
+//     const applicationData = {
+//         applicationId: 'APP-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
+//         companyName,
+//         contactName,
+//         email,
+//         phoneNumber,
+//         address,
+//         businessRegistrationNumber,
+//         taxIdNumber,
+//         bankDetails,
+//         supplierType,
+//         documents: {}
+//     };
+
+//     if (req.files) {
+//         const moveFile = (file) => {
+//             const tempPath = file.path;
+//             const originalName = file.originalname;
+//             const extension = path.extname(originalName);
+//             const newFileName = `supplier_doc_${Date.now()}_${crypto.randomBytes(16).toString('hex')}${extension}`;
+//             const newPath = path.join(__dirname, '..', 'uploads', 'attachments', newFileName);
+//             fs.renameSync(tempPath, newPath);
+            
+//             // Return full file object following project pattern
+//             return {
+//                 name: originalName,
+//                 url: `/uploads/attachments/${newFileName}`,
+//                 publicId: newFileName,
+//                 size: file.size,
+//                 mimetype: file.mimetype
+//             };
+//         };
+
+//         if (req.files.businessRegistrationCertificate) {
+//             applicationData.documents.businessRegistrationCertificate = moveFile(req.files.businessRegistrationCertificate[0]);
+//         }
+//         if (req.files.taxClearanceCertificate) {
+//             applicationData.documents.taxClearanceCertificate = moveFile(req.files.taxClearanceCertificate[0]);
+//         }
+//         if (req.files.bankStatement) {
+//             applicationData.documents.bankStatement = moveFile(req.files.bankStatement[0]);
+//         }
+//         if (req.files.insuranceCertificate) {
+//             applicationData.documents.insuranceCertificate = moveFile(req.files.insuranceCertificate[0]);
+//         }
+//         if (req.files.additionalDocuments) {
+//             applicationData.documents.additionalDocuments = req.files.additionalDocuments.map(moveFile);
+//         }
+//     }
+
+//     const application = await SupplierOnboardingApplication.create(applicationData);
+    
+//     // Create a User record immediately with pending status
+//     try {
+//       const tempPassword = 'supplier123'; // Default password
+      
+//       const supplierUser = await User.create({
+//         email: email.toLowerCase(),
+//         password: tempPassword,
+//         fullName: contactName,
+//         role: 'supplier',
+//         department: 'External Suppliers',
+//         isActive: false, // Keep inactive until approved
+//         phone: phoneNumber,
+//         company: companyName,
+        
+//         supplierDetails: {
+//           companyName: companyName,
+//           contactName: contactName,
+//           phoneNumber: phoneNumber,
+//           supplierType: supplierType,
+//           address: typeof address === 'object' && address !== null ? address : {
+//             street: address || '',
+//             city: '',
+//             state: '',
+//             country: '',
+//             postalCode: ''
+//           },
+//           businessRegistrationNumber: businessRegistrationNumber,
+//           taxIdNumber: taxIdNumber,
+//           bankDetails: bankDetails,
+//           documents: this.normalizeDocuments(applicationData.documents || {})
+//         },
+        
+//         supplierStatus: {
+//           accountStatus: 'pending',
+//           isVerified: false,
+//           emailVerified: false,
+//           applicationId: application._id
+//         }
+//       });
+      
+//       console.log('Created supplier user with pending status:', supplierUser.email);
+//     } catch (userError) {
+//       console.error('Failed to create supplier user:', userError);
+//       // Don't fail the whole request if user creation fails
+//     }
+    
+//     res.status(201).json({
+//       success: true,
+//       message: 'Supplier onboarding application submitted successfully',
+//       data: application
+//     });
+
+//   } catch (error) {
+//     console.error('Error submitting supplier application:', error);
+    
+//     // Handle duplicate key error specifically
+//     if (error.code === 11000) {
+//       if (error.message.includes('applicationId')) {
+//         return res.status(400).json({
+//           success: false,
+//           message: 'Application ID conflict. Please try again.',
+//           error: 'Duplicate application ID'
+//         });
+//       }
+//       if (error.message.includes('email')) {
+//         return res.status(400).json({
+//           success: false,
+//           message: 'An application with this email already exists.',
+//           error: 'Duplicate email'
+//         });
+//       }
+//     }
+    
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to submit application',
+//       error: error.message
+//     });
+//   }
+// };
+
+
 exports.submitApplication = async (req, res) => {
   try {
     const {
@@ -27,6 +234,16 @@ exports.submitApplication = async (req, res) => {
       });
     }
 
+    // CHECK IF EMAIL ALREADY EXISTS IN USERS TABLE
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message: 'This email is already registered. Please use a different email address.',
+      });
+    }
+
+    // Check if application already exists
     const existingApplication = await SupplierOnboardingApplication.findOne({
       email: email.toLowerCase(),
       status: { $nin: ['rejected'] }
@@ -43,7 +260,7 @@ exports.submitApplication = async (req, res) => {
         applicationId: 'APP-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
         companyName,
         contactName,
-        email,
+        email: email.toLowerCase(),
         phoneNumber,
         address,
         businessRegistrationNumber,
@@ -62,7 +279,6 @@ exports.submitApplication = async (req, res) => {
             const newPath = path.join(__dirname, '..', 'uploads', 'attachments', newFileName);
             fs.renameSync(tempPath, newPath);
             
-            // Return full file object following project pattern
             return {
                 name: originalName,
                 url: `/uploads/attachments/${newFileName}`,
@@ -90,20 +306,23 @@ exports.submitApplication = async (req, res) => {
     }
 
     const application = await SupplierOnboardingApplication.create(applicationData);
+    console.log('✅ Supplier onboarding application created:', application.applicationId);
     
-    // Create a User record immediately with pending status
+    // NOW CREATE USER WITH APPROVAL CHAIN
     try {
-      const tempPassword = 'supplier123'; // Default password
+      const { getSupplierApprovalChain } = require('../config/supplierApprovalChain');
+      
+      // Generate approval chain
+      const approvalChain = getSupplierApprovalChain(supplierType);
       
       const supplierUser = await User.create({
         email: email.toLowerCase(),
-        password: tempPassword,
+        password: 'ChangeMe123!', // Temporary password
         fullName: contactName,
         role: 'supplier',
         department: 'External Suppliers',
-        isActive: false, // Keep inactive until approved
+        isActive: false,
         phone: phoneNumber,
-        company: companyName,
         
         supplierDetails: {
           companyName: companyName,
@@ -114,7 +333,7 @@ exports.submitApplication = async (req, res) => {
             street: address || '',
             city: '',
             state: '',
-            country: '',
+            country: 'Cameroon',
             postalCode: ''
           },
           businessRegistrationNumber: businessRegistrationNumber,
@@ -124,29 +343,77 @@ exports.submitApplication = async (req, res) => {
         },
         
         supplierStatus: {
-          accountStatus: 'pending',
-          isVerified: false,
-          emailVerified: false,
+          accountStatus: 'pending_supply_chain',
+          isVerified: false, // ✅ Start as false
+          emailVerified: false, // ✅ Start as false - will be set to true on final approval
           applicationId: application._id
-        }
+        },
+        
+        // Add approval chain
+        approvalChain: approvalChain,
+        currentApprovalLevel: 1
       });
       
-      console.log('Created supplier user with pending status:', supplierUser.email);
+      console.log('✅ Supplier user created:', supplierUser.email);
+      console.log('   Status:', supplierUser.supplierStatus.accountStatus);
+      console.log('   Email Verified:', supplierUser.supplierStatus.emailVerified);
+      console.log('   Is Verified:', supplierUser.supplierStatus.isVerified);
+      console.log('   Approval levels:', supplierUser.approvalChain.length);
+      
+      // Send email to first approver
+      if (approvalChain && approvalChain.length > 0) {
+        const firstApprover = approvalChain[0];
+        
+        try {
+          await sendEmail({
+            to: firstApprover.approver.email,
+            subject: `New Supplier Registration: ${companyName}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #1890ff;">New Supplier Registration</h2>
+                <p>Dear ${firstApprover.approver.name},</p>
+                <p>A new supplier has registered and requires your review:</p>
+                
+                <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                  <p><strong>Company:</strong> ${companyName}</p>
+                  <p><strong>Contact:</strong> ${contactName}</p>
+                  <p><strong>Email:</strong> ${email}</p>
+                  <p><strong>Type:</strong> ${supplierType}</p>
+                  <p><strong>Application ID:</strong> ${application.applicationId}</p>
+                </div>
+
+                <p style="text-align: center;">
+                  <a href="${process.env.CLIENT_URL || 'http://localhost:3000'}/admin/suppliers/approvals" 
+                     style="background-color: #1890ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                    Review Supplier
+                  </a>
+                </p>
+              </div>
+            `
+          });
+          console.log('✅ Notification sent to:', firstApprover.approver.email);
+        } catch (emailError) {
+          console.error('❌ Failed to send notification email:', emailError);
+        }
+      }
+      
     } catch (userError) {
-      console.error('Failed to create supplier user:', userError);
-      // Don't fail the whole request if user creation fails
+      console.error('❌ Failed to create supplier user:', userError);
     }
     
     res.status(201).json({
       success: true,
       message: 'Supplier onboarding application submitted successfully',
-      data: application
+      data: {
+        applicationId: application.applicationId,
+        companyName: application.companyName,
+        status: 'pending_supply_chain'
+      }
     });
 
   } catch (error) {
     console.error('Error submitting supplier application:', error);
     
-    // Handle duplicate key error specifically
     if (error.code === 11000) {
       if (error.message.includes('applicationId')) {
         return res.status(400).json({
@@ -158,7 +425,7 @@ exports.submitApplication = async (req, res) => {
       if (error.message.includes('email')) {
         return res.status(400).json({
           success: false,
-          message: 'An application with this email already exists.',
+          message: 'This email is already registered. Please use a different email address.',
           error: 'Duplicate email'
         });
       }
@@ -172,9 +439,12 @@ exports.submitApplication = async (req, res) => {
   }
 };
 
+
+
 // ===============================
 // GET ALL APPLICATIONS
 // ===============================
+
 exports.getAllApplications = async (req, res) => {
   try {
     const {
@@ -183,12 +453,11 @@ exports.getAllApplications = async (req, res) => {
       priority,
       page = 1,
       limit = 20,
-      sortBy = 'submissionDate',
+      sortBy = 'submittedAt',
       sortOrder = 'desc',
       search
     } = req.query;
 
-    // Build filter
     const filter = {};
     if (status) filter.status = status;
     if (category) filter.category = category;
@@ -196,13 +465,12 @@ exports.getAllApplications = async (req, res) => {
     if (search) {
       filter.$or = [
         { companyName: { $regex: search, $options: 'i' } },
-        { contactPerson: { $regex: search, $options: 'i' } },
+        { contactName: { $regex: search, $options: 'i' } },
         { email: { $regex: search, $options: 'i' } },
         { applicationId: { $regex: search, $options: 'i' } }
       ];
     }
 
-    // Build sort
     const sort = {};
     sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
@@ -218,9 +486,6 @@ exports.getAllApplications = async (req, res) => {
 
     const total = await SupplierOnboardingApplication.countDocuments(filter);
 
-    // Get statistics for dashboard
-    const stats = await this.getApplicationStatistics();
-
     res.json({
       success: true,
       data: applications,
@@ -229,8 +494,7 @@ exports.getAllApplications = async (req, res) => {
         pageSize: parseInt(limit),
         total,
         pages: Math.ceil(total / parseInt(limit))
-      },
-      statistics: stats
+      }
     });
 
   } catch (error) {
@@ -241,6 +505,73 @@ exports.getAllApplications = async (req, res) => {
     });
   }
 };
+
+// exports.getAllApplications = async (req, res) => {
+//   try {
+//     const {
+//       status,
+//       category,
+//       priority,
+//       page = 1,
+//       limit = 20,
+//       sortBy = 'submissionDate',
+//       sortOrder = 'desc',
+//       search
+//     } = req.query;
+
+//     // Build filter
+//     const filter = {};
+//     if (status) filter.status = status;
+//     if (category) filter.category = category;
+//     if (priority) filter.priority = priority;
+//     if (search) {
+//       filter.$or = [
+//         { companyName: { $regex: search, $options: 'i' } },
+//         { contactPerson: { $regex: search, $options: 'i' } },
+//         { email: { $regex: search, $options: 'i' } },
+//         { applicationId: { $regex: search, $options: 'i' } }
+//       ];
+//     }
+
+//     // Build sort
+//     const sort = {};
+//     sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+//     const skip = (parseInt(page) - 1) * parseInt(limit);
+
+//     const applications = await SupplierOnboardingApplication
+//       .find(filter)
+//       .populate('reviewHistory.reviewer', 'fullName email')
+//       .sort(sort)
+//       .skip(skip)
+//       .limit(parseInt(limit))
+//       .lean();
+
+//     const total = await SupplierOnboardingApplication.countDocuments(filter);
+
+//     // Get statistics for dashboard
+//     const stats = await this.getApplicationStatistics();
+
+//     res.json({
+//       success: true,
+//       data: applications,
+//       pagination: {
+//         current: parseInt(page),
+//         pageSize: parseInt(limit),
+//         total,
+//         pages: Math.ceil(total / parseInt(limit))
+//       },
+//       statistics: stats
+//     });
+
+//   } catch (error) {
+//     console.error('Error fetching applications:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch applications'
+//     });
+//   }
+// };
 
 // ===============================
 // GET APPLICATION BY ID

@@ -6,11 +6,14 @@ const { uploadFile, deleteFile } = require('../services/fileUploadService');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 const moment = require('moment');
+const { 
+  saveFile, 
+  deleteFile,
+  deleteFiles,
+  STORAGE_CATEGORIES 
+} = require('../utils/localFileStorage');
 
 
-/**
- * CREATE CONTRACT (Admin can create directly)
- */
 exports.createContract = async (req, res) => {
   try {
     console.log('=== CREATING CONTRACT ===');
@@ -32,7 +35,8 @@ exports.createContract = async (req, res) => {
       isRenewable,
       autoRenewal,
       terms,
-      milestones
+      milestones,
+      priority
     } = req.body;
     
     // Validate supplier exists
@@ -52,6 +56,38 @@ exports.createContract = async (req, res) => {
       });
     }
     
+    // Handle document uploads using LOCAL FILE STORAGE
+    const contractDocuments = [];
+    if (req.files && req.files.contractDocuments) {
+      console.log(`📎 Processing ${req.files.contractDocuments.length} contract document(s)`);
+      
+      for (const file of req.files.contractDocuments) {
+        try {
+          // Save file using local storage service
+          const uploadResult = await saveFile(
+            file, 
+            STORAGE_CATEGORIES.CONTRACTS,
+            '' // no subfolder
+          );
+          
+          contractDocuments.push({
+            name: file.originalname,
+            type: this.getDocumentType(file.originalname),
+            url: uploadResult.url,
+            publicId: uploadResult.publicId,
+            localPath: uploadResult.localPath, // Store local path
+            uploadedAt: new Date(),
+            uploadedBy: req.user.userId
+          });
+          
+          console.log(`   ✅ Saved: ${file.originalname}`);
+        } catch (uploadError) {
+          console.error('   ❌ Failed to upload document:', uploadError);
+          // Continue with other files
+        }
+      }
+    }
+    
     // Create contract
     const contract = await Contract.create({
       supplier: supplierId,
@@ -59,6 +95,7 @@ exports.createContract = async (req, res) => {
       description,
       type,
       category,
+      priority: priority || 'Medium',
       dates: {
         startDate: new Date(startDate),
         endDate: new Date(endDate),
@@ -81,37 +118,26 @@ exports.createContract = async (req, res) => {
       },
       terms: terms || {},
       milestones: milestones || [],
+      documents: contractDocuments,
       createdBy: req.user.userId
     });
     
-    console.log(`Contract created: ${contract.contractNumber} for supplier: ${supplier.supplierDetails.companyName}`);
+    console.log(`✅ Contract created: ${contract.contractNumber}`);
+    console.log(`   Supplier: ${supplier.supplierDetails.companyName}`);
+    console.log(`   Documents: ${contractDocuments.length}`);
     
-    // Send notification to supplier
-    await require('../services/emailService').sendEmail({
-      to: supplier.email,
-      subject: `New Contract Created - ${contract.contractNumber}`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h2>New Contract Created</h2>
-          <p>Dear ${supplier.supplierDetails.contactName},</p>
-          <p>A new contract has been created for ${supplier.supplierDetails.companyName}.</p>
-          
-          <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px;">
-            <h3>Contract Details:</h3>
-            <ul>
-              <li><strong>Contract Number:</strong> ${contract.contractNumber}</li>
-              <li><strong>Title:</strong> ${contract.title}</li>
-              <li><strong>Type:</strong> ${contract.type}</li>
-              <li><strong>Value:</strong> ${contract.financials.currency} ${contract.financials.totalValue.toLocaleString()}</li>
-              <li><strong>Start Date:</strong> ${new Date(startDate).toLocaleDateString()}</li>
-              <li><strong>End Date:</strong> ${new Date(endDate).toLocaleDateString()}</li>
-            </ul>
-          </div>
-          
-          <p>You can view contract details in your supplier portal.</p>
-        </div>
-      `
-    }).catch(err => console.error('Failed to send contract notification:', err));
+    // Send notification to supplier (with try-catch to not fail creation)
+    try {
+      await require('../services/emailService').sendEmail({
+        to: supplier.email,
+        subject: `New Contract Created - ${contract.contractNumber}`,
+        html: this.generateContractEmailTemplate(contract, 'supplier_notification')
+      });
+      console.log(`   ✅ Email notification sent to ${supplier.email}`);
+    } catch (emailError) {
+      console.error('   ⚠️  Failed to send email notification:', emailError.message);
+      // Don't fail the request if email fails
+    }
     
     res.status(201).json({
       success: true,
@@ -120,7 +146,7 @@ exports.createContract = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Error creating contract:', error);
+    console.error('❌ Error creating contract:', error);
     res.status(400).json({
       success: false,
       message: 'Failed to create contract',
@@ -128,6 +154,161 @@ exports.createContract = async (req, res) => {
     });
   }
 };
+
+
+// /**
+//  * CREATE CONTRACT (Admin can create directly)
+//  */
+// exports.createContract = async (req, res) => {
+//   try {
+//     console.log('=== CREATING CONTRACT ===');
+    
+//     const {
+//       supplierId,
+//       title,
+//       description,
+//       type,
+//       category,
+//       startDate,
+//       endDate,
+//       totalValue,
+//       currency,
+//       paymentTerms,
+//       deliveryTerms,
+//       department,
+//       contractManager,
+//       isRenewable,
+//       autoRenewal,
+//       terms,
+//       milestones
+//     } = req.body;
+    
+//     // Validate supplier exists
+//     const supplier = await User.findById(supplierId);
+//     if (!supplier || supplier.role !== 'supplier') {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Supplier not found'
+//       });
+//     }
+    
+//     // Check supplier is approved
+//     if (supplier.supplierStatus.accountStatus !== 'approved') {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Cannot create contract with unapproved supplier'
+//       });
+//     }
+    
+//     // Create contract
+//     // const contract = await Contract.create({
+//     //   supplier: supplierId,
+//     //   title,
+//     //   description,
+//     //   type,
+//     //   category,
+//     //   dates: {
+//     //     startDate: new Date(startDate),
+//     //     endDate: new Date(endDate),
+//     //     signedDate: new Date()
+//     //   },
+//     //   financials: {
+//     //     totalValue: parseFloat(totalValue),
+//     //     currency: currency || 'XAF',
+//     //     paymentTerms,
+//     //     deliveryTerms
+//     //   },
+//     //   status: 'active',
+//     //   management: {
+//     //     contractManager,
+//     //     department
+//     //   },
+//     //   renewal: {
+//     //     isRenewable: isRenewable || false,
+//     //     autoRenewal: autoRenewal || false
+//     //   },
+//     //   terms: terms || {},
+//     //   milestones: milestones || [],
+//     //   createdBy: req.user.userId
+//     // });
+
+
+//     // Create contract
+//     const contract = await Contract.create({
+//       supplier: supplierId, // Direct reference, not nested
+//       title,
+//       description,
+//       type,
+//       category,
+//       dates: {
+//         startDate: new Date(startDate),
+//         endDate: new Date(endDate),
+//         signedDate: new Date()
+//       },
+//       financials: {
+//         totalValue: parseFloat(totalValue),
+//         currency: currency || 'XAF',
+//         paymentTerms,
+//         deliveryTerms
+//       },
+//       status: 'active',
+//       management: {
+//         contractManager,
+//         department
+//       },
+//       renewal: {
+//         isRenewable: isRenewable || false,
+//         autoRenewal: autoRenewal || false
+//       },
+//       terms: terms || {},
+//       milestones: milestones || [],
+//       createdBy: req.user.userId // At root level, not nested
+//     });
+    
+//     console.log(`Contract created: ${contract.contractNumber} for supplier: ${supplier.supplierDetails.companyName}`);
+    
+//     // Send notification to supplier
+//     await require('../services/emailService').sendEmail({
+//       to: supplier.email,
+//       subject: `New Contract Created - ${contract.contractNumber}`,
+//       html: `
+//         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+//           <h2>New Contract Created</h2>
+//           <p>Dear ${supplier.supplierDetails.contactName},</p>
+//           <p>A new contract has been created for ${supplier.supplierDetails.companyName}.</p>
+          
+//           <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px;">
+//             <h3>Contract Details:</h3>
+//             <ul>
+//               <li><strong>Contract Number:</strong> ${contract.contractNumber}</li>
+//               <li><strong>Title:</strong> ${contract.title}</li>
+//               <li><strong>Type:</strong> ${contract.type}</li>
+//               <li><strong>Value:</strong> ${contract.financials.currency} ${contract.financials.totalValue.toLocaleString()}</li>
+//               <li><strong>Start Date:</strong> ${new Date(startDate).toLocaleDateString()}</li>
+//               <li><strong>End Date:</strong> ${new Date(endDate).toLocaleDateString()}</li>
+//             </ul>
+//           </div>
+          
+//           <p>You can view contract details in your supplier portal.</p>
+//         </div>
+//       `
+//     }).catch(err => console.error('Failed to send contract notification:', err));
+    
+//     res.status(201).json({
+//       success: true,
+//       message: 'Contract created successfully',
+//       data: contract
+//     });
+    
+//   } catch (error) {
+//     console.error('Error creating contract:', error);
+//     res.status(400).json({
+//       success: false,
+//       message: 'Failed to create contract',
+//       error: error.message
+//     });
+//   }
+// };
 
 /**
  * GET CONTRACTS FOR SUPPLIER
@@ -322,6 +503,97 @@ exports.getContractWithInvoices = async (req, res) => {
   }
 };
 
+// exports.getAllContracts = async (req, res) => {
+//   try {
+//     const {
+//       status,
+//       type,
+//       category,
+//       department,
+//       priority,
+//       supplierId,
+//       contractManager,
+//       page = 1,
+//       limit = 20,
+//       sortBy = 'dates.creationDate',
+//       sortOrder = 'desc',
+//       search,
+//       startDate,
+//       endDate
+//     } = req.query;
+
+//     // Build filter
+//     const filter = {};
+    
+//     if (status) filter.status = status;
+//     if (type) filter.type = type;
+//     if (category) filter.category = category;
+//     if (department) filter['management.department'] = department;
+//     if (priority) filter.priority = priority;
+//     if (supplierId) filter['supplier.supplierId'] = supplierId;
+//     if (contractManager) filter['management.contractManager'] = contractManager;
+    
+//     if (search) {
+//       filter.$or = [
+//         { title: { $regex: search, $options: 'i' } },
+//         { contractNumber: { $regex: search, $options: 'i' } },
+//         { 'supplier.supplierName': { $regex: search, $options: 'i' } },
+//         { description: { $regex: search, $options: 'i' } }
+//       ];
+//     }
+
+//     // Date range filter
+//     if (startDate || endDate) {
+//       filter['dates.startDate'] = {};
+//       if (startDate) filter['dates.startDate'].$gte = new Date(startDate);
+//       if (endDate) filter['dates.startDate'].$lte = new Date(endDate);
+//     }
+
+//     // Build sort
+//     const sort = {};
+//     sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+//     const skip = (parseInt(page) - 1) * parseInt(limit);
+
+//     const contracts = await Contract
+//       .find(filter)
+//       .populate('management.contractManager', 'fullName email department')
+//       .populate('management.createdBy', 'fullName email')
+//       .populate('management.approvedBy', 'fullName email')
+//       .populate('supplier.supplierId', 'fullName email supplierDetails')
+//       .sort(sort)
+//       .skip(skip)
+//       .limit(parseInt(limit))
+//       .lean();
+
+//     const total = await Contract.countDocuments(filter);
+
+//     // Get statistics
+//     const stats = await this.getContractStatistics();
+
+//     res.json({
+//       success: true,
+//       data: contracts,
+//       pagination: {
+//         current: parseInt(page),
+//         pageSize: parseInt(limit),
+//         total,
+//         pages: Math.ceil(total / parseInt(limit))
+//       },
+//       statistics: stats
+//     });
+
+//   } catch (error) {
+//     console.error('Error fetching contracts:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch contracts'
+//     });
+//   }
+// };
+
+
+
 exports.getAllContracts = async (req, res) => {
   try {
     const {
@@ -334,7 +606,7 @@ exports.getAllContracts = async (req, res) => {
       contractManager,
       page = 1,
       limit = 20,
-      sortBy = 'dates.creationDate',
+      sortBy = 'createdAt',
       sortOrder = 'desc',
       search,
       startDate,
@@ -349,14 +621,13 @@ exports.getAllContracts = async (req, res) => {
     if (category) filter.category = category;
     if (department) filter['management.department'] = department;
     if (priority) filter.priority = priority;
-    if (supplierId) filter['supplier.supplierId'] = supplierId;
+    if (supplierId) filter.supplier = supplierId;
     if (contractManager) filter['management.contractManager'] = contractManager;
     
     if (search) {
       filter.$or = [
         { title: { $regex: search, $options: 'i' } },
         { contractNumber: { $regex: search, $options: 'i' } },
-        { 'supplier.supplierName': { $regex: search, $options: 'i' } },
         { description: { $regex: search, $options: 'i' } }
       ];
     }
@@ -376,10 +647,10 @@ exports.getAllContracts = async (req, res) => {
 
     const contracts = await Contract
       .find(filter)
+      .populate('supplier', 'fullName email supplierDetails')
       .populate('management.contractManager', 'fullName email department')
-      .populate('management.createdBy', 'fullName email')
-      .populate('management.approvedBy', 'fullName email')
-      .populate('supplier.supplierId', 'fullName email supplierDetails')
+      .populate('createdBy', 'fullName email')
+      .populate('lastModifiedBy', 'fullName email')
       .sort(sort)
       .skip(skip)
       .limit(parseInt(limit))
@@ -406,10 +677,53 @@ exports.getAllContracts = async (req, res) => {
     console.error('Error fetching contracts:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch contracts'
+      message: 'Failed to fetch contracts',
+      error: error.message
     });
   }
 };
+
+
+// exports.getContractById = async (req, res) => {
+//   try {
+//     const { contractId } = req.params;
+
+//     const contract = await Contract
+//       .findOne({
+//         $or: [
+//           { _id: contractId },
+//           { contractNumber: contractId }
+//         ]
+//       })
+//       .populate('management.contractManager', 'fullName email department')
+//       .populate('management.createdBy', 'fullName email')
+//       .populate('management.approvedBy', 'fullName email')
+//       .populate('supplier.supplierId', 'fullName email supplierDetails')
+//       .populate('amendments.requestedBy', 'fullName email')
+//       .populate('amendments.approvedBy', 'fullName email')
+//       .populate('communications.recordedBy', 'fullName email');
+
+//     if (!contract) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Contract not found'
+//       });
+//     }
+
+//     res.json({
+//       success: true,
+//       data: contract
+//     });
+
+//   } catch (error) {
+//     console.error('Error fetching contract:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch contract'
+//     });
+//   }
+// };
+
 
 
 exports.getContractById = async (req, res) => {
@@ -423,13 +737,15 @@ exports.getContractById = async (req, res) => {
           { contractNumber: contractId }
         ]
       })
+      .populate('supplier', 'fullName email supplierDetails')
       .populate('management.contractManager', 'fullName email department')
-      .populate('management.createdBy', 'fullName email')
-      .populate('management.approvedBy', 'fullName email')
-      .populate('supplier.supplierId', 'fullName email supplierDetails')
-      .populate('amendments.requestedBy', 'fullName email')
+      .populate('createdBy', 'fullName email')
+      .populate('lastModifiedBy', 'fullName email')
+      .populate('amendments.createdBy', 'fullName email')
       .populate('amendments.approvedBy', 'fullName email')
-      .populate('communications.recordedBy', 'fullName email');
+      .populate('documents.uploadedBy', 'fullName email')
+      .populate('renewal.renewalHistory.renewedBy', 'fullName email')
+      .populate('linkedInvoices');
 
     if (!contract) {
       return res.status(404).json({
@@ -447,14 +763,135 @@ exports.getContractById = async (req, res) => {
     console.error('Error fetching contract:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch contract'
+      message: 'Failed to fetch contract',
+      error: error.message
     });
   }
 };
 
+
 // ===============================
 // UPDATE CONTRACT
 // ===============================
+// exports.updateContract = async (req, res) => {
+//   try {
+//     const { contractId } = req.params;
+//     const updateData = { ...req.body };
+
+//     const contract = await Contract.findOne({
+//       $or: [
+//         { _id: contractId },
+//         { contractNumber: contractId }
+//       ]
+//     });
+
+//     if (!contract) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Contract not found'
+//       });
+//     }
+
+//     // Check permissions - only contract manager, creator, or admin can update
+//     if (
+//       contract.management.contractManager.toString() !== req.user.userId &&
+//       contract.management.createdBy.toString() !== req.user.userId &&
+//       req.user.role !== 'admin'
+//     ) {
+//       return res.status(403).json({
+//         success: false,
+//         message: 'Insufficient permissions to update contract'
+//       });
+//     }
+
+//     // Validate dates if they are being updated
+//     if (updateData.startDate && updateData.endDate) {
+//       if (new Date(updateData.startDate) >= new Date(updateData.endDate)) {
+//         return res.status(400).json({
+//           success: false,
+//           message: 'End date must be after start date'
+//         });
+//       }
+//     }
+
+//     // Handle document uploads
+//     if (req.files && req.files.contractDocuments) {
+//       const newDocuments = [];
+      
+//       for (const file of req.files.contractDocuments) {
+//         try {
+//           const uploadResult = await uploadFile(file, 'contract-documents');
+          
+//           newDocuments.push({
+//             name: file.originalname,
+//             type: this.getDocumentType(file.originalname),
+//             filename: uploadResult.filename,
+//             originalName: file.originalname,
+//             mimetype: file.mimetype,
+//             size: file.size,
+//             url: uploadResult.url,
+//             publicId: uploadResult.publicId,
+//             uploadedBy: req.user.userId
+//           });
+//         } catch (uploadError) {
+//           console.error('Failed to upload document:', uploadError);
+//         }
+//       }
+      
+//       contract.documents.push(...newDocuments);
+//     }
+
+//     // Update fields
+//     Object.keys(updateData).forEach(key => {
+//       if (key !== '_id' && key !== 'contractNumber' && updateData[key] !== undefined) {
+//         if (key.includes('.')) {
+//           // Handle nested fields
+//           const keys = key.split('.');
+//           let current = contract;
+//           for (let i = 0; i < keys.length - 1; i++) {
+//             if (!current[keys[i]]) current[keys[i]] = {};
+//             current = current[keys[i]];
+//           }
+//           current[keys[keys.length - 1]] = updateData[key];
+//         } else {
+//           contract[key] = updateData[key];
+//         }
+//       }
+//     });
+
+//     // Update modification info
+//     contract.management.lastModifiedBy = req.user.userId;
+//     contract.dates.lastModified = new Date();
+
+//     await contract.save();
+
+//     // Add communication record for update
+//     await contract.addCommunication({
+//       type: 'other',
+//       subject: 'Contract Updated',
+//       summary: `Contract updated by ${req.user.fullName || 'User'}`,
+//       participants: [req.user.fullName || 'User']
+//     }, req.user.userId);
+
+//     res.json({
+//       success: true,
+//       message: 'Contract updated successfully',
+//       data: contract
+//     });
+
+//   } catch (error) {
+//     console.error('Error updating contract:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to update contract',
+//       error: error.message
+//     });
+//   }
+// };
+
+
+
+
 exports.updateContract = async (req, res) => {
   try {
     const { contractId } = req.params;
@@ -474,10 +911,10 @@ exports.updateContract = async (req, res) => {
       });
     }
 
-    // Check permissions - only contract manager, creator, or admin can update
+    // Check permissions
     if (
       contract.management.contractManager.toString() !== req.user.userId &&
-      contract.management.createdBy.toString() !== req.user.userId &&
+      contract.createdBy.toString() !== req.user.userId &&
       req.user.role !== 'admin'
     ) {
       return res.status(403).json({
@@ -486,48 +923,40 @@ exports.updateContract = async (req, res) => {
       });
     }
 
-    // Validate dates if they are being updated
-    if (updateData.startDate && updateData.endDate) {
-      if (new Date(updateData.startDate) >= new Date(updateData.endDate)) {
-        return res.status(400).json({
-          success: false,
-          message: 'End date must be after start date'
-        });
-      }
-    }
-
-    // Handle document uploads
+    // Handle NEW document uploads
     if (req.files && req.files.contractDocuments) {
-      const newDocuments = [];
+      console.log(`📎 Processing ${req.files.contractDocuments.length} new document(s)`);
       
       for (const file of req.files.contractDocuments) {
         try {
-          const uploadResult = await uploadFile(file, 'contract-documents');
+          // Save file using local storage
+          const uploadResult = await saveFile(
+            file,
+            STORAGE_CATEGORIES.CONTRACTS,
+            ''
+          );
           
-          newDocuments.push({
+          contract.documents.push({
             name: file.originalname,
             type: this.getDocumentType(file.originalname),
-            filename: uploadResult.filename,
-            originalName: file.originalname,
-            mimetype: file.mimetype,
-            size: file.size,
             url: uploadResult.url,
             publicId: uploadResult.publicId,
-            uploadedBy: req.user.userId
+            localPath: uploadResult.localPath,
+            uploadedBy: req.user.userId,
+            uploadedAt: new Date()
           });
+          
+          console.log(`   ✅ Added: ${file.originalname}`);
         } catch (uploadError) {
-          console.error('Failed to upload document:', uploadError);
+          console.error('   ❌ Failed to upload document:', uploadError);
         }
       }
-      
-      contract.documents.push(...newDocuments);
     }
 
     // Update fields
     Object.keys(updateData).forEach(key => {
       if (key !== '_id' && key !== 'contractNumber' && updateData[key] !== undefined) {
         if (key.includes('.')) {
-          // Handle nested fields
           const keys = key.split('.');
           let current = contract;
           for (let i = 0; i < keys.length - 1; i++) {
@@ -541,19 +970,10 @@ exports.updateContract = async (req, res) => {
       }
     });
 
-    // Update modification info
-    contract.management.lastModifiedBy = req.user.userId;
-    contract.dates.lastModified = new Date();
-
+    contract.lastModifiedBy = req.user.userId;
     await contract.save();
 
-    // Add communication record for update
-    await contract.addCommunication({
-      type: 'other',
-      subject: 'Contract Updated',
-      summary: `Contract updated by ${req.user.fullName || 'User'}`,
-      participants: [req.user.fullName || 'User']
-    }, req.user.userId);
+    console.log(`✅ Contract updated: ${contract.contractNumber}`);
 
     res.json({
       success: true,
@@ -562,7 +982,7 @@ exports.updateContract = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error updating contract:', error);
+    console.error('❌ Error updating contract:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to update contract',
@@ -571,9 +991,75 @@ exports.updateContract = async (req, res) => {
   }
 };
 
+
+
 // ===============================
 // DELETE CONTRACT
 // ===============================
+// exports.deleteContract = async (req, res) => {
+//   try {
+//     const { contractId } = req.params;
+
+//     const contract = await Contract.findOne({
+//       $or: [
+//         { _id: contractId },
+//         { contractNumber: contractId }
+//       ]
+//     });
+
+//     if (!contract) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Contract not found'
+//       });
+//     }
+
+//     // Check permissions - only admin can delete contracts
+//     if (req.user.role !== 'admin') {
+//       return res.status(403).json({
+//         success: false,
+//         message: 'Only administrators can delete contracts'
+//       });
+//     }
+
+//     // Don't allow deletion of active contracts
+//     if (contract.status === 'active') {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Cannot delete active contracts. Please terminate or suspend first.'
+//       });
+//     }
+
+//     // Delete associated documents from cloud storage
+//     if (contract.documents && contract.documents.length > 0) {
+//       for (const doc of contract.documents) {
+//         try {
+//           if (doc.publicId) {
+//             await deleteFile(doc.publicId);
+//           }
+//         } catch (deleteError) {
+//           console.error('Failed to delete document:', deleteError);
+//         }
+//       }
+//     }
+
+//     await Contract.findByIdAndDelete(contract._id);
+
+//     res.json({
+//       success: true,
+//       message: 'Contract deleted successfully'
+//     });
+
+//   } catch (error) {
+//     console.error('Error deleting contract:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to delete contract'
+//     });
+//   }
+// };
+
+
 exports.deleteContract = async (req, res) => {
   try {
     const { contractId } = req.params;
@@ -592,7 +1078,6 @@ exports.deleteContract = async (req, res) => {
       });
     }
 
-    // Check permissions - only admin can delete contracts
     if (req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
@@ -600,7 +1085,6 @@ exports.deleteContract = async (req, res) => {
       });
     }
 
-    // Don't allow deletion of active contracts
     if (contract.status === 'active') {
       return res.status(400).json({
         success: false,
@@ -608,20 +1092,25 @@ exports.deleteContract = async (req, res) => {
       });
     }
 
-    // Delete associated documents from cloud storage
+    // Delete associated documents from local storage
     if (contract.documents && contract.documents.length > 0) {
+      console.log(`🗑️  Deleting ${contract.documents.length} document(s)`);
+      
       for (const doc of contract.documents) {
         try {
-          if (doc.publicId) {
-            await deleteFile(doc.publicId);
+          if (doc.localPath) {
+            await deleteFile(doc);
+            console.log(`   ✅ Deleted: ${doc.name}`);
           }
         } catch (deleteError) {
-          console.error('Failed to delete document:', deleteError);
+          console.error(`   ⚠️  Failed to delete ${doc.name}:`, deleteError.message);
         }
       }
     }
 
     await Contract.findByIdAndDelete(contract._id);
+
+    console.log(`✅ Contract deleted: ${contract.contractNumber}`);
 
     res.json({
       success: true,
@@ -629,13 +1118,15 @@ exports.deleteContract = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error deleting contract:', error);
+    console.error('❌ Error deleting contract:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to delete contract'
     });
   }
 };
+
+
 
 // ===============================
 // RENEW CONTRACT
@@ -733,6 +1224,80 @@ exports.renewContract = async (req, res) => {
 };
 
 
+// exports.createAmendment = async (req, res) => {
+//   try {
+//     const { contractId } = req.params;
+//     const {
+//       type,
+//       description,
+//       effectiveDate,
+//       financialImpact
+//     } = req.body;
+
+//     const contract = await Contract.findById(contractId);
+//     if (!contract) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Contract not found'
+//       });
+//     }
+
+//     // Process amendment documents
+//     const amendmentDocuments = [];
+//     if (req.files && req.files.amendmentDocuments) {
+//       for (const file of req.files.amendmentDocuments) {
+//         try {
+//           const uploadResult = await uploadFile(file, 'contract-amendments');
+          
+//           amendmentDocuments.push({
+//             filename: uploadResult.filename,
+//             originalName: file.originalname,
+//             url: uploadResult.url,
+//             publicId: uploadResult.publicId,
+//             uploadDate: new Date()
+//           });
+//         } catch (uploadError) {
+//           console.error('Failed to upload amendment document:', uploadError);
+//         }
+//       }
+//     }
+
+//     // Create amendment
+//     const amendmentData = {
+//       type,
+//       description,
+//       effectiveDate: new Date(effectiveDate),
+//       requestedBy: req.user.userId,
+//       documents: amendmentDocuments
+//     };
+
+//     if (financialImpact) {
+//       amendmentData.financialImpact = {
+//         amount: parseFloat(financialImpact.amount) || 0,
+//         type: financialImpact.type
+//       };
+//     }
+
+//     await contract.addAmendment(amendmentData, req.user.userId);
+
+//     res.json({
+//       success: true,
+//       message: 'Amendment created successfully',
+//       data: contract
+//     });
+
+//   } catch (error) {
+//     console.error('Error creating amendment:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to create amendment',
+//       error: error.message
+//     });
+//   }
+// };
+
+
+// Amendment document uploads
 exports.createAmendment = async (req, res) => {
   try {
     const { contractId } = req.params;
@@ -756,14 +1321,18 @@ exports.createAmendment = async (req, res) => {
     if (req.files && req.files.amendmentDocuments) {
       for (const file of req.files.amendmentDocuments) {
         try {
-          const uploadResult = await uploadFile(file, 'contract-amendments');
+          const uploadResult = await saveFile(
+            file,
+            STORAGE_CATEGORIES.CONTRACTS,
+            'amendments'
+          );
           
           amendmentDocuments.push({
-            filename: uploadResult.filename,
-            originalName: file.originalname,
+            name: file.originalname,
             url: uploadResult.url,
             publicId: uploadResult.publicId,
-            uploadDate: new Date()
+            localPath: uploadResult.localPath,
+            uploadedAt: new Date()
           });
         } catch (uploadError) {
           console.error('Failed to upload amendment document:', uploadError);
@@ -772,22 +1341,20 @@ exports.createAmendment = async (req, res) => {
     }
 
     // Create amendment
-    const amendmentData = {
+    contract.amendments.push({
       type,
       description,
       effectiveDate: new Date(effectiveDate),
-      requestedBy: req.user.userId,
-      documents: amendmentDocuments
-    };
-
-    if (financialImpact) {
-      amendmentData.financialImpact = {
+      createdBy: req.user.userId,
+      documents: amendmentDocuments,
+      status: 'draft',
+      financialImpact: financialImpact ? {
         amount: parseFloat(financialImpact.amount) || 0,
         type: financialImpact.type
-      };
-    }
+      } : undefined
+    });
 
-    await contract.addAmendment(amendmentData, req.user.userId);
+    await contract.save();
 
     res.json({
       success: true,
