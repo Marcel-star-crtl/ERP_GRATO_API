@@ -70,7 +70,7 @@ const amendmentSchema = new mongoose.Schema({
     name: String,
     url: String,
     publicId: String,
-    localPath: String, // ADD THIS
+    localPath: String, 
     uploadedAt: Date
   }],
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

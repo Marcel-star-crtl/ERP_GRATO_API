@@ -1614,7 +1614,7 @@ class PDFService {
           info: {
             Title: `Petty Cash Form - ${formData.displayId}`,
             Author: 'GRATO ENGINEERING GLOBAL LTD',
-            Subject: 'Petty Cash Form',
+            Subject: 'Project Cash Form',
             Creator: 'Purchase Requisition System'
           }
         });

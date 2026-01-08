@@ -8,7 +8,7 @@ const PDFDocument = require('pdfkit');
 const moment = require('moment');
 const { 
   saveFile, 
-  deleteFile,
+  // deleteFile,
   deleteFiles,
   STORAGE_CATEGORIES 
 } = require('../utils/localFileStorage');
