@@ -187,451 +187,6 @@ function populateSubMilestoneSupervisors(subMilestones, allUsers) {
 }
 
 
-// // Fixed createProject function with explicit isDraft handling
-// const createProject = async (req, res) => {
-//     try {
-//         const {
-//             name,
-//             description,
-//             projectType,
-//             priority,
-//             department,
-//             projectManager,
-//             timeline,
-//             budgetCodeId,
-//             milestones = [],
-//             isDraft = false  // Default to false
-//         } = req.body;
-
-//         const userId = req.user.userId;
-
-//         console.log('=== CREATE PROJECT ===');
-//         console.log('User:', userId);
-//         console.log('Is Draft:', isDraft);
-//         console.log('Name:', name);
-
-//         // If saving as draft, skip most validations
-//         if (isDraft === true || isDraft === 'true') {
-//             if (!name || name.trim().length === 0) {
-//                 return res.status(400).json({
-//                     success: false,
-//                     message: 'Project name is required even for drafts'
-//                 });
-//             }
-
-//             const project = new Project({
-//                 name,
-//                 description: description || '',
-//                 projectType,
-//                 priority,
-//                 department,
-//                 projectManager,
-//                 timeline,
-//                 budgetCodeId,
-//                 milestones: milestones.map(m => ({
-//                     ...m,
-//                     dueDate: m.dueDate ? new Date(m.dueDate) : null
-//                 })),
-//                 isDraft: true,
-//                 isActive: true,  // Explicitly set
-//                 createdBy: userId,
-//                 updatedBy: userId
-//             });
-
-//             await project.save();
-
-//             console.log('✅ Draft project saved:', {
-//                 id: project._id,
-//                 isDraft: project.isDraft,
-//                 isActive: project.isActive
-//             });
-
-//             const populatedProject = await Project.findById(project._id)
-//                 .populate('projectManager', 'fullName email role department')
-//                 .populate('budgetCodeId', 'code name totalBudget available')
-//                 .populate('createdBy', 'fullName email')
-//                 .populate('milestones.assignedSupervisor', 'fullName email department');
-
-//             return res.status(201).json({
-//                 success: true,
-//                 message: 'Project saved as draft successfully',
-//                 data: populatedProject
-//             });
-//         }
-
-//         // Full validation for submitted projects (NOT drafts)
-//         if (!name || !description || !projectType || !priority || !department || !projectManager || !timeline) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: 'All required fields must be provided'
-//             });
-//         }
-
-//         if (!timeline.startDate || !timeline.endDate) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: 'Both start date and end date are required'
-//             });
-//         }
-
-//         if (!milestones || milestones.length === 0) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: 'At least one milestone is required'
-//             });
-//         }
-
-//         const totalWeight = milestones.reduce((sum, m) => sum + (m.weight || 0), 0);
-//         if (totalWeight !== 100) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: `Milestone weights must sum to 100%. Current total: ${totalWeight}%`
-//             });
-//         }
-
-//         // Validate and resolve project manager
-//         console.log('Resolving project manager:', projectManager);
-//         const { user: manager, userId: actualManagerId } = await resolveUserId(projectManager, 'Project manager');
-
-//         // Validate and resolve supervisors for each milestone
-//         const processedMilestones = [];
-//         for (const milestone of milestones) {
-//             if (!milestone.assignedSupervisor) {
-//                 return res.status(400).json({
-//                     success: false,
-//                     message: `Milestone "${milestone.title}" must have an assigned supervisor`
-//                 });
-//             }
-
-//             console.log(`Resolving supervisor for milestone "${milestone.title}":`, milestone.assignedSupervisor);
-//             try {
-//                 const { userId: supervisorId } = await resolveUserId(
-//                     milestone.assignedSupervisor, 
-//                     `Supervisor for milestone "${milestone.title}"`
-//                 );
-
-//                 processedMilestones.push({
-//                     title: milestone.title,
-//                     description: milestone.description || '',
-//                     dueDate: milestone.dueDate ? new Date(milestone.dueDate) : null,
-//                     assignedSupervisor: supervisorId,
-//                     weight: milestone.weight || 0,
-//                     status: 'Not Started',
-//                     progress: 0,
-//                     totalTaskWeightAssigned: 0,
-//                     manuallyCompleted: false
-//                 });
-//             } catch (error) {
-//                 return res.status(400).json({
-//                     success: false,
-//                     message: error.message
-//                 });
-//             }
-//         }
-
-//         // Validate budget code if provided
-//         if (budgetCodeId) {
-//             const budgetCode = await BudgetCode.findById(budgetCodeId);
-//             if (!budgetCode) {
-//                 return res.status(400).json({
-//                     success: false,
-//                     message: 'Selected budget code does not exist'
-//                 });
-//             }
-//         }
-
-//         // Check for duplicate project name
-//         const existingProject = await Project.findOne({ 
-//             name: { $regex: new RegExp(`^${name}$`, 'i') },
-//             isActive: true 
-//         });
-
-//         if (existingProject) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: 'A project with this name already exists'
-//             });
-//         }
-
-//         // Create the project (NOT a draft, so it should be visible)
-//         const project = new Project({
-//             name,
-//             description,
-//             projectType,
-//             priority,
-//             department,
-//             projectManager: actualManagerId,
-//             timeline: {
-//                 startDate: new Date(timeline.startDate),
-//                 endDate: new Date(timeline.endDate)
-//             },
-//             budgetCodeId: budgetCodeId || null,
-//             milestones: processedMilestones,
-//             isDraft: false,      // EXPLICITLY FALSE
-//             isActive: true,      // EXPLICITLY TRUE
-//             status: 'Planning',
-//             createdBy: userId,
-//             updatedBy: userId
-//         });
-
-//         await project.save();
-
-//         console.log('✅ Project created successfully:', {
-//             id: project._id,
-//             code: project.code,
-//             isDraft: project.isDraft,
-//             isActive: project.isActive,
-//             status: project.status
-//         });
-
-//         // Populate the created project
-//         const populatedProject = await Project.findById(project._id)
-//             .populate('projectManager', 'fullName email role department')
-//             .populate('budgetCodeId', 'code name totalBudget available')
-//             .populate('createdBy', 'fullName email')
-//             .populate('milestones.assignedSupervisor', 'fullName email department');
-
-//         res.status(201).json({
-//             success: true,
-//             message: 'Project created successfully',
-//             data: populatedProject
-//         });
-
-//     } catch (error) {
-//         console.error('❌ Error creating project:', error);
-//         res.status(500).json({
-//             success: false,
-//             message: 'Failed to create project',
-//             error: process.env.NODE_ENV === 'development' ? error.message : undefined
-//         });
-//     }
-// };
-
-
-// const createProject = async (req, res) => {
-//   try {
-//     const {
-//       name,
-//       description,
-//       projectType,
-//       priority,
-//       department,
-//       projectManager,
-//       timeline,
-//       budgetCodeId,
-//       milestones = [],
-//       isDraft = false
-//     } = req.body;
-
-//     const userId = req.user.userId;
-
-//     console.log('=== CREATE PROJECT ===');
-//     console.log('User:', userId);
-//     console.log('Is Draft:', isDraft);
-
-//     // If saving as draft, skip validations
-//     if (isDraft) {
-//       if (!name || name.trim().length === 0) {
-//         return res.status(400).json({
-//           success: false,
-//           message: 'Project name is required even for drafts'
-//         });
-//       }
-
-//       const project = new Project({
-//         name,
-//         description: description || '',
-//         projectType,
-//         priority,
-//         department,
-//         projectManager,
-//         timeline,
-//         budgetCodeId,
-//         milestones: milestones.map(m => ({
-//           ...m,
-//           dueDate: m.dueDate ? new Date(m.dueDate) : null,
-//           approvalStatus: 'pending_pm_review' // NEW
-//         })),
-//         isDraft: true,
-//         createdBy: userId,
-//         updatedBy: userId
-//       });
-
-//       await project.save();
-
-//       const populatedProject = await Project.findById(project._id)
-//         .populate('projectManager', 'fullName email role department')
-//         .populate('budgetCodeId', 'code name totalBudget available')
-//         .populate('createdBy', 'fullName email')
-//         .populate('milestones.assignedSupervisor', 'fullName email department');
-
-//       return res.status(201).json({
-//         success: true,
-//         message: 'Project saved as draft successfully',
-//         data: populatedProject
-//       });
-//     }
-
-//     // Full validation for submitted projects
-//     if (!name || !description || !projectType || !priority || !department || !projectManager || !timeline) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'All required fields must be provided'
-//       });
-//     }
-
-//     if (!timeline.startDate || !timeline.endDate) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Both start date and end date are required'
-//       });
-//     }
-
-//     if (!milestones || milestones.length === 0) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'At least one milestone is required'
-//       });
-//     }
-
-//     const totalWeight = milestones.reduce((sum, m) => sum + (m.weight || 0), 0);
-//     if (totalWeight !== 100) {
-//       return res.status(400).json({
-//         success: false,
-//         message: `Milestone weights must sum to 100%. Current total: ${totalWeight}%`
-//       });
-//     }
-
-//     // Validate and resolve project manager
-//     console.log('Resolving project manager:', projectManager);
-//     const { user: manager, userId: actualManagerId } = await resolveUserId(projectManager, 'Project manager');
-
-//     // Validate and resolve supervisors for each milestone
-//     const processedMilestones = [];
-//     for (const milestone of milestones) {
-//       if (!milestone.assignedSupervisor) {
-//         return res.status(400).json({
-//           success: false,
-//           message: `Milestone "${milestone.title}" must have an assigned supervisor`
-//         });
-//       }
-
-//       console.log(`Resolving supervisor for milestone "${milestone.title}":`, milestone.assignedSupervisor);
-//       try {
-//         const { userId: supervisorId } = await resolveUserId(
-//           milestone.assignedSupervisor, 
-//           `Supervisor for milestone "${milestone.title}"`
-//         );
-
-//         processedMilestones.push({
-//           title: milestone.title,
-//           description: milestone.description || '',
-//           dueDate: milestone.dueDate ? new Date(milestone.dueDate) : null,
-//           assignedSupervisor: supervisorId,
-//           weight: milestone.weight || 0,
-//           status: 'Not Started',
-//           progress: 0,
-//           totalTaskWeightAssigned: 0,
-//           manuallyCompleted: false,
-          
-//           // NEW: Set to pending PM review
-//           approvalStatus: 'pending_pm_review',
-//           pmLinkedKPIs: []
-//         });
-//       } catch (error) {
-//         return res.status(400).json({
-//           success: false,
-//           message: error.message
-//         });
-//       }
-//     }
-
-//     // Validate budget code if provided
-//     if (budgetCodeId) {
-//       const budgetCode = await BudgetCode.findById(budgetCodeId);
-//       if (!budgetCode) {
-//         return res.status(400).json({
-//           success: false,
-//           message: 'Selected budget code does not exist'
-//         });
-//       }
-//     }
-
-//     // Check for duplicate project name
-//     const existingProject = await Project.findOne({ 
-//       name: { $regex: new RegExp(`^${name}$`, 'i') },
-//       isActive: true 
-//     });
-
-//     if (existingProject) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'A project with this name already exists'
-//       });
-//     }
-
-//     // Create the project
-//     const project = new Project({
-//       name,
-//       description,
-//       projectType,
-//       priority,
-//       department,
-//       projectManager: actualManagerId,
-//       timeline: {
-//         startDate: new Date(timeline.startDate),
-//         endDate: new Date(timeline.endDate)
-//       },
-//       budgetCodeId: budgetCodeId || null,
-//       milestones: processedMilestones,
-//       isDraft: false,
-//       status: 'Planning',
-//       createdBy: userId,
-//       updatedBy: userId
-//     });
-
-//     await project.save();
-
-//     // Populate the created project
-//     const populatedProject = await Project.findById(project._id)
-//       .populate('projectManager', 'fullName email role department')
-//       .populate('budgetCodeId', 'code name totalBudget available')
-//       .populate('createdBy', 'fullName email')
-//       .populate('milestones.assignedSupervisor', 'fullName email department');
-
-//     console.log('✅ Project created - Pending PM milestone review');
-//     console.log('Project Code:', populatedProject.code);
-
-//     // Send notification to Project Manager to review milestones
-//     try {
-//       await sendProjectEmail.milestoneReviewRequired(
-//         manager.email,
-//         manager.fullName,
-//         populatedProject.name,
-//         populatedProject._id,
-//         processedMilestones.length
-//       );
-//       console.log('✅ PM notification sent');
-//     } catch (emailError) {
-//       console.error('Failed to send PM notification:', emailError);
-//     }
-
-//     res.status(201).json({
-//       success: true,
-//       message: 'Project created successfully. Project Manager must review and approve milestones before supervisors can access them.',
-//       data: populatedProject
-//     });
-
-//   } catch (error) {
-//     console.error('Error creating project:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to create project',
-//       error: process.env.NODE_ENV === 'development' ? error.message : undefined
-//     });
-//   }
-// };
-
 
 
 const createProject = async (req, res) => {
@@ -1029,6 +584,28 @@ const updateProject = async (req, res) => {
             }));
         }
 
+        //  const project = await Project.findById(projectId);
+        // if (!project || !project.isActive) {
+        //     return res.status(404).json({
+        //         success: false,
+        //         message: 'Project not found'
+        //     });
+        // }
+
+        // // CRITICAL: Prevent accidental code removal
+        // if (project.code && !updateData.code) {
+        //     console.log(`⚠️ Preserving existing code: ${project.code}`);
+        //     updateData.code = project.code;
+        // }
+
+        // // CRITICAL: Don't allow code changes on non-draft projects
+        // if (!project.isDraft && updateData.code && updateData.code !== project.code) {
+        //     console.log(`⚠️ Preventing code change on active project`);
+        //     updateData.code = project.code;
+        // }
+        
+
+
         updateData.updatedBy = userId;
 
         const updatedProject = await Project.findByIdAndUpdate(
@@ -1122,7 +699,7 @@ const deleteProject = async (req, res) => {
     }
 };
 
-// // Get all projects with filtering
+
 // const getProjects = async (req, res) => {
 //     try {
 //         const userId = req.user.userId;
@@ -1140,42 +717,81 @@ const deleteProject = async (req, res) => {
 //             order = 'desc'
 //         } = req.query;
 
+//         console.log('=== GET PROJECTS ===');
+//         console.log('User:', userId);
+//         console.log('Role:', userRole);
+//         console.log('Query params:', { isDraft, status, department });
+
 //         const filter = { isActive: true };
 
-//         // Regular users only see non-draft projects unless it's their own
+//         // Parse isDraft parameter
+//         const parsedIsDraft = isDraft === 'true' ? true : isDraft === 'false' ? false : undefined;
+        
+//         console.log('Parsed isDraft:', parsedIsDraft);
+
+//         // Handle draft filtering based on role
 //         if (!['admin', 'supply_chain', 'project', 'manager'].includes(userRole)) {
-//             filter.$or = [
-//                 { isDraft: false },
-//                 { createdBy: userId }
-//             ];
-//         } else if (isDraft !== undefined) {
-//             filter.isDraft = isDraft === 'true';
+//             // Regular users
+//             if (parsedIsDraft === true) {
+//                 filter.isDraft = true;
+//                 filter.createdBy = userId;
+//             } else if (parsedIsDraft === false) {
+//                 filter.$or = [
+//                     { isDraft: false },
+//                     { isDraft: { $exists: false } },
+//                     { isDraft: null }
+//                 ];
+//             } else {
+//                 filter.$or = [
+//                     { isDraft: false },
+//                     { isDraft: { $exists: false } },
+//                     { isDraft: null },
+//                     { isDraft: true, createdBy: userId }
+//                 ];
+//             }
 //         } else {
-//             // Admins see non-draft projects by default
-//             filter.isDraft = false;
+//             // Admins/managers
+//             if (parsedIsDraft === true) {
+//                 filter.isDraft = true;
+//             } else if (parsedIsDraft === false) {
+//                 filter.$or = [
+//                     { isDraft: false },
+//                     { isDraft: { $exists: false } },
+//                     { isDraft: null }
+//                 ];
+//             }
 //         }
 
+//         // Apply other filters
 //         if (status) filter.status = status;
 //         if (department) filter.department = department;
 //         if (priority) filter.priority = priority;
 //         if (projectType) filter.projectType = projectType;
 //         if (projectManager) filter.projectManager = projectManager;
 
+//         console.log('Final filter:', JSON.stringify(filter, null, 2));
+
+//         // Pagination
 //         const skip = (parseInt(page) - 1) * parseInt(limit);
 //         const sortObj = {};
 //         sortObj[sort] = order === 'desc' ? -1 : 1;
 
+//         // Execute query with proper population
 //         const projects = await Project.find(filter)
 //             .populate('projectManager', 'fullName email role department')
-//             .populate('budgetCodeId', 'code name totalBudget used available')
+//             .populate('budgetCodeId', 'code name budget totalBudget used remaining available utilizationRate utilizationStatus') // ADD ALL NEEDED FIELDS
 //             .populate('createdBy', 'fullName email')
 //             .populate('milestones.assignedSupervisor', 'fullName email department')
 //             .sort(sortObj)
 //             .skip(skip)
-//             .limit(parseInt(limit));
+//             .limit(parseInt(limit))
+//             .lean();
 
 //         const total = await Project.countDocuments(filter);
 
+//         console.log(`✅ Found ${projects.length} projects (total: ${total})`);
+
+//         // Return response
 //         res.status(200).json({
 //             success: true,
 //             data: {
@@ -1191,7 +807,7 @@ const deleteProject = async (req, res) => {
 //         });
 
 //     } catch (error) {
-//         console.error('Error fetching projects:', error);
+//         console.error('❌ Error fetching projects:', error);
 //         res.status(500).json({
 //             success: false,
 //             message: 'Failed to fetch projects',
@@ -1199,6 +815,7 @@ const deleteProject = async (req, res) => {
 //         });
 //     }
 // };
+
 
 
 const getProjects = async (req, res) => {
@@ -1213,91 +830,130 @@ const getProjects = async (req, res) => {
             projectManager,
             isDraft,
             page = 1,
-            limit = 10,
+            limit = 100, // CHANGED: Default to 100 to see all projects
             sort = 'createdAt',
             order = 'desc'
         } = req.query;
 
-        console.log('=== GET PROJECTS ===');
-        console.log('User:', userId);
-        console.log('Role:', userRole);
-        console.log('Query params:', { isDraft, status, department });
+        console.log('\n=== GET PROJECTS REQUEST ===');
+        console.log('User ID:', userId);
+        console.log('User Role:', userRole);
+        console.log('Query Params:', { isDraft, status, department, page, limit });
 
+        // Start with base filter - ONLY active projects
         const filter = { isActive: true };
 
         // Parse isDraft parameter
-        const parsedIsDraft = isDraft === 'true' ? true : isDraft === 'false' ? false : undefined;
+        const parsedIsDraft = isDraft === 'true' ? true : 
+                            isDraft === 'false' ? false : 
+                            undefined;
         
-        console.log('Parsed isDraft:', parsedIsDraft);
+        console.log('Parsed isDraft:', parsedIsDraft, '(type:', typeof parsedIsDraft, ')');
 
-        // Handle draft filtering based on role
-        if (!['admin', 'supply_chain', 'project', 'manager'].includes(userRole)) {
-            // Regular users
-            if (parsedIsDraft === true) {
-                // Only show their own drafts
-                filter.isDraft = true;
+        // ========== DRAFT FILTERING ==========
+        if (parsedIsDraft === true) {
+            // Explicitly requesting drafts only
+            filter.isDraft = true;
+            console.log('Filter: Show ONLY drafts');
+            
+            // Non-admin users can only see their own drafts
+            if (!['admin', 'supply_chain', 'project', 'manager'].includes(userRole)) {
                 filter.createdBy = userId;
-            } else if (parsedIsDraft === false) {
-                // Show non-drafts OR missing isDraft field
+                console.log('Filter: User is not admin, limiting to own drafts');
+            }
+        } else if (parsedIsDraft === false) {
+            // Explicitly requesting non-drafts only
+            filter.isDraft = false;
+            console.log('Filter: Show ONLY non-drafts (isDraft: false)');
+        } else {
+            // No isDraft filter specified
+            console.log('Filter: No isDraft specified');
+            
+            if (!['admin', 'supply_chain', 'project', 'manager'].includes(userRole)) {
+                // Regular users: show all non-drafts + their own drafts
                 filter.$or = [
                     { isDraft: false },
-                    { isDraft: { $exists: false } },
-                    { isDraft: null }
-                ];
-            } else {
-                // No isDraft specified: show non-drafts, missing isDraft, OR their own drafts
-                filter.$or = [
-                    { isDraft: false },
-                    { isDraft: { $exists: false } },
-                    { isDraft: null },
                     { isDraft: true, createdBy: userId }
                 ];
+                console.log('Filter: Regular user - show non-drafts + own drafts');
+            } else {
+                // Admins/managers: show everything (no additional filter)
+                console.log('Filter: Admin/Manager - show all active projects');
             }
-        } else {
-            // Admins/managers
-            if (parsedIsDraft === true) {
-                filter.isDraft = true;
-            } else if (parsedIsDraft === false) {
-                // Show documents where isDraft is false, null, or doesn't exist
-                filter.$or = [
-                    { isDraft: false },
-                    { isDraft: { $exists: false } },
-                    { isDraft: null }
-                ];
-            }
-            // If parsedIsDraft is undefined, no filter (show all)
         }
 
-        // Apply other filters
-        if (status) filter.status = status;
-        if (department) filter.department = department;
-        if (priority) filter.priority = priority;
-        if (projectType) filter.projectType = projectType;
-        if (projectManager) filter.projectManager = projectManager;
+        // ========== OTHER FILTERS ==========
+        if (status) {
+            filter.status = status;
+            console.log('Filter: status =', status);
+        }
+        if (department) {
+            filter.department = department;
+            console.log('Filter: department =', department);
+        }
+        if (priority) {
+            filter.priority = priority;
+            console.log('Filter: priority =', priority);
+        }
+        if (projectType) {
+            filter.projectType = projectType;
+            console.log('Filter: projectType =', projectType);
+        }
+        if (projectManager) {
+            filter.projectManager = projectManager;
+            console.log('Filter: projectManager =', projectManager);
+        }
 
-        console.log('Final filter:', JSON.stringify(filter, null, 2));
+        console.log('\n📋 FINAL MONGODB FILTER:');
+        console.log(JSON.stringify(filter, null, 2));
 
-        // Pagination
+        // ========== PAGINATION & SORTING ==========
         const skip = (parseInt(page) - 1) * parseInt(limit);
         const sortObj = {};
         sortObj[sort] = order === 'desc' ? -1 : 1;
 
-        // Execute query
-        const projects = await Project.find(filter)
-            .populate('projectManager', 'fullName email role department')
-            .populate('budgetCodeId', 'code name totalBudget used available')
-            .populate('createdBy', 'fullName email')
-            .populate('milestones.assignedSupervisor', 'fullName email department')
-            .sort(sortObj)
-            .skip(skip)
-            .limit(parseInt(limit))
-            .lean(); // Use lean() for better performance
+        console.log('\n📊 Pagination:', { page, limit, skip });
+        console.log('🔄 Sort:', sortObj);
 
-        const total = await Project.countDocuments(filter);
+        // ========== EXECUTE QUERY ==========
+        console.log('\n⏳ Executing database query...');
+        
+        const [projects, total] = await Promise.all([
+            Project.find(filter)
+                .populate('projectManager', 'fullName email role department')
+                .populate({
+                    path: 'budgetCodeId',
+                    select: 'code name budget totalBudget used remaining available utilizationRate utilizationStatus'
+                })
+                .populate('createdBy', 'fullName email')
+                .populate('milestones.assignedSupervisor', 'fullName email department')
+                .sort(sortObj)
+                .skip(skip)
+                .limit(parseInt(limit))
+                .lean(),
+            
+            Project.countDocuments(filter)
+        ]);
 
-        console.log(`✅ Found ${projects.length} projects (total: ${total})`);
+        console.log('\n✅ QUERY COMPLETE');
+        console.log(`📦 Retrieved: ${projects.length} projects`);
+        console.log(`📊 Total matching filter: ${total} projects`);
+        console.log(`📄 Showing page ${page} of ${Math.ceil(total / parseInt(limit))}`);
 
-        // Return response
+        // Log sample of what was fetched
+        if (projects.length > 0) {
+            console.log('\n📋 Sample of fetched projects (first 3):');
+            projects.slice(0, 3).forEach((p, idx) => {
+                console.log(`${idx + 1}. ${p.name}`);
+                console.log(`   ID: ${p._id}`);
+                console.log(`   Code: ${p.code || 'NO CODE'}`);
+                console.log(`   isDraft: ${p.isDraft}`);
+                console.log(`   Status: ${p.status}`);
+                console.log(`   isActive: ${p.isActive}`);
+            });
+        }
+
+        // ========== RETURN RESPONSE ==========
         res.status(200).json({
             success: true,
             data: {
@@ -1306,14 +962,18 @@ const getProjects = async (req, res) => {
                     currentPage: parseInt(page),
                     totalPages: Math.ceil(total / parseInt(limit)),
                     totalProjects: total,
+                    limit: parseInt(limit),
                     hasNextPage: skip + parseInt(limit) < total,
                     hasPrevPage: parseInt(page) > 1
                 }
             }
         });
 
+        console.log('\n✅ Response sent successfully\n');
+
     } catch (error) {
-        console.error('❌ Error fetching projects:', error);
+        console.error('\n❌ ERROR IN getProjects:', error);
+        console.error('Stack:', error.stack);
         res.status(500).json({
             success: false,
             message: 'Failed to fetch projects',
@@ -1357,7 +1017,6 @@ const getActiveProjects = async (req, res) => {
     }
 };
 
-// Get project by ID
 const getProjectById = async (req, res) => {
     try {
         const { projectId } = req.params;
@@ -1371,7 +1030,7 @@ const getProjectById = async (req, res) => {
 
         const project = await Project.findById(projectId)
             .populate('projectManager', 'fullName email role department')
-            .populate('budgetCodeId', 'code name totalBudget used available')
+            .populate('budgetCodeId', 'code name budget totalBudget used remaining available utilizationRate utilizationStatus') // ADD THIS
             .populate('teamMembers.user', 'fullName email role department')
             .populate('createdBy', 'fullName email')
             .populate('updatedBy', 'fullName email')
@@ -1398,261 +1057,6 @@ const getProjectById = async (req, res) => {
         });
     }
 };
-
-
-// const getSupervisorMilestones = async (req, res) => {
-//     try {
-//         const userId = req.user.userId;
-
-//         console.log('=== GET SUPERVISOR MILESTONES ===');
-//         console.log('Supervisor:', userId);
-
-//         // Validate userId is a valid ObjectId
-//         if (!mongoose.Types.ObjectId.isValid(userId)) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: 'Invalid user ID'
-//             });
-//         }
-
-//         const projects = await Project.find({
-//             $or: [
-//                 { 'milestones.assignedSupervisor': userId },
-//                 { 'milestones.subMilestones.assignedSupervisor': userId }
-//             ],
-//             isActive: true
-//         })
-//         .populate('projectManager', 'fullName email')
-//         .populate('milestones.assignedSupervisor', 'fullName email department')
-//         .populate('milestones.subMilestones.assignedSupervisor', 'fullName email department')
-//         .lean();
-
-//         const result = [];
-        
-//         for (const project of projects) {
-//             if (!project.milestones || project.milestones.length === 0) continue;
-
-//             for (const milestone of project.milestones) {
-//                 // Check if supervisor is assigned to main milestone
-//                 if (milestone.assignedSupervisor && 
-//                     milestone.assignedSupervisor._id.toString() === userId.toString()) {
-                    
-//                     // Get task counts for this milestone
-//                     const tasks = await ActionItem.find({ 
-//                         milestoneId: milestone._id 
-//                     }).select('status taskWeight assignedTo');
-
-//                     const totalTasks = tasks.length;
-//                     const completedTasks = tasks.filter(t => t.status === 'Completed').length;
-//                     const totalAssignedWeight = tasks.reduce((sum, t) => sum + t.taskWeight, 0);
-//                     const totalAssignees = tasks.reduce((sum, t) => sum + t.assignedTo.length, 0);
-
-//                     result.push({
-//                         project: {
-//                             _id: project._id,
-//                             name: project.name,
-//                             code: project.code,
-//                             status: project.status
-//                         },
-//                         milestone: {
-//                             _id: milestone._id,
-//                             title: milestone.title,
-//                             description: milestone.description,
-//                             weight: milestone.weight,
-//                             progress: milestone.progress,
-//                             status: milestone.status,
-//                             dueDate: milestone.dueDate,
-//                             totalTaskWeightAssigned: milestone.totalTaskWeightAssigned,
-//                             subMilestoneCount: milestone.subMilestones?.length || 0,
-//                             type: 'milestone',
-//                             taskStats: {
-//                                 total: totalTasks,
-//                                 completed: completedTasks,
-//                                 totalWeightAssigned: totalAssignedWeight,
-//                                 totalAssignees: totalAssignees,
-//                                 weightRemaining: 100 - totalAssignedWeight
-//                             }
-//                         }
-//                     });
-//                 }
-
-//                 // Check sub-milestones recursively
-//                 if (milestone.subMilestones && milestone.subMilestones.length > 0) {
-//                     const subMilestoneResults = await findSupervisorSubMilestones(
-//                         milestone.subMilestones,
-//                         userId,
-//                         project,
-//                         milestone
-//                     );
-//                     result.push(...subMilestoneResults);
-//                 }
-//             }
-//         }
-
-//         console.log(`Found ${result.length} assigned milestones`);
-
-//         res.status(200).json({
-//             success: true,
-//             data: result,
-//             count: result.length
-//         });
-
-//     } catch (error) {
-//         console.error('Error fetching supervisor milestones:', error);
-//         res.status(500).json({
-//             success: false,
-//             message: 'Failed to fetch supervisor milestones',
-//             error: process.env.NODE_ENV === 'development' ? error.message : undefined
-//         });
-//     }
-// };
-
-
-// Get supervisor's assigned milestones (FIXED VERSION)
-// const getSupervisorMilestones = async (req, res) => {
-//     try {
-//         const userId = req.user.userId;
-
-//         console.log('\n=== GET SUPERVISOR MILESTONES ===');
-//         console.log('Supervisor ID:', userId);
-
-//         // Validate userId is a valid ObjectId
-//         if (!mongoose.Types.ObjectId.isValid(userId)) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: 'Invalid user ID'
-//             });
-//         }
-
-//         // Find all ACTIVE projects (we'll filter milestones in code since MongoDB
-//         // can't query deeply nested arrays efficiently)
-//         const projects = await Project.find({
-//             isActive: true,
-//             isDraft: false
-//         })
-//         .populate('projectManager', 'fullName email')
-//         .populate({
-//             path: 'milestones.assignedSupervisor',
-//             select: 'fullName email department'
-//         })
-//         .lean();
-
-//         console.log(`Scanning ${projects.length} active projects for assigned milestones...`);
-
-//         // Get all users for manual population of sub-milestone supervisors
-//         const allUsers = await User.find({ isActive: true })
-//             .select('fullName email department')
-//             .lean();
-
-//         const result = [];
-        
-//         for (const project of projects) {
-//             if (!project.milestones || project.milestones.length === 0) {
-//                 continue;
-//             }
-
-//             console.log(`\nProject: ${project.name} (${project.code})`);
-
-//             for (const milestone of project.milestones) {
-//                 // Manually populate sub-milestone supervisors since Mongoose populate
-//                 // doesn't work well with deeply nested arrays
-//                 if (milestone.subMilestones && milestone.subMilestones.length > 0) {
-//                     milestone.subMilestones = populateSubMilestoneSupervisors(milestone.subMilestones, allUsers);
-//                 }
-
-//                 // Check if supervisor is assigned to MAIN milestone
-//                 const mainMilestoneAssignedId = milestone.assignedSupervisor?._id?.toString() || 
-//                                                milestone.assignedSupervisor?.toString();
-                
-//                 console.log(`Milestone: "${milestone.title}"`, {
-//                     assignedTo: mainMilestoneAssignedId,
-//                     isMatch: mainMilestoneAssignedId === userId.toString()
-//                 });
-
-//                 if (mainMilestoneAssignedId === userId.toString()) {
-//                     console.log(`  ✅ Main milestone MATCH!`);
-                    
-//                     // Get task counts for this main milestone
-//                     const tasks = await ActionItem.find({ 
-//                         milestoneId: milestone._id 
-//                     }).select('status taskWeight assignedTo');
-
-//                     const totalTasks = tasks.length;
-//                     const completedTasks = tasks.filter(t => t.status === 'Completed').length;
-//                     const totalAssignedWeight = tasks.reduce((sum, t) => sum + (t.taskWeight || 0), 0);
-//                     const totalAssignees = tasks.reduce((sum, t) => sum + (t.assignedTo?.length || 0), 0);
-
-//                     result.push({
-//                         project: {
-//                             _id: project._id,
-//                             name: project.name,
-//                             code: project.code,
-//                             status: project.status
-//                         },
-//                         milestone: {
-//                             _id: milestone._id,
-//                             title: milestone.title,
-//                             description: milestone.description,
-//                             weight: milestone.weight,
-//                             progress: milestone.progress || 0,
-//                             status: milestone.status || 'Not Started',
-//                             dueDate: milestone.dueDate,
-//                             totalTaskWeightAssigned: milestone.totalTaskWeightAssigned || 0,
-//                             subMilestoneCount: milestone.subMilestones?.length || 0,
-//                             type: 'milestone',
-//                             manuallyCompleted: milestone.manuallyCompleted || false,
-//                             taskStats: {
-//                                 total: totalTasks,
-//                                 completed: completedTasks,
-//                                 totalWeightAssigned: totalAssignedWeight,
-//                                 totalAssignees: totalAssignees,
-//                                 weightRemaining: 100 - totalAssignedWeight
-//                             }
-//                         }
-//                     });
-//                 }
-
-//                 // Check SUB-MILESTONES recursively
-//                 if (milestone.subMilestones && milestone.subMilestones.length > 0) {
-//                     console.log(`Checking ${milestone.subMilestones.length} sub-milestones...`);
-                    
-//                     const subMilestoneResults = await findSupervisorSubMilestones(
-//                         milestone.subMilestones,
-//                         userId,
-//                         project,
-//                         milestone
-//                     );
-                    
-//                     if (subMilestoneResults.length > 0) {
-//                         console.log(`✅ Found ${subMilestoneResults.length} assigned sub-milestones`);
-//                         result.push(...subMilestoneResults);
-//                     }
-//                 }
-//             }
-//         }
-
-//         console.log(`\n✅ FINAL RESULT: ${result.length} total assigned milestones (main + sub)`);
-//         console.log('Breakdown:', {
-//             mainMilestones: result.filter(r => r.milestone.type === 'milestone').length,
-//             subMilestones: result.filter(r => r.milestone.type === 'sub-milestone').length
-//         });
-
-//         res.status(200).json({
-//             success: true,
-//             data: result,
-//             count: result.length
-//         });
-
-//     } catch (error) {
-//         console.error('❌ Error fetching supervisor milestones:', error);
-//         res.status(500).json({
-//             success: false,
-//             message: 'Failed to fetch supervisor milestones',
-//             error: process.env.NODE_ENV === 'development' ? error.message : undefined
-//         });
-//     }
-// };
-
 
 
 const getSupervisorMilestones = async (req, res) => {
@@ -2637,19 +2041,103 @@ const logProjectMeeting = async (req, res) => {
 };
 
 // Get project statistics
+// const getProjectStats = async (req, res) => {
+//     try {
+//         const stats = await Project.getStatistics();
+//         const activeProjects = stats.planning + stats.inProgress;
+
+//         res.status(200).json({
+//             success: true,
+//             data: {
+//                 summary: {
+//                     total: stats.total,
+//                     active: activeProjects,
+//                     completed: stats.completed,
+//                     overdue: stats.overdue
+//                 },
+//                 byStatus: {
+//                     planning: stats.planning,
+//                     inProgress: stats.inProgress,
+//                     completed: stats.completed,
+//                     onHold: stats.onHold,
+//                     cancelled: stats.cancelled
+//                 },
+//                 metrics: {
+//                     completionRate: stats.total > 0 ? ((stats.completed / stats.total) * 100).toFixed(1) : 0,
+//                     averageProgress: stats.averageProgress ? stats.averageProgress.toFixed(1) : 0,
+//                     overdueRate: stats.total > 0 ? ((stats.overdue / stats.total) * 100).toFixed(1) : 0
+//                 }
+//             }
+//         });
+
+//     } catch (error) {
+//         console.error('Error fetching project statistics:', error);
+//         res.status(500).json({
+//             success: false,
+//             message: 'Failed to fetch project statistics',
+//             error: process.env.NODE_ENV === 'development' ? error.message : undefined
+//         });
+//     }
+// };
+
+
 const getProjectStats = async (req, res) => {
     try {
-        const stats = await Project.getStatistics();
-        const activeProjects = stats.planning + stats.inProgress;
+        console.log('=== GET PROJECT STATS ===');
+        
+        // Get ALL active projects (not just non-drafts)
+        const allProjects = await Project.find({ 
+            isActive: true 
+        }).select('status isDraft timeline').lean();
+
+        console.log(`Total active projects in DB: ${allProjects.length}`);
+        console.log('Draft breakdown:', {
+            drafts: allProjects.filter(p => p.isDraft === true).length,
+            nonDrafts: allProjects.filter(p => p.isDraft !== true).length
+        });
+
+        // Separate drafts from active projects
+        const drafts = allProjects.filter(p => p.isDraft === true);
+        const activeProjects = allProjects.filter(p => p.isDraft !== true);
+
+        // Calculate stats for NON-DRAFT projects only
+        const stats = {
+            planning: activeProjects.filter(p => p.status === 'Planning').length,
+            inProgress: activeProjects.filter(p => p.status === 'In Progress').length,
+            completed: activeProjects.filter(p => p.status === 'Completed').length,
+            onHold: activeProjects.filter(p => p.status === 'On Hold').length,
+            cancelled: activeProjects.filter(p => p.status === 'Cancelled').length,
+            overdue: activeProjects.filter(p => 
+                p.status !== 'Completed' && 
+                p.timeline?.endDate && 
+                new Date(p.timeline.endDate) < new Date()
+            ).length
+        };
+
+        const total = activeProjects.length;
+        const activeCount = stats.planning + stats.inProgress;
+
+        const avgProgress = activeProjects.length > 0
+            ? activeProjects.reduce((sum, p) => sum + (p.progress || 0), 0) / activeProjects.length
+            : 0;
+
+        console.log('Stats calculated:', {
+            total,
+            active: activeCount,
+            completed: stats.completed,
+            overdue: stats.overdue,
+            drafts: drafts.length
+        });
 
         res.status(200).json({
             success: true,
             data: {
                 summary: {
-                    total: stats.total,
-                    active: activeProjects,
+                    total: total,
+                    active: activeCount,
                     completed: stats.completed,
-                    overdue: stats.overdue
+                    overdue: stats.overdue,
+                    drafts: drafts.length // ADD THIS
                 },
                 byStatus: {
                     planning: stats.planning,
@@ -2659,15 +2147,15 @@ const getProjectStats = async (req, res) => {
                     cancelled: stats.cancelled
                 },
                 metrics: {
-                    completionRate: stats.total > 0 ? ((stats.completed / stats.total) * 100).toFixed(1) : 0,
-                    averageProgress: stats.averageProgress ? stats.averageProgress.toFixed(1) : 0,
-                    overdueRate: stats.total > 0 ? ((stats.overdue / stats.total) * 100).toFixed(1) : 0
+                    completionRate: total > 0 ? ((stats.completed / total) * 100).toFixed(1) : '0',
+                    averageProgress: avgProgress.toFixed(1),
+                    overdueRate: total > 0 ? ((stats.overdue / total) * 100).toFixed(1) : '0'
                 }
             }
         });
 
     } catch (error) {
-        console.error('Error fetching project statistics:', error);
+        console.error('❌ Error fetching project statistics:', error);
         res.status(500).json({
             success: false,
             message: 'Failed to fetch project statistics',

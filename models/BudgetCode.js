@@ -114,32 +114,6 @@ const budgetCodeSchema = new mongoose.Schema({
     comments: String
   }],
 
-  // // Allocation Tracking
-  // allocations: [{
-  //   requisitionId: {
-  //     type: mongoose.Schema.Types.ObjectId,
-  //     ref: 'PurchaseRequisition'
-  //   },
-  //   amount: {
-  //     type: Number,
-  //     required: true,
-  //     min: 0
-  //   },
-  //   allocatedDate: {
-  //     type: Date,
-  //     default: Date.now
-  //   },
-  //   allocatedBy: {
-  //     type: mongoose.Schema.Types.ObjectId,
-  //     ref: 'User'
-  //   },
-  //   status: {
-  //     type: String,
-  //     enum: ['allocated', 'released', 'spent'],
-  //     default: 'allocated'
-  //   }
-  // }],
-
 
   allocations: [{
     requisitionId: {
@@ -553,47 +527,6 @@ budgetCodeSchema.statics.getRequiringAttention = async function(threshold = 75) 
   });
 };
 
-/**
- * PHASE 1: Reserve budget on approval (don't deduct yet)
- * Creates allocation with 'allocated' status
- */
-// budgetCodeSchema.methods.reserveBudget = async function(requestId, amount, userId = null) {
-//   console.log(`\n💰 RESERVING Budget: ${this.code}`);
-//   console.log(`   Amount: XAF ${amount.toLocaleString()}`);
-//   console.log(`   Available: XAF ${this.remaining.toLocaleString()}`);
-
-//   // Check if already reserved
-//   const existingAllocation = this.allocations.find(
-//     a => a.requisitionId && a.requisitionId.toString() === requestId.toString()
-//   );
-
-//   if (existingAllocation) {
-//     console.log(`   ⚠️  Already reserved: ${existingAllocation.status}`);
-//     return this;
-//   }
-
-//   // Check availability
-//   if (this.remaining < amount) {
-//     throw new Error(
-//       `Insufficient budget. Available: XAF ${this.remaining.toLocaleString()}, Required: XAF ${amount.toLocaleString()}`
-//     );
-//   }
-
-//   // Create reservation (DON'T update 'used' yet)
-//   this.allocations.push({
-//     requisitionId: requestId,
-//     amount: amount,
-//     allocatedBy: userId,
-//     allocatedDate: new Date(),
-//     status: 'allocated' // Reserved, not spent
-//   });
-
-//   await this.save();
-//   console.log(`   ✅ Budget reserved successfully`);
-//   console.log(`   New remaining: XAF ${this.remaining.toLocaleString()}\n`);
-  
-//   return this;
-// };
 
 /**
  * PHASE 1: Reserve budget on approval (don't deduct yet)
@@ -666,49 +599,6 @@ budgetCodeSchema.methods.reserveBudget = async function(requestId, amount, userI
   
   return this;
 };
-
-/**
- * PHASE 2: Deduct budget on actual disbursement
- * Moves allocation from 'allocated' → 'spent'
- * Updates 'used' field
- */
-// budgetCodeSchema.methods.deductBudget = async function(requestId, actualAmount) {
-//   console.log(`\n💸 DEDUCTING Budget: ${this.code}`);
-//   console.log(`   Amount to deduct: XAF ${actualAmount.toLocaleString()}`);
-
-//   const allocation = this.allocations.find(
-//     a => a.requisitionId && a.requisitionId.toString() === requestId.toString() && a.status === 'allocated'
-//   );
-
-//   if (!allocation) {
-//     throw new Error('No active allocation found for this request. Budget may have already been deducted.');
-//   }
-
-//   const reservedAmount = allocation.amount;
-//   console.log(`   Originally reserved: XAF ${reservedAmount.toLocaleString()}`);
-
-//   // Handle partial disbursement
-//   if (actualAmount < reservedAmount) {
-//     const difference = reservedAmount - actualAmount;
-//     console.log(`   ⚠️  Partial disbursement detected`);
-//     console.log(`   Releasing unused: XAF ${difference.toLocaleString()}`);
-    
-//     // Update allocation to actual amount spent
-//     allocation.amount = actualAmount;
-//   }
-
-//   // NOW deduct from budget
-//   this.used += actualAmount;
-//   allocation.status = 'spent';
-//   allocation.actualSpent = actualAmount;
-
-//   await this.save();
-//   console.log(`   ✅ Budget deducted successfully`);
-//   console.log(`   Total used: XAF ${this.used.toLocaleString()}`);
-//   console.log(`   Remaining: XAF ${this.remaining.toLocaleString()}\n`);
-  
-//   return this;
-// };
 
 
 
