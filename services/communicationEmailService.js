@@ -142,6 +142,18 @@ const generateCommunicationTemplate = (communication, recipient) => {
         padding: 20px !important;
       }
     }
+    /* Reduce paragraph spacing */
+    p {
+      margin: 0 0 8px 0 !important;
+      padding: 0 !important;
+    }
+    p:last-child {
+      margin-bottom: 0 !important;
+    }
+    /* Remove extra spacing for empty paragraphs with just <br> */
+    p br:only-child {
+      line-height: 0.5 !important;
+    }
   </style>
   <!--[if mso]>
   <style type="text/css">
@@ -219,7 +231,9 @@ const generateCommunicationTemplate = (communication, recipient) => {
               <table border="0" cellpadding="0" cellspacing="0" width="100%">
                 <tr>
                   <td style="color: #555555; line-height: 1.6; font-size: 15px; font-family: Arial, Helvetica, sans-serif;">
-                    ${communication.content}
+                    <div style="color: #555555; line-height: 1.6; font-size: 15px; font-family: Arial, Helvetica, sans-serif;">
+                      ${communication.content}
+                    </div>
                   </td>
                 </tr>
               </table>
@@ -381,7 +395,7 @@ ${stripHtml(communication.content)}
 
   text += `
 ----------------------------------------------------
-From: ${'Grato Engineering Global LTD'}
+From: ${communication.sender?.fullName || 'Internal Communications'}
 Sent: ${new Date(communication.sentAt || Date.now()).toLocaleString()}
 Type: ${communication.messageType}
 ID: COM-${communication._id.toString().slice(-6).toUpperCase()}
@@ -479,7 +493,6 @@ module.exports = {
   generatePlainText,
   batchSendEmails
 };
-
 
 
 
