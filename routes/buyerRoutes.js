@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware');
+const { upload, handleMulterError } = require('../middlewares/uploadMiddleware');
 
 // Import controllers
 const buyerRequisitionController = require('../controllers/buyerRequisitionController');
@@ -12,6 +13,49 @@ const debitNoteController = require('../controllers/debitNoteController');
 // Middleware to ensure only buyers, supply_chain users, and admins can access
 const buyerAuthMiddleware = requireRoles('buyer', 'supply_chain', 'admin');
 
+// =============================================
+// SUPPLY CHAIN PO MANAGEMENT ROUTES
+// =============================================
+
+// Get pending POs for Supply Chain assignment
+router.get('/purchase-orders/supply-chain/pending', 
+  authMiddleware, 
+  requireRoles('supply_chain', 'admin'),
+  buyerPurchaseOrderController.getSupplyChainPendingPOs
+);
+
+// Get Supply Chain PO statistics
+router.get('/purchase-orders/supply-chain/stats', 
+  authMiddleware, 
+  requireRoles('supply_chain', 'admin'),
+  buyerPurchaseOrderController.getSupplyChainPOStats
+);
+
+// Download PO for signing
+router.get('/purchase-orders/:poId/download-for-signing', 
+  authMiddleware, 
+  requireRoles('supply_chain', 'admin'),
+  buyerPurchaseOrderController.downloadPOForSigning
+);
+
+// Assign PO to department (with signed document)
+router.post('/purchase-orders/:poId/assign-department', 
+  authMiddleware, 
+  requireRoles('supply_chain', 'admin'),
+  upload.single('signedDocument'),
+  buyerPurchaseOrderController.assignPOToDepartment
+);
+
+// Reject PO
+router.post('/purchase-orders/:poId/reject', 
+  authMiddleware, 
+  requireRoles('supply_chain', 'admin'),
+  buyerPurchaseOrderController.rejectPO
+);
+
+// =============================================
+// BUYER PURCHASE ORDER ROUTES
+// =============================================
 
 // Get all purchase orders for buyer
 router.get('/purchase-orders', 
@@ -62,13 +106,11 @@ router.post('/quotes/:quoteId/create-purchase-order',
   buyerPurchaseOrderController.createPurchaseOrderFromQuote
 );
 
-
 router.get('/purchase-orders/:poId/download-pdf', 
   authMiddleware, 
   buyerAuthMiddleware,
   buyerPurchaseOrderController.downloadPurchaseOrderPDF
 );
-
 
 router.get('/purchase-orders/:poId/preview-pdf', 
   authMiddleware, 
@@ -76,23 +118,17 @@ router.get('/purchase-orders/:poId/preview-pdf',
   buyerPurchaseOrderController.previewPurchaseOrderPDF
 );
 
-
 router.post('/purchase-orders/:poId/email-pdf', 
   authMiddleware, 
   buyerAuthMiddleware,
   buyerPurchaseOrderController.emailPurchaseOrderPDF
 );
 
-
 router.post('/purchase-orders/bulk-download', 
   authMiddleware, 
   buyerAuthMiddleware,
   buyerPurchaseOrderController.bulkDownloadPurchaseOrders
 );
-
-// router.post('/:poId/send-to-supply-chain', 
-//   buyerPOController.sendPOToSupplyChain
-// );
 
 // Get purchase order details for PDF generation (internal use)
 router.get('/purchase-orders/:poId/pdf-data', 
@@ -429,7 +465,6 @@ router.post('/debit-notes/:debitNoteId/email-pdf',
   }
 );
 
-
 router.get('/debit-note-approvals',
   authMiddleware,
   requireRoles('supervisor', 'technical', 'hr', 'finance', 'admin'),
@@ -498,6 +533,9 @@ router.get('/debit-note-approvals/:debitNoteId/download-pdf',
   debitNoteController.downloadDebitNotePDF
 );
 
+// =============================================
+// SUPPLIER ROUTES
+// =============================================
 
 // Get suppliers for PO creation
 router.get('/suppliers', 
@@ -789,6 +827,9 @@ router.post('/deliveries/:deliveryId/report-issue',
   })
 );
 
+// =============================================
+// DASHBOARD & ANALYTICS ROUTES
+// =============================================
 
 // Get buyer dashboard data
 router.get('/dashboard', 
@@ -884,6 +925,42 @@ router.get('/analytics',
 );
 
 // =============================================
+// PETTY CASH FORM ROUTES
+// =============================================
+
+// Stats route MUST come before :formId routes
+router.get(
+  '/petty-cash-forms/stats', 
+  authMiddleware,
+  buyerAuthMiddleware,
+  buyerRequisitionController.getPettyCashStats
+);
+
+// Get all petty cash forms for buyer
+router.get(
+  '/petty-cash-forms', 
+  authMiddleware,
+  buyerAuthMiddleware,
+  buyerRequisitionController.getPettyCashForms
+);
+
+// Get specific petty cash form details
+router.get(
+  '/petty-cash-forms/:formId', 
+  authMiddleware,
+  buyerAuthMiddleware,
+  buyerRequisitionController.getPettyCashFormDetails
+);
+
+// Download petty cash form PDF
+router.get(
+  '/petty-cash-forms/:formId/download', 
+  authMiddleware,
+  buyerAuthMiddleware,
+  buyerRequisitionController.downloadPettyCashFormPDF
+);
+
+// =============================================
 // ERROR HANDLING MIDDLEWARE
 // =============================================
 
@@ -969,42 +1046,6 @@ router.param('requisitionId', async (req, res, next, requisitionId) => {
   }
 });
 
-// =============================================
-// PETTY CASH FORM ROUTES
-// =============================================
-
-// ✅ Stats route MUST come before :formId routes
-router.get(
-  '/petty-cash-forms/stats', 
-  authMiddleware,
-  buyerAuthMiddleware,
-  buyerRequisitionController.getPettyCashStats
-);
-
-// Get all petty cash forms for buyer
-router.get(
-  '/petty-cash-forms', 
-  authMiddleware,
-  buyerAuthMiddleware,
-  buyerRequisitionController.getPettyCashForms
-);
-
-// Get specific petty cash form details
-router.get(
-  '/petty-cash-forms/:formId', 
-  authMiddleware,
-  buyerAuthMiddleware,
-  buyerRequisitionController.getPettyCashFormDetails
-);
-
-// Download petty cash form PDF
-router.get(
-  '/petty-cash-forms/:formId/download', 
-  authMiddleware,
-  buyerAuthMiddleware,
-  buyerRequisitionController.downloadPettyCashFormPDF
-);
-
 // Validate supplier ID parameter
 router.param('supplierId', async (req, res, next, supplierId) => {
   try {
@@ -1023,6 +1064,61 @@ router.param('supplierId', async (req, res, next, supplierId) => {
   }
 });
 
+// Validate quote ID parameter
+router.param('quoteId', async (req, res, next, quoteId) => {
+  try {
+    // Basic MongoDB ObjectId validation
+    if (!quoteId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid quote ID format'
+      });
+    }
+
+    req.quoteId = quoteId;
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Validate debit note ID parameter
+router.param('debitNoteId', async (req, res, next, debitNoteId) => {
+  try {
+    // Basic MongoDB ObjectId validation
+    if (!debitNoteId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid debit note ID format'
+      });
+    }
+
+    req.debitNoteId = debitNoteId;
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Validate petty cash form ID parameter
+router.param('formId', async (req, res, next, formId) => {
+  try {
+    // Basic MongoDB ObjectId validation
+    if (!formId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid petty cash form ID format'
+      });
+    }
+
+    req.formId = formId;
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Apply multer error handler
+router.use(handleMulterError);
+
 module.exports = router;
-
-

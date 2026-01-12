@@ -339,12 +339,21 @@ const validateFiles = async (req, res, next) => {
   }
 };
 
+
 module.exports = upload;
+module.exports.upload = upload;
 module.exports.handleMulterError = handleMulterError;
 module.exports.cleanupTempFiles = cleanupTempFiles;
 module.exports.validateFiles = validateFiles;
 module.exports.ensureUploadDirectories = ensureUploadDirectories;
 module.exports.cleanupFiles = cleanupFiles;
+
+// module.exports = upload;
+// module.exports.handleMulterError = handleMulterError;
+// module.exports.cleanupTempFiles = cleanupTempFiles;
+// module.exports.validateFiles = validateFiles;
+// module.exports.ensureUploadDirectories = ensureUploadDirectories;
+// module.exports.cleanupFiles = cleanupFiles;
 
 
 

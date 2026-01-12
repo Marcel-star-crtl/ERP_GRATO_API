@@ -311,7 +311,8 @@ if (budgetCodeRoutes) {
 }
 
 if (buyerRoutes) {
-  app.use('/api/buyer', buyerRoutes);
+  // app.use('/api/buyer', buyerRoutes);
+  app.use('/api/buyer', require('./routes/buyerRoutes'));
   console.log('✅ Mounted: /api/buyer');
 }
 

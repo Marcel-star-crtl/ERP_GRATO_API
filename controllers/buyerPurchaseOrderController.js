@@ -1032,6 +1032,96 @@ const getPurchaseOrderDetails = async (req, res) => {
 };
 
 // Update purchase order
+// const updatePurchaseOrder = async (req, res) => {
+//   try {
+//     const { poId } = req.params;
+//     const updates = req.body;
+
+//     const purchaseOrder = await PurchaseOrder.findById(poId);
+
+//     if (!purchaseOrder) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Purchase order not found'
+//       });
+//     }
+
+//     // Verify buyer owns this purchase order
+//     if (purchaseOrder.buyerId.toString() !== req.user.userId) {
+//       const user = await User.findById(req.user.userId);
+//       if (!['admin', 'supply_chain'].includes(user.role)) {
+//         return res.status(403).json({
+//           success: false,
+//           message: 'Unauthorized access to purchase order'
+//         });
+//       }
+//     }
+
+//     // Don't allow updates to sent or completed purchase orders
+//     if (['sent_to_supplier', 'acknowledged', 'delivered', 'completed', 'cancelled'].includes(purchaseOrder.status)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Cannot update purchase order in current status'
+//       });
+//     }
+
+//     // Update purchase order
+//     const allowedUpdates = [
+//       'expectedDeliveryDate',
+//       'deliveryAddress',
+//       'paymentTerms',
+//       'specialInstructions',
+//       'notes',
+//       'internalNotes'
+//     ];
+
+//     Object.keys(updates).forEach(key => {
+//       if (allowedUpdates.includes(key)) {
+//         if (key === 'expectedDeliveryDate' && updates[key]) {
+//           purchaseOrder[key] = new Date(updates[key]);
+//         } else {
+//           purchaseOrder[key] = updates[key];
+//         }
+//       }
+//     });
+
+//     purchaseOrder.lastModifiedBy = req.user.userId;
+//     purchaseOrder.lastModifiedDate = new Date();
+
+//     // Add activity
+//     purchaseOrder.activities.push({
+//       type: 'updated',
+//       description: 'Purchase order updated',
+//       user: req.user.fullName || 'Buyer',
+//       timestamp: new Date()
+//     });
+
+//     await purchaseOrder.save();
+
+//     res.json({
+//       success: true,
+//       message: 'Purchase order updated successfully',
+//       data: {
+//         purchaseOrder: {
+//           id: purchaseOrder._id,
+//           poNumber: purchaseOrder.poNumber,
+//           status: purchaseOrder.status,
+//           lastModifiedDate: purchaseOrder.lastModifiedDate
+//         }
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('Update purchase order error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to update purchase order',
+//       error: error.message
+//     });
+//   }
+// };
+
+
 const updatePurchaseOrder = async (req, res) => {
   try {
     const { poId } = req.params;
@@ -1057,7 +1147,35 @@ const updatePurchaseOrder = async (req, res) => {
       }
     }
 
-    // Don't allow updates to sent or completed purchase orders
+    // UPDATED: Allow status updates to send to Supply Chain
+    if (updates.status === 'pending_supply_chain_assignment' && purchaseOrder.status === 'draft') {
+      purchaseOrder.status = 'pending_supply_chain_assignment';
+      purchaseOrder.sentDate = new Date();
+      
+      purchaseOrder.activities.push({
+        type: 'sent',
+        description: 'Purchase order sent to Supply Chain for assignment',
+        user: req.user.fullName || 'Buyer',
+        timestamp: new Date()
+      });
+      
+      await purchaseOrder.save();
+      
+      return res.json({
+        success: true,
+        message: 'Purchase order sent to Supply Chain successfully',
+        data: {
+          purchaseOrder: {
+            id: purchaseOrder._id,
+            poNumber: purchaseOrder.poNumber,
+            status: purchaseOrder.status,
+            sentDate: purchaseOrder.sentDate
+          }
+        }
+      });
+    }
+
+    // Don't allow updates to sent or completed purchase orders (except status change above)
     if (['sent_to_supplier', 'acknowledged', 'delivered', 'completed', 'cancelled'].includes(purchaseOrder.status)) {
       return res.status(400).json({
         success: false,
@@ -1072,18 +1190,50 @@ const updatePurchaseOrder = async (req, res) => {
       'paymentTerms',
       'specialInstructions',
       'notes',
-      'internalNotes'
+      'internalNotes',
+      'currency',
+      'taxApplicable',
+      'taxRate',
+      'items'
     ];
 
     Object.keys(updates).forEach(key => {
       if (allowedUpdates.includes(key)) {
         if (key === 'expectedDeliveryDate' && updates[key]) {
           purchaseOrder[key] = new Date(updates[key]);
+        } else if (key === 'items' && Array.isArray(updates[key])) {
+          // Handle items update
+          purchaseOrder.items = updates[key].map(item => ({
+            description: item.description,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            totalPrice: item.quantity * item.unitPrice,
+            specifications: item.specifications || '',
+            unitOfMeasure: item.unitOfMeasure || 'Units',
+            category: item.category || '',
+            ...(item.itemId && { itemId: item.itemId })
+          }));
         } else {
           purchaseOrder[key] = updates[key];
         }
       }
     });
+
+    // Recalculate total if items changed
+    if (updates.items) {
+      const subtotal = purchaseOrder.items.reduce((sum, item) => 
+        sum + (item.totalPrice || 0), 0
+      );
+      
+      if (purchaseOrder.taxApplicable && purchaseOrder.taxRate > 0) {
+        const taxAmount = subtotal * (purchaseOrder.taxRate / 100);
+        purchaseOrder.taxAmount = taxAmount;
+        purchaseOrder.totalAmount = subtotal + taxAmount;
+      } else {
+        purchaseOrder.taxAmount = 0;
+        purchaseOrder.totalAmount = subtotal;
+      }
+    }
 
     purchaseOrder.lastModifiedBy = req.user.userId;
     purchaseOrder.lastModifiedDate = new Date();
@@ -1106,6 +1256,7 @@ const updatePurchaseOrder = async (req, res) => {
           id: purchaseOrder._id,
           poNumber: purchaseOrder.poNumber,
           status: purchaseOrder.status,
+          totalAmount: purchaseOrder.totalAmount,
           lastModifiedDate: purchaseOrder.lastModifiedDate
         }
       }
@@ -1998,6 +2149,419 @@ const bulkDownloadPurchaseOrders = async (req, res) => {
   }
 };
 
+
+// // Get pending POs for Supply Chain assignment
+// const getSupplyChainPendingPOs = async (req, res) => {
+//   try {
+//     const purchaseOrders = await PurchaseOrder.find({
+//       status: 'draft',
+//       currentStage: 'awaiting_supply_chain_assignment'
+//     })
+//     .populate('supplierId', 'fullName email phone supplierDetails')
+//     .populate('buyerId', 'fullName email')
+//     .sort({ createdAt: -1 });
+
+//     const transformedPOs = purchaseOrders.map(po => ({
+//       id: po._id,
+//       poNumber: po.poNumber,
+//       supplierName: po.supplierDetails?.name || po.supplierId?.fullName,
+//       supplierEmail: po.supplierDetails?.email || po.supplierId?.email,
+//       totalAmount: po.totalAmount,
+//       currency: po.currency,
+//       items: po.items,
+//       creationDate: po.createdAt,
+//       expectedDeliveryDate: po.expectedDeliveryDate,
+//       paymentTerms: po.paymentTerms,
+//       buyerName: po.buyerId?.fullName,
+//       buyerEmail: po.buyerId?.email
+//     }));
+
+//     res.json({
+//       success: true,
+//       data: transformedPOs
+//     });
+
+//   } catch (error) {
+//     console.error('Get SC pending POs error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch pending purchase orders',
+//       error: error.message
+//     });
+//   }
+// };
+
+
+// Add after handleSendPOToSupplier function
+
+const handleSendToSupplyChain = async (po) => {
+  Modal.confirm({
+    title: 'Send to Supply Chain',
+    content: `Are you sure you want to send PO ${po.poNumber} to Supply Chain for assignment?`,
+    okText: 'Yes, Send',
+    cancelText: 'Cancel',
+    onOk: async () => {
+      try {
+        setLoading(true);
+        
+        const response = await buyerRequisitionAPI.sendPurchaseOrderToSupplier(po.id, {
+          message: 'Sending to Supply Chain for department assignment'
+        });
+        
+        if (response.success) {
+          message.success('Purchase order sent to Supply Chain successfully!');
+          
+          notification.success({
+            message: 'PO Sent to Supply Chain',
+            description: `Purchase order ${po.poNumber} has been sent to Supply Chain for review and department assignment.`,
+            duration: 5
+          });
+          
+          await loadPurchaseOrders();
+        } else {
+          message.error(response.message || 'Failed to send purchase order');
+        }
+      } catch (error) {
+        console.error('Error sending PO to Supply Chain:', error);
+        message.error('Failed to send purchase order to Supply Chain');
+      } finally {
+        setLoading(false);
+      }
+    }
+  });
+};
+
+// Get Supply Chain PO statistics
+const getSupplyChainPOStats = async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const [pendingAssignment, assignedToday, rejectedToday, inApprovalChain] = await Promise.all([
+      PurchaseOrder.countDocuments({
+        status: 'draft',
+        currentStage: 'awaiting_supply_chain_assignment'
+      }),
+      PurchaseOrder.countDocuments({
+        status: 'pending_approval',
+        'supplyChainAssignment.assignedAt': { $gte: today }
+      }),
+      PurchaseOrder.countDocuments({
+        status: 'rejected',
+        'rejectionDetails.rejectedAt': { $gte: today }
+      }),
+      PurchaseOrder.countDocuments({
+        status: 'pending_approval',
+        currentStage: { $in: ['department_head', 'technical_head', 'hr_head', 'finance_head'] }
+      })
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        pendingAssignment,
+        assignedToday,
+        rejectedToday,
+        inApprovalChain
+      }
+    });
+
+  } catch (error) {
+    console.error('Get SC stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch statistics',
+      error: error.message
+    });
+  }
+};
+
+// Download PO for signing
+const downloadPOForSigning = async (req, res) => {
+  try {
+    const { poId } = req.params;
+
+    const purchaseOrder = await PurchaseOrder.findById(poId)
+      .populate('supplierId', 'fullName email phone supplierDetails')
+      .populate('requisitionId', 'title requisitionNumber')
+      .populate('items.itemId', 'code description category unitOfMeasure');
+
+    if (!purchaseOrder) {
+      return res.status(404).json({
+        success: false,
+        message: 'Purchase order not found'
+      });
+    }
+
+    // Generate PDF
+    const pdfData = {
+      poNumber: purchaseOrder.poNumber,
+      supplierDetails: {
+        name: purchaseOrder.supplierDetails?.name || purchaseOrder.supplierId?.fullName,
+        email: purchaseOrder.supplierDetails?.email || purchaseOrder.supplierId?.email,
+        phone: purchaseOrder.supplierDetails?.phone || purchaseOrder.supplierId?.phone,
+        address: purchaseOrder.supplierDetails?.address
+      },
+      creationDate: purchaseOrder.createdAt,
+      expectedDeliveryDate: purchaseOrder.expectedDeliveryDate,
+      status: purchaseOrder.status,
+      totalAmount: purchaseOrder.totalAmount,
+      subtotalAmount: purchaseOrder.subtotalAmount,
+      taxAmount: purchaseOrder.taxAmount,
+      taxApplicable: purchaseOrder.taxApplicable,
+      taxRate: purchaseOrder.taxRate,
+      currency: purchaseOrder.currency,
+      paymentTerms: purchaseOrder.paymentTerms,
+      deliveryAddress: purchaseOrder.deliveryAddress,
+      items: purchaseOrder.items.map(item => ({
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        totalPrice: item.totalPrice || (item.quantity * item.unitPrice),
+        specifications: item.specifications
+      })),
+      specialInstructions: purchaseOrder.specialInstructions
+    };
+
+    const pdfResult = await pdfService.generatePurchaseOrderPDF(pdfData);
+
+    if (!pdfResult.success) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to generate PDF'
+      });
+    }
+
+    // Return blob URL for frontend download
+    const base64 = pdfResult.buffer.toString('base64');
+    const dataUrl = `data:application/pdf;base64,${base64}`;
+
+    res.json({
+      success: true,
+      data: {
+        url: dataUrl,
+        fileName: `PO_${purchaseOrder.poNumber}.pdf`
+      }
+    });
+
+  } catch (error) {
+    console.error('Download PO for signing error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to download purchase order',
+      error: error.message
+    });
+  }
+};
+
+// Assign PO to department with signed document
+const assignPOToDepartment = async (req, res) => {
+  try {
+    const { poId } = req.params;
+    const { department, comments } = req.body;
+    const signedDocument = req.file;
+
+    if (!signedDocument) {
+      return res.status(400).json({
+        success: false,
+        message: 'Signed document is required'
+      });
+    }
+
+    if (!department) {
+      return res.status(400).json({
+        success: false,
+        message: 'Department selection is required'
+      });
+    }
+
+    const purchaseOrder = await PurchaseOrder.findById(poId);
+
+    if (!purchaseOrder) {
+      return res.status(404).json({
+        success: false,
+        message: 'Purchase order not found'
+      });
+    }
+
+    // Upload signed document
+    let signedDocUrl = null;
+    try {
+      const uploadResult = await uploadFile(signedDocument.path, 'purchase-orders/signed');
+      signedDocUrl = uploadResult.secure_url;
+    } catch (uploadError) {
+      console.error('Upload error:', uploadError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to upload signed document'
+      });
+    }
+
+    // Update PO with assignment
+    purchaseOrder.status = 'pending_approval';
+    purchaseOrder.currentStage = 'department_head';
+    purchaseOrder.progress = 30;
+
+    purchaseOrder.supplyChainAssignment = {
+      assignedBy: req.user.userId,
+      assignedTo: department,
+      assignedAt: new Date(),
+      comments: comments || '',
+      signedDocument: signedDocUrl
+    };
+
+    // Initialize approval chain
+    const departmentHeads = {
+      'Technical': { name: 'Mr. Didier Oyong', email: 'didier.oyong@gratoeng.com' },
+      'Business Development & Supply Chain': { name: 'Mr. E.T Kelvin', email: 'kelvin.ekoko@gratoeng.com' },
+      'HR & Admin': { name: 'Mrs. Bruiline Tsitoh', email: 'bruiline.tsitoh@gratoeng.com' }
+    };
+
+    const deptHead = departmentHeads[department];
+
+    purchaseOrder.approvalChain = [{
+      level: 1,
+      role: 'Supply Chain',
+      approver: {
+        userId: req.user.userId,
+        name: req.user.fullName,
+        email: req.user.email
+      },
+      status: 'approved',
+      approvedAt: new Date(),
+      comments: 'Signed and assigned to department'
+    }, {
+      level: 2,
+      role: 'Department Head',
+      department: department,
+      approver: {
+        name: deptHead.name,
+        email: deptHead.email
+      },
+      status: 'pending',
+      requiresSignature: true
+    }];
+
+    purchaseOrder.activities.push({
+      type: 'assigned',
+      description: `Assigned to ${department} by Supply Chain`,
+      user: req.user.fullName,
+      timestamp: new Date()
+    });
+
+    await purchaseOrder.save();
+
+    // Send email notification to Department Head
+    try {
+      await sendEmail({
+        to: deptHead.email,
+        subject: `Purchase Order ${purchaseOrder.poNumber} - Pending Your Approval`,
+        html: `
+          <h2>Purchase Order Assignment</h2>
+          <p>Dear ${deptHead.name},</p>
+          <p>A purchase order has been signed by Supply Chain and assigned to your department for approval.</p>
+          <p><strong>PO Number:</strong> ${purchaseOrder.poNumber}</p>
+          <p><strong>Amount:</strong> ${purchaseOrder.currency} ${purchaseOrder.totalAmount.toLocaleString()}</p>
+          <p>Please review and approve in the system.</p>
+        `
+      });
+    } catch (emailError) {
+      console.error('Email notification error:', emailError);
+    }
+
+    res.json({
+      success: true,
+      message: 'Purchase order assigned successfully',
+      data: {
+        poNumber: purchaseOrder.poNumber,
+        assignedTo: department
+      }
+    });
+
+  } catch (error) {
+    console.error('Assign PO error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to assign purchase order',
+      error: error.message
+    });
+  }
+};
+
+// Reject PO
+const rejectPO = async (req, res) => {
+  try {
+    const { poId } = req.params;
+    const { rejectionReason } = req.body;
+
+    if (!rejectionReason || rejectionReason.trim().length < 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rejection reason must be at least 10 characters'
+      });
+    }
+
+    const purchaseOrder = await PurchaseOrder.findById(poId)
+      .populate('buyerId', 'fullName email');
+
+    if (!purchaseOrder) {
+      return res.status(404).json({
+        success: false,
+        message: 'Purchase order not found'
+      });
+    }
+
+    purchaseOrder.status = 'rejected';
+    purchaseOrder.rejectionDetails = {
+      rejectedBy: req.user.userId,
+      rejectedAt: new Date(),
+      reason: rejectionReason,
+      stage: 'supply_chain'
+    };
+
+    purchaseOrder.activities.push({
+      type: 'rejected',
+      description: `Rejected by Supply Chain: ${rejectionReason}`,
+      user: req.user.fullName,
+      timestamp: new Date()
+    });
+
+    await purchaseOrder.save();
+
+    // Notify buyer
+    try {
+      await sendEmail({
+        to: purchaseOrder.buyerId.email,
+        subject: `Purchase Order ${purchaseOrder.poNumber} - Rejected`,
+        html: `
+          <h2>Purchase Order Rejected</h2>
+          <p>Dear ${purchaseOrder.buyerId.fullName},</p>
+          <p>Your purchase order has been rejected by Supply Chain.</p>
+          <p><strong>PO Number:</strong> ${purchaseOrder.poNumber}</p>
+          <p><strong>Reason:</strong> ${rejectionReason}</p>
+          <p>Please revise and resubmit.</p>
+        `
+      });
+    } catch (emailError) {
+      console.error('Email error:', emailError);
+    }
+
+    res.json({
+      success: true,
+      message: 'Purchase order rejected successfully'
+    });
+
+  } catch (error) {
+    console.error('Reject PO error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reject purchase order',
+      error: error.message
+    });
+  }
+};
+
+
 module.exports = {
   getSuppliers,
   validatePOItems,
@@ -2011,7 +2575,12 @@ module.exports = {
   downloadPurchaseOrderPDF,
   previewPurchaseOrderPDF,
   emailPurchaseOrderPDF,
-  bulkDownloadPurchaseOrders
+  bulkDownloadPurchaseOrders,
+  getSupplyChainPendingPOs,
+  getSupplyChainPOStats,
+  downloadPOForSigning,
+  assignPOToDepartment,
+  rejectPO
 };
 
 
