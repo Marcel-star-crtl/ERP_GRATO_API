@@ -193,7 +193,7 @@ const DEPARTMENT_STRUCTURE = {
         allowMultipleInstances: false
       },
       'Field Technician - Edidie': {
-        email: 'dedidie.francois@gratoglobal.com',
+        email: 'edidie.francois@gratoglobal.com',
         name: 'Mr. EDIDIE François',
         position: 'Field Technician',
         reportsTo: 'joseph.tayou@gratoglobal.com',

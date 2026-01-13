@@ -2150,7 +2150,7 @@ const bulkDownloadPurchaseOrders = async (req, res) => {
 };
 
 
-// // Get pending POs for Supply Chain assignment
+// Get pending POs for Supply Chain assignment
 // const getSupplyChainPendingPOs = async (req, res) => {
 //   try {
 //     const purchaseOrders = await PurchaseOrder.find({
@@ -2192,6 +2192,77 @@ const bulkDownloadPurchaseOrders = async (req, res) => {
 // };
 
 
+// Get pending POs for Supply Chain assignment
+const getSupplyChainPendingPOs = async (req, res) => {
+  try {
+    console.log('=== FETCHING SUPPLY CHAIN PENDING POS ===');
+    
+    // Get POs that are draft or pending supply chain assignment
+    const purchaseOrders = await PurchaseOrder.find({
+      status: { 
+        $in: ['draft', 'pending_supply_chain_assignment'] 
+      }
+    })
+    .populate('supplierId', 'name email phone address businessType')
+    .populate('buyerId', 'fullName email')
+    .sort({ createdAt: -1 });
+
+    console.log(`Found ${purchaseOrders.length} purchase orders for Supply Chain`);
+    
+    if (purchaseOrders.length > 0) {
+      console.log('Sample PO statuses:', purchaseOrders.slice(0, 3).map(po => ({
+        poNumber: po.poNumber,
+        status: po.status,
+        supplier: po.supplierDetails?.name
+      })));
+    }
+
+    const transformedPOs = purchaseOrders.map(po => {
+      console.log(`Transforming PO ${po.poNumber}:`, {
+        status: po.status,
+        supplierName: po.supplierDetails?.name,
+        items: po.items?.length
+      });
+      
+      return {
+        id: po._id,
+        poNumber: po.poNumber,
+        supplierName: po.supplierDetails?.name || 'Unknown Supplier',
+        supplierEmail: po.supplierDetails?.email || '',
+        supplierPhone: po.supplierDetails?.phone || '',
+        totalAmount: po.totalAmount,
+        currency: po.currency,
+        items: po.items,
+        creationDate: po.createdAt,
+        expectedDeliveryDate: po.expectedDeliveryDate,
+        paymentTerms: po.paymentTerms,
+        deliveryAddress: po.deliveryAddress,
+        buyerName: po.buyerId?.fullName,
+        buyerEmail: po.buyerId?.email,
+        status: po.status,
+        progress: po.progress,
+        currentStage: po.currentStage,
+        activities: po.activities
+      };
+    });
+
+    console.log(`Returning ${transformedPOs.length} transformed POs`);
+
+    res.json({
+      success: true,
+      data: transformedPOs
+    });
+
+  } catch (error) {
+    console.error('Get SC pending POs error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch pending purchase orders',
+      error: error.message
+    });
+  }
+};
+
 // Add after handleSendPOToSupplier function
 
 const handleSendToSupplyChain = async (po) => {
@@ -2232,29 +2303,95 @@ const handleSendToSupplyChain = async (po) => {
 };
 
 // Get Supply Chain PO statistics
+// const getSupplyChainPOStats = async (req, res) => {
+//   try {
+//     const today = new Date();
+//     today.setHours(0, 0, 0, 0);
+
+//     const [pendingAssignment, assignedToday, rejectedToday, inApprovalChain] = await Promise.all([
+//       PurchaseOrder.countDocuments({
+//         status: 'draft',
+//         currentStage: 'awaiting_supply_chain_assignment'
+//       }),
+//       PurchaseOrder.countDocuments({
+//         status: 'pending_approval',
+//         'supplyChainAssignment.assignedAt': { $gte: today }
+//       }),
+//       PurchaseOrder.countDocuments({
+//         status: 'rejected',
+//         'rejectionDetails.rejectedAt': { $gte: today }
+//       }),
+//       PurchaseOrder.countDocuments({
+//         status: 'pending_approval',
+//         currentStage: { $in: ['department_head', 'technical_head', 'hr_head', 'finance_head'] }
+//       })
+//     ]);
+
+//     res.json({
+//       success: true,
+//       data: {
+//         pendingAssignment,
+//         assignedToday,
+//         rejectedToday,
+//         inApprovalChain
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('Get SC stats error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to fetch statistics',
+//       error: error.message
+//     });
+//   }
+// };
+
+
+// Get Supply Chain PO statistics
 const getSupplyChainPOStats = async (req, res) => {
   try {
+    console.log('=== FETCHING SUPPLY CHAIN STATS ===');
+    
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const [pendingAssignment, assignedToday, rejectedToday, inApprovalChain] = await Promise.all([
+      // Count POs waiting for assignment
       PurchaseOrder.countDocuments({
-        status: 'draft',
-        currentStage: 'awaiting_supply_chain_assignment'
+        status: { 
+          $in: ['draft', 'pending_supply_chain_assignment'] 
+        }
       }),
+      
+      // Count POs assigned today
       PurchaseOrder.countDocuments({
-        status: 'pending_approval',
-        'supplyChainAssignment.assignedAt': { $gte: today }
+        status: { 
+          $in: ['pending_department_approval', 'pending_head_of_business_approval', 'pending_finance_approval'] 
+        },
+        assignmentDate: { $gte: today }
       }),
+      
+      // Count POs rejected by SC today
       PurchaseOrder.countDocuments({
         status: 'rejected',
-        'rejectionDetails.rejectedAt': { $gte: today }
+        'supplyChainReview.reviewDate': { $gte: today }
       }),
+      
+      // Count POs currently in approval chain
       PurchaseOrder.countDocuments({
-        status: 'pending_approval',
-        currentStage: { $in: ['department_head', 'technical_head', 'hr_head', 'finance_head'] }
+        status: { 
+          $in: ['pending_department_approval', 'pending_head_of_business_approval', 'pending_finance_approval'] 
+        }
       })
     ]);
+
+    console.log('Supply Chain Stats:', {
+      pendingAssignment,
+      assignedToday,
+      rejectedToday,
+      inApprovalChain
+    });
 
     res.json({
       success: true,
@@ -2354,12 +2491,156 @@ const downloadPOForSigning = async (req, res) => {
   }
 };
 
+// // Assign PO to department with signed document
+// const assignPOToDepartment = async (req, res) => {
+//   try {
+//     const { poId } = req.params;
+//     const { department, comments } = req.body;
+//     const signedDocument = req.file;
+
+//     if (!signedDocument) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Signed document is required'
+//       });
+//     }
+
+//     if (!department) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Department selection is required'
+//       });
+//     }
+
+//     const purchaseOrder = await PurchaseOrder.findById(poId);
+
+//     if (!purchaseOrder) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Purchase order not found'
+//       });
+//     }
+
+//     // Upload signed document
+//     let signedDocUrl = null;
+//     try {
+//       const uploadResult = await uploadFile(signedDocument.path, 'purchase-orders/signed');
+//       signedDocUrl = uploadResult.secure_url;
+//     } catch (uploadError) {
+//       console.error('Upload error:', uploadError);
+//       return res.status(500).json({
+//         success: false,
+//         message: 'Failed to upload signed document'
+//       });
+//     }
+
+//     // Update PO with assignment
+//     purchaseOrder.status = 'pending_approval';
+//     purchaseOrder.currentStage = 'department_head';
+//     purchaseOrder.progress = 30;
+
+//     purchaseOrder.supplyChainAssignment = {
+//       assignedBy: req.user.userId,
+//       assignedTo: department,
+//       assignedAt: new Date(),
+//       comments: comments || '',
+//       signedDocument: signedDocUrl
+//     };
+
+//     // Initialize approval chain
+//     const departmentHeads = {
+//       'Technical': { name: 'Mr. Didier Oyong', email: 'didier.oyong@gratoeng.com' },
+//       'Business Development & Supply Chain': { name: 'Mr. E.T Kelvin', email: 'kelvin.ekoko@gratoeng.com' },
+//       'HR & Admin': { name: 'Mrs. Bruiline Tsitoh', email: 'bruiline.tsitoh@gratoeng.com' }
+//     };
+
+//     const deptHead = departmentHeads[department];
+
+//     purchaseOrder.approvalChain = [{
+//       level: 1,
+//       role: 'Supply Chain',
+//       approver: {
+//         userId: req.user.userId,
+//         name: req.user.fullName,
+//         email: req.user.email
+//       },
+//       status: 'approved',
+//       approvedAt: new Date(),
+//       comments: 'Signed and assigned to department'
+//     }, {
+//       level: 2,
+//       role: 'Department Head',
+//       department: department,
+//       approver: {
+//         name: deptHead.name,
+//         email: deptHead.email
+//       },
+//       status: 'pending',
+//       requiresSignature: true
+//     }];
+
+//     purchaseOrder.activities.push({
+//       type: 'assigned',
+//       description: `Assigned to ${department} by Supply Chain`,
+//       user: req.user.fullName,
+//       timestamp: new Date()
+//     });
+
+//     await purchaseOrder.save();
+
+//     // Send email notification to Department Head
+//     try {
+//       await sendEmail({
+//         to: deptHead.email,
+//         subject: `Purchase Order ${purchaseOrder.poNumber} - Pending Your Approval`,
+//         html: `
+//           <h2>Purchase Order Assignment</h2>
+//           <p>Dear ${deptHead.name},</p>
+//           <p>A purchase order has been signed by Supply Chain and assigned to your department for approval.</p>
+//           <p><strong>PO Number:</strong> ${purchaseOrder.poNumber}</p>
+//           <p><strong>Amount:</strong> ${purchaseOrder.currency} ${purchaseOrder.totalAmount.toLocaleString()}</p>
+//           <p>Please review and approve in the system.</p>
+//         `
+//       });
+//     } catch (emailError) {
+//       console.error('Email notification error:', emailError);
+//     }
+
+//     res.json({
+//       success: true,
+//       message: 'Purchase order assigned successfully',
+//       data: {
+//         poNumber: purchaseOrder.poNumber,
+//         assignedTo: department
+//       }
+//     });
+
+//   } catch (error) {
+//     console.error('Assign PO error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to assign purchase order',
+//       error: error.message
+//     });
+//   }
+// };
+
+
+
+
 // Assign PO to department with signed document
 const assignPOToDepartment = async (req, res) => {
   try {
     const { poId } = req.params;
     const { department, comments } = req.body;
     const signedDocument = req.file;
+
+    console.log('Assignment request:', {
+      poId,
+      department,
+      hasFile: !!signedDocument,
+      fileName: signedDocument?.originalname
+    });
 
     if (!signedDocument) {
       return res.status(400).json({
@@ -2384,11 +2665,20 @@ const assignPOToDepartment = async (req, res) => {
       });
     }
 
+    // Check if PO can be assigned
+    if (!['draft', 'pending_supply_chain_assignment'].includes(purchaseOrder.status)) {
+      return res.status(400).json({
+        success: false,
+        message: `PO cannot be assigned from status: ${purchaseOrder.status}`
+      });
+    }
+
     // Upload signed document
     let signedDocUrl = null;
     try {
       const uploadResult = await uploadFile(signedDocument.path, 'purchase-orders/signed');
       signedDocUrl = uploadResult.secure_url;
+      console.log('Document uploaded:', signedDocUrl);
     } catch (uploadError) {
       console.error('Upload error:', uploadError);
       return res.status(500).json({
@@ -2397,76 +2687,118 @@ const assignPOToDepartment = async (req, res) => {
       });
     }
 
-    // Update PO with assignment
-    purchaseOrder.status = 'pending_approval';
-    purchaseOrder.currentStage = 'department_head';
+    // Get department head info
+    const { getPOApprovalChain } = require('../config/poApprovalChain');
+    const approvalChain = getPOApprovalChain(department);
+    
+    if (!approvalChain || approvalChain.length !== 3) {
+      return res.status(500).json({
+        success: false,
+        message: `Failed to create approval chain for ${department}`
+      });
+    }
+
+    // Update PO with correct enum values from the schema
+    purchaseOrder.status = 'pending_department_approval'; // This matches the schema enum
+    purchaseOrder.assignedDepartment = department;
+    purchaseOrder.assignedBy = req.user.userId;
+    purchaseOrder.assignmentDate = new Date();
+    purchaseOrder.assignmentTime = new Date().toTimeString().split(' ')[0];
     purchaseOrder.progress = 30;
+    purchaseOrder.currentStage = 'created'; // Keep it as 'created' which is valid in schema
 
-    purchaseOrder.supplyChainAssignment = {
-      assignedBy: req.user.userId,
-      assignedTo: department,
-      assignedAt: new Date(),
-      comments: comments || '',
-      signedDocument: signedDocUrl
+    // Supply Chain review (auto-approved by assignment)
+    purchaseOrder.supplyChainReview = {
+      reviewedBy: req.user.userId,
+      reviewDate: new Date(),
+      reviewTime: new Date().toTimeString().split(' ')[0],
+      action: 'assigned',
+      comments: comments || `Assigned to ${department} department`,
+      signedDocument: {
+        url: signedDocUrl,
+        originalName: signedDocument.originalname,
+        uploadedAt: new Date()
+      }
     };
 
-    // Initialize approval chain
-    const departmentHeads = {
-      'Technical': { name: 'Mr. Didier Oyong', email: 'didier.oyong@gratoeng.com' },
-      'Business Development & Supply Chain': { name: 'Mr. E.T Kelvin', email: 'kelvin.ekoko@gratoeng.com' },
-      'HR & Admin': { name: 'Mrs. Bruiline Tsitoh', email: 'bruiline.tsitoh@gratoeng.com' }
-    };
-
-    const deptHead = departmentHeads[department];
-
-    purchaseOrder.approvalChain = [{
-      level: 1,
-      role: 'Supply Chain',
+    // Create 3-level approval chain
+    purchaseOrder.approvalChain = approvalChain.map((step, index) => ({
+      level: step.level,
       approver: {
-        userId: req.user.userId,
-        name: req.user.fullName,
-        email: req.user.email
-      },
-      status: 'approved',
-      approvedAt: new Date(),
-      comments: 'Signed and assigned to department'
-    }, {
-      level: 2,
-      role: 'Department Head',
-      department: department,
-      approver: {
-        name: deptHead.name,
-        email: deptHead.email
+        name: step.approver,
+        email: step.email,
+        role: step.role,
+        department: step.department
       },
       status: 'pending',
-      requiresSignature: true
-    }];
+      activatedDate: index === 0 ? new Date() : null // Only activate first level
+    }));
 
+    purchaseOrder.currentApprovalLevel = 1;
+
+    // Add activity with valid enum value
     purchaseOrder.activities.push({
-      type: 'assigned',
-      description: `Assigned to ${department} by Supply Chain`,
+      type: 'updated', // Use 'updated' instead of 'assigned' (valid enum value)
+      description: `Purchase order assigned to ${department} by Supply Chain`,
       user: req.user.fullName,
       timestamp: new Date()
     });
 
     await purchaseOrder.save();
 
-    // Send email notification to Department Head
+    // Send notification to first approver (Department Head)
     try {
+      const firstApprover = purchaseOrder.approvalChain[0];
+      
       await sendEmail({
-        to: deptHead.email,
-        subject: `Purchase Order ${purchaseOrder.poNumber} - Pending Your Approval`,
+        to: firstApprover.approver.email,
+        subject: `Purchase Order Approval Required - ${purchaseOrder.poNumber}`,
         html: `
-          <h2>Purchase Order Assignment</h2>
-          <p>Dear ${deptHead.name},</p>
-          <p>A purchase order has been signed by Supply Chain and assigned to your department for approval.</p>
-          <p><strong>PO Number:</strong> ${purchaseOrder.poNumber}</p>
-          <p><strong>Amount:</strong> ${purchaseOrder.currency} ${purchaseOrder.totalAmount.toLocaleString()}</p>
-          <p>Please review and approve in the system.</p>
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; border-left: 4px solid #ffc107;">
+              <h2>Purchase Order Approval Required</h2>
+              <p>Dear ${firstApprover.approver.name},</p>
+              <p>A purchase order has been assigned to your department and requires your approval.</p>
+              
+              <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <h3>PO Details</h3>
+                <table style="width: 100%; border-collapse: collapse;">
+                  <tr><td style="padding: 8px 0;"><strong>PO Number:</strong></td><td>${purchaseOrder.poNumber}</td></tr>
+                  <tr><td style="padding: 8px 0;"><strong>Supplier:</strong></td><td>${purchaseOrder.supplierDetails?.name}</td></tr>
+                  <tr><td style="padding: 8px 0;"><strong>Amount:</strong></td><td>${purchaseOrder.currency} ${purchaseOrder.totalAmount.toLocaleString()}</td></tr>
+                  <tr><td style="padding: 8px 0;"><strong>Department:</strong></td><td>${department}</td></tr>
+                  <tr><td style="padding: 8px 0;"><strong>Approval Level:</strong></td><td>Level 1 - Department Head</td></tr>
+                </table>
+              </div>
+              
+              <div style="background-color: #ffe7ba; padding: 15px; border-radius: 5px; margin: 15px 0;">
+                <p><strong>⚠️ Document Signing Required:</strong></p>
+                <ol style="margin: 10px 0; padding-left: 20px;">
+                  <li>Download the PO document</li>
+                  <li>Sign manually (print or digital signature)</li>
+                  <li>Upload the signed document when approving</li>
+                </ol>
+              </div>
+              
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="${process.env.CLIENT_URL}/supervisor/po-approvals?approve=${purchaseOrder._id}" 
+                   style="background-color: #28a745; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; display: inline-block;">
+                  Review & Sign PO
+                </a>
+              </div>
+              
+              <p style="color: #666; font-size: 12px; margin-top: 20px;">
+                This is an automated notification from the Purchase Order Management System.
+              </p>
+            </div>
+          </div>
         `
       });
+      
+      console.log(`Email notification sent to ${firstApprover.approver.email}`);
     } catch (emailError) {
-      console.error('Email notification error:', emailError);
+      console.error('Failed to send email notification:', emailError);
+      // Don't fail the assignment if email fails
     }
 
     res.json({
@@ -2474,7 +2806,9 @@ const assignPOToDepartment = async (req, res) => {
       message: 'Purchase order assigned successfully',
       data: {
         poNumber: purchaseOrder.poNumber,
-        assignedTo: department
+        assignedTo: department,
+        currentApprover: purchaseOrder.approvalChain[0].approver.name,
+        status: purchaseOrder.status
       }
     });
 
@@ -2487,6 +2821,8 @@ const assignPOToDepartment = async (req, res) => {
     });
   }
 };
+
+
 
 // Reject PO
 const rejectPO = async (req, res) => {

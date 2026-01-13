@@ -761,12 +761,65 @@ PurchaseOrderSchema.virtual('approvalProgress').get(function() {
 
 // Methods
 
+// // Assign by Supply Chain (creates approval chain)
+// PurchaseOrderSchema.methods.assignBySupplyChain = function(department, assignedByUserId, comments) {
+//   const { getPOApprovalChain } = require('../config/poApprovalChain');
+  
+//   if (this.status !== 'pending_supply_chain_assignment') {
+//     throw new Error('PO has already been assigned');
+//   }
+  
+//   console.log(`\n=== ASSIGNING PO BY SUPPLY CHAIN ===`);
+//   console.log(`PO: ${this.poNumber}`);
+//   console.log(`Department: ${department}`);
+  
+//   this.assignedDepartment = department;
+//   this.assignedBy = assignedByUserId;
+//   this.assignmentDate = new Date();
+//   this.assignmentTime = new Date().toTimeString().split(' ')[0];
+//   this.status = 'pending_department_approval';
+  
+//   // Supply Chain review (auto-approved by assignment)
+//   this.supplyChainReview = {
+//     reviewedBy: assignedByUserId,
+//     reviewDate: new Date(),
+//     reviewTime: new Date().toTimeString().split(' ')[0],
+//     action: 'assigned',
+//     comments: comments || `Assigned to ${department} department`
+//   };
+  
+//   // Create 3-level approval chain
+//   const chain = getPOApprovalChain(department);
+  
+//   if (!chain || chain.length !== 3) {
+//     throw new Error(`Failed to create complete approval chain for ${department}`);
+//   }
+  
+//   this.approvalChain = chain.map(step => ({
+//     level: step.level,
+//     approver: {
+//       name: step.approver,
+//       email: step.email,
+//       role: step.role,
+//       department: step.department
+//     },
+//     status: 'pending',
+//     activatedDate: step.level === 1 ? new Date() : null
+//   }));
+
+//   this.currentApprovalLevel = 1;
+  
+//   console.log(`✅ PO ${this.poNumber} assigned to ${department}`);
+//   console.log(`First approver: ${this.approvalChain[0]?.approver.name}`);
+// };
+
+
 // Assign by Supply Chain (creates approval chain)
 PurchaseOrderSchema.methods.assignBySupplyChain = function(department, assignedByUserId, comments) {
   const { getPOApprovalChain } = require('../config/poApprovalChain');
   
-  if (this.status !== 'pending_supply_chain_assignment') {
-    throw new Error('PO has already been assigned');
+  if (!['draft', 'pending_supply_chain_assignment'].includes(this.status)) {
+    throw new Error('PO has already been assigned or is not in a valid status for assignment');
   }
   
   console.log(`\n=== ASSIGNING PO BY SUPPLY CHAIN ===`);
@@ -777,7 +830,7 @@ PurchaseOrderSchema.methods.assignBySupplyChain = function(department, assignedB
   this.assignedBy = assignedByUserId;
   this.assignmentDate = new Date();
   this.assignmentTime = new Date().toTimeString().split(' ')[0];
-  this.status = 'pending_department_approval';
+  this.status = 'pending_department_approval'; // Valid enum value
   
   // Supply Chain review (auto-approved by assignment)
   this.supplyChainReview = {
@@ -795,7 +848,7 @@ PurchaseOrderSchema.methods.assignBySupplyChain = function(department, assignedB
     throw new Error(`Failed to create complete approval chain for ${department}`);
   }
   
-  this.approvalChain = chain.map(step => ({
+  this.approvalChain = chain.map((step, index) => ({
     level: step.level,
     approver: {
       name: step.approver,
@@ -804,7 +857,7 @@ PurchaseOrderSchema.methods.assignBySupplyChain = function(department, assignedB
       department: step.department
     },
     status: 'pending',
-    activatedDate: step.level === 1 ? new Date() : null
+    activatedDate: index === 0 ? new Date() : null
   }));
 
   this.currentApprovalLevel = 1;
