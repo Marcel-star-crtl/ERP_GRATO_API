@@ -2040,6 +2040,62 @@ const logProjectMeeting = async (req, res) => {
     }
 };
 
+exports.getStatistics = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const [myStats, approvalStats] = await Promise.all([
+      // My project plans stats
+      ProjectPlan.aggregate([
+        { $match: { createdBy: new mongoose.Types.ObjectId(userId) } }, // Use 'new' keyword
+        {
+          $group: {
+            _id: '$status',
+            count: { $sum: 1 }
+          }
+        }
+      ]),
+      
+      // My pending approvals count
+      ProjectPlan.countDocuments({
+        'approvalChain.email': req.user.email,
+        'approvalChain.status': 'pending'
+      })
+    ]);
+
+    const result = {
+      total: 0,
+      draft: 0,
+      submitted: 0,
+      approved: 0,
+      inProgress: 0,
+      rejected: 0,
+      pendingApprovals: approvalStats
+    };
+
+    myStats.forEach(stat => {
+      result.total += stat.count;
+      if (stat._id === 'Draft') result.draft = stat.count;
+      if (stat._id && stat._id.includes('Pending')) result.submitted += stat.count;
+      if (stat._id === 'Approved') result.approved = stat.count;
+      if (stat._id === 'In Progress') result.inProgress = stat.count;
+      if (stat._id === 'Rejected') result.rejected = stat.count;
+    });
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error fetching statistics:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch statistics',
+      error: error.message
+    });
+  }
+};
+
 // Get project statistics
 // const getProjectStats = async (req, res) => {
 //     try {
