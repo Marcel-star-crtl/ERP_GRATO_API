@@ -70,6 +70,7 @@ const migrationRoutes = loadRoute('./routes/migrationRoutes', 'migrationRoutes')
 const headApprovalRoutes = require('./routes/headApproval');
 const quotationRoutes = require('./routes/quotationRoutes');
 const debitNoteRoutes = require('./routes/debitNoteRoutes');
+const projectPlanRoutes = require('./routes/projectPlanRoutes');
 
 // Critical check for projectRoutes
 if (!projectRoutes) {
@@ -434,6 +435,12 @@ if (debitNoteRoutes) {
   console.log('✅ Mounted: /api/debit-notes');
 }
 
+if (buyerRoutes) {
+  app.use('/api/project-plans', require('./routes/projectPlanRoutes'));
+  console.log('✅ Mounted: /api/project-plans');
+}
+
+app.use('/api/project-plans', projectPlanRoutes);
 
 try {
   app.use('/api/hr', require('./routes/hrRoutes'));
