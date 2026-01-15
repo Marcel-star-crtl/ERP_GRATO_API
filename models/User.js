@@ -37,7 +37,7 @@ const UserSchema = new mongoose.Schema({
     // CORE ROLE (What they do, NOT who they supervise)
     role: {
         type: String,
-        enum: ['employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'],
+        enum: ['employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project', 'ceo'],
         required: true,
         default: 'employee'
     },
@@ -93,7 +93,6 @@ const UserSchema = new mongoose.Schema({
         ref: 'User'
     }],
     
-    // APPROVAL CAPACITIES (What roles this person can approve as)
     approvalCapacities: [{
         type: String,
         enum: [
@@ -105,7 +104,8 @@ const UserSchema = new mongoose.Schema({
             'hse_coordinator',        // HSE approval
             'project_manager',        // Project-specific
             'supply_chain_coordinator', // Supply chain
-            'operations_manager'      // Operations
+            'operations_manager',     // Operations
+            'executive_decisions'     // ADD THIS LINE - Executive/CEO level
         ]
     }],
     
@@ -120,7 +120,7 @@ const UserSchema = new mongoose.Schema({
         type: Number,
         default: 1,
         min: 1,
-        max: 5
+        max: 6
     },
     
     // DEPARTMENT ROLE (for legacy compatibility)

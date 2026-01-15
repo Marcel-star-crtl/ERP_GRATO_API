@@ -4323,7 +4323,6 @@ const processJustificationDecision = async (req, res) => {
   }
 };
 
-
 const generateCashRequestPDF = async (req, res) => {
   try {
     const { requestId } = req.params;
@@ -4338,7 +4337,7 @@ const generateCashRequestPDF = async (req, res) => {
       .populate('approvalChain.decidedBy', 'fullName email')
       .populate('projectId', 'name code')
       .populate('budgetAllocation.budgetCodeId', 'code name budget remaining')
-      .populate('disbursementDetails.disbursedBy', 'fullName email');
+      .populate('disbursements.disbursedBy', 'fullName email');  // ✅ FIXED: was disbursementDetails
 
     if (!request) {
       return res.status(404).json({
@@ -4361,12 +4360,23 @@ const generateCashRequestPDF = async (req, res) => {
       });
     }
 
-    // Verify request is disbursed or completed
-    if (request.status !== 'disbursed' && request.status !== 'completed') {
+    // ✅ FIXED: Check for correct status values
+    const allowedStatuses = [
+      'partially_disbursed', 
+      'fully_disbursed', 
+      'justification_pending_supervisor',
+      'justification_pending_departmental_head',
+      'justification_pending_hr',
+      'justification_pending_finance',
+      'completed'
+    ];
+
+    if (!allowedStatuses.includes(request.status)) {
       return res.status(400).json({
         success: false,
-        message: 'PDF can only be generated for disbursed or completed requests',
-        currentStatus: request.status
+        message: 'PDF can only be generated after disbursement has started',
+        currentStatus: request.status,
+        allowedStatuses
       });
     }
 
