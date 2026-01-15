@@ -10,6 +10,7 @@ class PDFService {
     this.pageMargins = { top: 50, bottom: 80, left: 40, right: 40 };
   }
 
+
   async generatePurchaseOrderPDF(poData, outputPath) {
     return new Promise((resolve, reject) => {
       try {
@@ -1527,51 +1528,135 @@ class PDFService {
   // ============================================
   // PETTY CASH FORM PDF (Uses Cash Request Format)
   // ============================================
-  async generatePettyCashFormPDF(formData, outputPath) {
-    return new Promise((resolve, reject) => {
-      try {
-        console.log('=== STARTING PETTY CASH FORM PDF GENERATION ===');
-        console.log('Form Number:', formData.displayId);
-        console.log('Requisition:', formData.requisitionNumber);
+  // async generatePettyCashFormPDF(formData, outputPath) {
+  //   return new Promise((resolve, reject) => {
+  //     try {
+  //       console.log('=== STARTING PETTY CASH FORM PDF GENERATION ===');
+  //       console.log('Form Number:', formData.displayId);
+  //       console.log('Requisition:', formData.requisitionNumber);
 
-        const doc = new PDFDocument({ 
-          size: 'A4', 
-          margins: this.pageMargins,
-          info: {
-            Title: `Petty Cash Form - ${formData.displayId}`,
-            Author: 'GRATO ENGINEERING GLOBAL LTD',
-            Subject: 'Project Cash Form',
-            Creator: 'Purchase Requisition System'
+  //       const doc = new PDFDocument({ 
+  //         size: 'A4', 
+  //         margins: this.pageMargins,
+  //         info: {
+  //           Title: `Petty Cash Form - ${formData.displayId}`,
+  //           Author: 'GRATO ENGINEERING GLOBAL LTD',
+  //           Subject: 'Project Cash Form',
+  //           Creator: 'Purchase Requisition System'
+  //         }
+  //       });
+
+  //       if (outputPath) {
+  //         doc.pipe(fs.createWriteStream(outputPath));
+  //       }
+
+  //       const chunks = [];
+  //       doc.on('data', chunk => chunks.push(chunk));
+  //       doc.on('end', () => {
+  //         const pdfBuffer = Buffer.concat(chunks);
+  //         console.log('=== PETTY CASH FORM PDF GENERATION COMPLETED ===');
+  //         resolve({
+  //           success: true,
+  //           buffer: pdfBuffer,
+  //           filename: `Petty_Cash_Form_${formData.displayId}_${Date.now()}.pdf`
+  //         });
+  //       });
+
+  //       this.generateCashRequestContent(doc, formData);
+  //       doc.end();
+  //     } catch (error) {
+  //       console.error('Petty Cash Form PDF generation error:', error);
+  //       reject({
+  //         success: false,
+  //         error: error.message
+  //       });
+  //     }
+  //   });
+  // }
+
+  const generatePettyCashFormPDF = async (req, res) => {
+  try {
+    const { requisitionId } = req.params;
+    const user = await User.findById(req.user.userId);
+
+    console.log('=== GENERATE PETTY CASH FORM PDF ===');
+    console.log('Requisition ID:', requisitionId);
+    console.log('Requested by:', user.email);
+
+    const requisition = await PurchaseRequisition.findById(requisitionId)
+      .populate('requestedBy', 'fullName email department position')
+      .populate('project', 'name code')
+      .populate('approvalChain.decidedBy', 'fullName email')
+      .populate('items.productId', 'name description');
+
+    if (!requisition) {
+      return res.status(404).json({
+        success: false,
+        message: 'Purchase requisition not found'
+      });
+    }
+
+    // Verify user has access
+    const hasAccess = 
+      requisition.requestedBy._id.equals(req.user.userId) ||
+      requisition.approvalChain.some(step => step.decidedBy?.equals(req.user.userId)) ||
+      user.role === 'admin' ||
+      user.role === 'finance';
+
+    if (!hasAccess) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    // Generate PDF
+    const PDFService = require('../services/pdfService');
+    const pdfResult = await PDFService.generatePettyCashFormPDF(
+      requisition.toObject(),
+      null
+    );
+
+    if (!pdfResult.success) {
+      throw new Error('PDF generation failed');
+    }
+
+    // ✅ FIXED: Update without triggering validation
+    await PurchaseRequisition.findByIdAndUpdate(
+      requisitionId,
+      {
+        $push: {
+          pdfDownloadHistory: {
+            downloadedBy: req.user.userId,
+            downloadedAt: new Date(),
+            filename: pdfResult.filename
           }
-        });
-
-        if (outputPath) {
-          doc.pipe(fs.createWriteStream(outputPath));
         }
-
-        const chunks = [];
-        doc.on('data', chunk => chunks.push(chunk));
-        doc.on('end', () => {
-          const pdfBuffer = Buffer.concat(chunks);
-          console.log('=== PETTY CASH FORM PDF GENERATION COMPLETED ===');
-          resolve({
-            success: true,
-            buffer: pdfBuffer,
-            filename: `Petty_Cash_Form_${formData.displayId}_${Date.now()}.pdf`
-          });
-        });
-
-        this.generateCashRequestContent(doc, formData);
-        doc.end();
-      } catch (error) {
-        console.error('Petty Cash Form PDF generation error:', error);
-        reject({
-          success: false,
-          error: error.message
-        });
+      },
+      { 
+        runValidators: false, // ✅ Skip validation
+        new: false 
       }
+    );
+
+    console.log('✓ PDF download audit saved');
+
+    // Send PDF to client
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${pdfResult.filename}"`);
+    res.send(pdfResult.buffer);
+
+    console.log(`✓ PDF generated and sent: ${pdfResult.filename}`);
+
+  } catch (error) {
+    console.error('Generate PDF error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to download petty cash form',
+      error: error.message
     });
   }
+};
 
   // ============================================
   // CASH REQUEST PDF (Employee Format)
