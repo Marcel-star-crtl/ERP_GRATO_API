@@ -1574,89 +1574,52 @@ class PDFService {
   //   });
   // }
 
-  const generatePettyCashFormPDF = async (req, res) => {
-  try {
-    const { requisitionId } = req.params;
-    const user = await User.findById(req.user.userId);
+  // ✅ KEEP THIS - It's the correct class method
+async generatePettyCashFormPDF(formData, outputPath) {
+  return new Promise((resolve, reject) => {
+    try {
+      console.log('=== STARTING PETTY CASH FORM PDF GENERATION ===');
+      console.log('Form Number:', formData.displayId);
+      console.log('Requisition:', formData.requisitionNumber);
 
-    console.log('=== GENERATE PETTY CASH FORM PDF ===');
-    console.log('Requisition ID:', requisitionId);
-    console.log('Requested by:', user.email);
-
-    const requisition = await PurchaseRequisition.findById(requisitionId)
-      .populate('requestedBy', 'fullName email department position')
-      .populate('project', 'name code')
-      .populate('approvalChain.decidedBy', 'fullName email')
-      .populate('items.productId', 'name description');
-
-    if (!requisition) {
-      return res.status(404).json({
-        success: false,
-        message: 'Purchase requisition not found'
-      });
-    }
-
-    // Verify user has access
-    const hasAccess = 
-      requisition.requestedBy._id.equals(req.user.userId) ||
-      requisition.approvalChain.some(step => step.decidedBy?.equals(req.user.userId)) ||
-      user.role === 'admin' ||
-      user.role === 'finance';
-
-    if (!hasAccess) {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied'
-      });
-    }
-
-    // Generate PDF
-    const PDFService = require('../services/pdfService');
-    const pdfResult = await PDFService.generatePettyCashFormPDF(
-      requisition.toObject(),
-      null
-    );
-
-    if (!pdfResult.success) {
-      throw new Error('PDF generation failed');
-    }
-
-    // ✅ FIXED: Update without triggering validation
-    await PurchaseRequisition.findByIdAndUpdate(
-      requisitionId,
-      {
-        $push: {
-          pdfDownloadHistory: {
-            downloadedBy: req.user.userId,
-            downloadedAt: new Date(),
-            filename: pdfResult.filename
-          }
+      const doc = new PDFDocument({ 
+        size: 'A4', 
+        margins: this.pageMargins,
+        info: {
+          Title: `Petty Cash Form - ${formData.displayId}`,
+          Author: 'GRATO ENGINEERING GLOBAL LTD',
+          Subject: 'Project Cash Form',
+          Creator: 'Purchase Requisition System'
         }
-      },
-      { 
-        runValidators: false, // ✅ Skip validation
-        new: false 
+      });
+
+      if (outputPath) {
+        doc.pipe(fs.createWriteStream(outputPath));
       }
-    );
 
-    console.log('✓ PDF download audit saved');
+      const chunks = [];
+      doc.on('data', chunk => chunks.push(chunk));
+      doc.on('end', () => {
+        const pdfBuffer = Buffer.concat(chunks);
+        console.log('=== PETTY CASH FORM PDF GENERATION COMPLETED ===');
+        resolve({
+          success: true,
+          buffer: pdfBuffer,
+          filename: `Petty_Cash_Form_${formData.displayId}_${Date.now()}.pdf`
+        });
+      });
 
-    // Send PDF to client
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${pdfResult.filename}"`);
-    res.send(pdfResult.buffer);
-
-    console.log(`✓ PDF generated and sent: ${pdfResult.filename}`);
-
-  } catch (error) {
-    console.error('Generate PDF error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to download petty cash form',
-      error: error.message
-    });
-  }
-};
+      this.generateCashRequestContent(doc, formData);
+      doc.end();
+    } catch (error) {
+      console.error('Petty Cash Form PDF generation error:', error);
+      reject({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+}
 
   // ============================================
   // CASH REQUEST PDF (Employee Format)
@@ -1892,18 +1855,16 @@ class PDFService {
     this.drawRequesterAcknowledgmentSignature(doc, yPos, data);
   }
 
-  // Footer on all pages
+  // ✅ FIXED: Footer ONLY on the LAST page
   const range = doc.bufferedPageRange();
-  console.log('📄 Drawing footers for pages. Range:', range);
-  
-  for (let i = 0; i < range.count; i++) {
-    try {
-      doc.switchToPage(range.start + i);
-      this.drawCashRequestFooter(doc, data, i + 1, range.count);
-      console.log(`✅ Footer drawn on page ${i + 1} of ${range.count}`);
-    } catch (error) {
-      console.error(`❌ Error drawing footer on page ${i + 1}:`, error.message);
-    }
+  console.log('📄 Drawing footer on last page only. Total pages:', range.count);
+
+  try {
+    // Stay on current page (which is the last page)
+    this.drawCashRequestFooter(doc, data, range.count, range.count);
+    console.log(`✅ Footer drawn on final page (${range.count})`);
+  } catch (error) {
+    console.error(`❌ Error drawing footer:`, error.message);
   }
   
   console.log('=== CASH REQUEST PDF CONTENT GENERATION COMPLETE ===');
@@ -3105,9 +3066,9 @@ drawBuyerAcknowledgmentSignature(doc, yPos, data) {
   }
 
   drawCashRequestFooter(doc, data, pageNum, totalPages) {
-  doc.save();
+  // Don't save/restore state - we're already on the correct page
   
-  const footerY = doc.page.height - 70;
+  const footerY = doc.page.height - 80; // Increased space to avoid cramping
   
   // Horizontal line
   doc.strokeColor('#CCCCCC')
@@ -3121,29 +3082,47 @@ drawBuyerAcknowledgmentSignature(doc, yPos, data) {
      .font(this.defaultFont)
      .fillColor('#666666');
 
-  // Registration
-  doc.text('RC/DLA/2014/B/2690 NIU: M061421030521', 40, footerY + 8, {
+  // ✅ FIXED: All text on same page, proper line spacing
+  let currentY = footerY + 8;
+
+  // Line 1: Registration and page number
+  doc.text('RC/DLA/2014/B/2690 NIU: M061421030521', 40, currentY, {
     continued: false
   });
   
-  // Page number (right aligned)
-  doc.text(`Page ${pageNum} / ${totalPages}`, 480, footerY + 8, {
+  doc.text(`Page ${pageNum} / ${totalPages}`, 480, currentY, {
     width: 75,
     align: 'right',
     continued: false
   });
-  
-  // Generation timestamp
-  doc.text(`Generated: ${new Date().toLocaleString('en-GB')}`, 40, footerY + 20, {
+
+  currentY += 12; // Move to next line
+
+  // Line 2: Generation timestamp
+  doc.text(`Generated: ${new Date().toLocaleString('en-GB')}`, 40, currentY, {
     continued: false
   });
-  
-  // Contact
-  doc.text('679586444 | info@gratoengineering.com', 40, footerY + 32, {
+
+  currentY += 12; // Move to next line
+
+  // Line 3: Contact
+  doc.text('679586444 | info@gratoengineering.com | www.gratoengineering.com', 40, currentY, {
     continued: false
   });
-  
-  doc.restore();
+
+  currentY += 12; // Move to next line
+
+  // Line 4: Location
+  doc.text('Location: Bonaberi-Douala, beside Santa Lucia Telecommunications', 40, currentY, {
+    continued: false
+  });
+
+  currentY += 12; // Move to next line
+
+  // Line 5: Services
+  doc.text('Civil, Electrical and Mechanical Engineering Services', 40, currentY, {
+    continued: false
+  });
 }
 
   // ============================================

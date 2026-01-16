@@ -12,6 +12,84 @@ const {
 } = require('../utils/localFileStorage');
 
 
+
+const generatePettyCashFormPDF = async (req, res) => {
+  try {
+    const { requisitionId } = req.params;
+    const user = await User.findById(req.user.userId);
+
+    console.log('=== GENERATE PETTY CASH FORM PDF ===');
+    console.log('Requisition ID:', requisitionId);
+    console.log('Requested by:', user.email);
+
+    const requisition = await PurchaseRequisition.findById(requisitionId)
+      .populate('requestedBy', 'fullName email department position')
+      .populate('employee', 'fullName email department position') // ✅ Also populate employee
+      .populate('project', 'name code')
+      .populate('approvalChain.decidedBy', 'fullName email')
+      .populate('items.productId', 'name description');
+
+    if (!requisition) {
+      return res.status(404).json({
+        success: false,
+        message: 'Purchase requisition not found'
+      });
+    }
+
+    // Verify user has access
+    const requester = requisition.requestedBy || requisition.employee;
+    const hasAccess = 
+      requester._id.equals(req.user.userId) ||
+      requisition.approvalChain.some(step => step.decidedBy?.equals(req.user.userId)) ||
+      user.role === 'admin' ||
+      user.role === 'finance' ||
+      user.role === 'buyer' ||
+      user.role === 'supply_chain';
+
+    if (!hasAccess) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    // ✅ Transform data for PDF service (map requestedBy to employee for consistency)
+    const pdfData = {
+      ...requisition.toObject(),
+      employee: requester, // ✅ Use requestedBy as employee
+      displayId: requisition.pettyCashForm?.formNumber || `PCF-${requisition._id.toString().slice(-6).toUpperCase()}`,
+      items: requisition.items || []
+    };
+
+    // Generate PDF
+    const PDFService = require('../services/pdfService');
+    const pdfResult = await PDFService.generatePettyCashFormPDF(
+      pdfData,
+      null
+    );
+
+    if (!pdfResult.success) {
+      throw new Error('PDF generation failed');
+    }
+
+    // ✅ NO SAVE - Just send the PDF
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${pdfResult.filename}"`);
+    res.send(pdfResult.buffer);
+
+    console.log(`✓ PDF generated and sent: ${pdfResult.filename}`);
+
+  } catch (error) {
+    console.error('Generate PDF error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to download petty cash form',
+      error: error.message
+    });
+  }
+};
+
+
 const createRequisition = async (req, res) => {
   try {
     console.log('=== CREATE PURCHASE REQUISITION STARTED ===');
@@ -4849,5 +4927,7 @@ module.exports = {
   getRequisitionDetails,
 
   // Draft management
-  saveDraft
+  saveDraft,
+
+  generatePettyCashFormPDF
 };

@@ -2849,6 +2849,189 @@ const getPettyCashFormDetails = async (req, res) => {
 // };
 
 
+// const downloadPettyCashFormPDF = async (req, res) => {
+//   try {
+//     const { formId } = req.params;
+    
+//     console.log('=== DOWNLOAD PETTY CASH FORM PDF ===');
+//     console.log('Form ID:', formId);
+//     console.log('Buyer ID:', req.user.userId);
+    
+//     const requisition = await PurchaseRequisition.findById(formId)
+//       .populate('employee', 'fullName email department phone')
+//       .populate('supplyChainReview.assignedBuyer', 'fullName email');
+    
+//     if (!requisition) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Petty cash form not found'
+//       });
+//     }
+    
+//     // Verify buyer has access
+//     if (requisition.supplyChainReview?.assignedBuyer?._id.toString() !== req.user.userId) {
+//       return res.status(403).json({
+//         success: false,
+//         message: 'Access denied'
+//       });
+//     }
+    
+//     // Verify it's a cash payment with generated form
+//     if (requisition.paymentMethod !== 'cash' || !requisition.pettyCashForm?.generated) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'No petty cash form available for this requisition'
+//       });
+//     }
+    
+//     // Import pdfService
+//     const pdfService = require('../services/pdfService');
+    
+//     // ✅ UPDATED: Prepare data with items included
+//     const pdfData = {
+//       // IDs
+//       _id: requisition._id,
+//       displayId: requisition.pettyCashForm.formNumber,
+//       requisitionNumber: requisition.requisitionNumber,
+      
+//       // Employee info
+//       employee: {
+//         fullName: requisition.employee.fullName,
+//         email: requisition.employee.email,
+//         department: requisition.employee.department,
+//         phone: requisition.employee.phone
+//       },
+      
+//       // Request details
+//       title: requisition.title,
+//       purpose: requisition.title, // Use title as purpose
+//       justification: requisition.justificationOfPurchase, // Map justification
+//       businessJustification: requisition.justificationOfPurchase,
+//       requestType: 'petty-cash',
+//       urgency: requisition.urgency?.toLowerCase() || 'medium',
+      
+//       // ✅ NEW: Items array with all details
+//       items: requisition.items.map(item => ({
+//         description: item.description,
+//         quantity: item.quantity,
+//         unit: item.measuringUnit || 'pcs',
+//         measuringUnit: item.measuringUnit || 'pcs',
+//         estimatedPrice: item.estimatedPrice || 0,
+//         specifications: item.specifications || item.description
+//       })),
+      
+//       // Financial details
+//       amountRequested: requisition.budgetXAF,
+//       amountApproved: requisition.pettyCashForm.amount || requisition.budgetXAF,
+//       totalDisbursed: 0,
+//       remainingBalance: requisition.pettyCashForm.amount || requisition.budgetXAF,
+      
+//       // Status
+//       status: requisition.pettyCashForm.status,
+      
+//       // Dates
+//       createdAt: requisition.createdAt,
+      
+//       // Disbursement details
+//       disbursementDetails: requisition.pettyCashForm.disbursementDate ? {
+//         date: requisition.pettyCashForm.disbursementDate,
+//         amount: requisition.pettyCashForm.amount || requisition.budgetXAF
+//       } : null,
+      
+//       // Disbursements array (for history if multiple)
+//       disbursements: requisition.pettyCashForm.disbursementDate ? [{
+//         disbursementNumber: 1,
+//         date: requisition.pettyCashForm.disbursementDate,
+//         amount: requisition.pettyCashForm.amount || requisition.budgetXAF,
+//         notes: 'Initial petty cash disbursement'
+//       }] : [],
+      
+//       // Approval chain
+//       approvalChain: requisition.approvalChain.map(step => ({
+//         level: step.level,
+//         approver: {
+//           name: step.approver.name,
+//           email: step.approver.email,
+//           role: step.approver.role,
+//           department: step.approver.department
+//         },
+//         status: step.status === 'approved' ? 'approved' : 
+//                 step.status === 'rejected' ? 'rejected' : 'pending',
+//         comments: step.comments,
+//         actionDate: step.actionDate,
+//         actionTime: step.actionTime
+//       })),
+      
+//       // Budget allocation (if exists)
+//       budgetAllocation: requisition.financeVerification?.budgetCode ? {
+//         budgetCode: requisition.financeVerification.budgetCode,
+//         allocatedAmount: requisition.financeVerification.assignedBudget || requisition.budgetXAF,
+//         allocationStatus: 'allocated',
+//         budgetCodeId: {
+//           name: `Budget Code: ${requisition.financeVerification.budgetCode}`
+//         }
+//       } : null,
+      
+//       // Additional context
+//       itemCategory: requisition.itemCategory,
+//       deliveryLocation: requisition.deliveryLocation
+//     };
+    
+//     console.log('PDF Data prepared:', {
+//       formNumber: pdfData.displayId,
+//       employee: pdfData.employee.fullName,
+//       amount: pdfData.amountRequested,
+//       itemCount: pdfData.items.length,
+//       status: pdfData.status
+//     });
+    
+//     console.log('Items to be included in PDF:', pdfData.items);
+    
+//     // Generate PDF using existing service
+//     const pdfResult = await pdfService.generateCashRequestPDF(pdfData);
+    
+//     if (!pdfResult.success) {
+//       throw new Error('PDF generation failed');
+//     }
+    
+//     console.log('✅ PDF generated successfully');
+    
+//     // Track download
+//     if (!requisition.pettyCashForm.downloads) {
+//       requisition.pettyCashForm.downloads = [];
+//     }
+    
+//     requisition.pettyCashForm.downloads.push({
+//       downloadedBy: req.user.userId,
+//       downloadDate: new Date(),
+//       ipAddress: req.ip || req.connection.remoteAddress
+//     });
+    
+//     await requisition.save();
+    
+//     console.log('✅ Download tracked. Total downloads:', requisition.pettyCashForm.downloads.length);
+    
+//     // Send PDF to browser
+//     res.setHeader('Content-Type', 'application/pdf');
+//     res.setHeader('Content-Disposition', `attachment; filename="${pdfResult.filename}"`);
+//     res.setHeader('Content-Length', pdfResult.buffer.length);
+//     res.send(pdfResult.buffer);
+    
+//     console.log('✅ PDF sent to browser successfully');
+    
+//   } catch (error) {
+//     console.error('Download petty cash form PDF error:', error);
+//     console.error('Error stack:', error.stack);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to download petty cash form',
+//       error: error.message,
+//       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+//     });
+//   }
+// };
+
+
 const downloadPettyCashFormPDF = async (req, res) => {
   try {
     const { formId } = req.params;
@@ -2887,7 +3070,7 @@ const downloadPettyCashFormPDF = async (req, res) => {
     // Import pdfService
     const pdfService = require('../services/pdfService');
     
-    // ✅ UPDATED: Prepare data with items included
+    // Prepare data with items included
     const pdfData = {
       // IDs
       _id: requisition._id,
@@ -2904,13 +3087,13 @@ const downloadPettyCashFormPDF = async (req, res) => {
       
       // Request details
       title: requisition.title,
-      purpose: requisition.title, // Use title as purpose
-      justification: requisition.justificationOfPurchase, // Map justification
+      purpose: requisition.title,
+      justification: requisition.justificationOfPurchase,
       businessJustification: requisition.justificationOfPurchase,
       requestType: 'petty-cash',
       urgency: requisition.urgency?.toLowerCase() || 'medium',
       
-      // ✅ NEW: Items array with all details
+      // Items array
       items: requisition.items.map(item => ({
         description: item.description,
         quantity: item.quantity,
@@ -2938,7 +3121,7 @@ const downloadPettyCashFormPDF = async (req, res) => {
         amount: requisition.pettyCashForm.amount || requisition.budgetXAF
       } : null,
       
-      // Disbursements array (for history if multiple)
+      // Disbursements array
       disbursements: requisition.pettyCashForm.disbursementDate ? [{
         disbursementNumber: 1,
         date: requisition.pettyCashForm.disbursementDate,
@@ -2962,7 +3145,7 @@ const downloadPettyCashFormPDF = async (req, res) => {
         actionTime: step.actionTime
       })),
       
-      // Budget allocation (if exists)
+      // Budget allocation
       budgetAllocation: requisition.financeVerification?.budgetCode ? {
         budgetCode: requisition.financeVerification.budgetCode,
         allocatedAmount: requisition.financeVerification.assignedBudget || requisition.budgetXAF,
@@ -2985,9 +3168,7 @@ const downloadPettyCashFormPDF = async (req, res) => {
       status: pdfData.status
     });
     
-    console.log('Items to be included in PDF:', pdfData.items);
-    
-    // Generate PDF using existing service
+    // Generate PDF
     const pdfResult = await pdfService.generateCashRequestPDF(pdfData);
     
     if (!pdfResult.success) {
@@ -2996,20 +3177,25 @@ const downloadPettyCashFormPDF = async (req, res) => {
     
     console.log('✅ PDF generated successfully');
     
-    // Track download
-    if (!requisition.pettyCashForm.downloads) {
-      requisition.pettyCashForm.downloads = [];
-    }
+    // ✅ FIXED: Update download history WITHOUT triggering validation
+    await PurchaseRequisition.findByIdAndUpdate(
+      formId,
+      {
+        $push: {
+          'pettyCashForm.downloads': {
+            downloadedBy: req.user.userId,
+            downloadDate: new Date(),
+            ipAddress: req.ip || req.connection.remoteAddress
+          }
+        }
+      },
+      { 
+        runValidators: false, // ✅ Skip validation to avoid budgetCodeInfo errors
+        new: false 
+      }
+    );
     
-    requisition.pettyCashForm.downloads.push({
-      downloadedBy: req.user.userId,
-      downloadDate: new Date(),
-      ipAddress: req.ip || req.connection.remoteAddress
-    });
-    
-    await requisition.save();
-    
-    console.log('✅ Download tracked. Total downloads:', requisition.pettyCashForm.downloads.length);
+    console.log('✅ Download tracked');
     
     // Send PDF to browser
     res.setHeader('Content-Type', 'application/pdf');

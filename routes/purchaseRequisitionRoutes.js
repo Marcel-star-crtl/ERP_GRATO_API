@@ -171,6 +171,13 @@ router.get('/admin',
   purchaseRequisitionController.getAllRequisitions
 );
 
+router.get(
+  '/:requisitionId/petty-cash-pdf',
+  authMiddleware,
+  purchaseRequisitionController.generatePettyCashFormPDF
+);
+
+
 // ============================================
 // ACTION ROUTES - NEW APPROVAL FLOW
 // ============================================

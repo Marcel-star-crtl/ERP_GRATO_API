@@ -635,19 +635,31 @@ const getApprovedKPIsForTaskLinking = async (req, res) => {
     // Determine whose KPIs to fetch
     let targetUserId = userId || currentUserId;
 
-    // Validate that targetUserId is a valid ObjectId
-    if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
-      console.log('❌ Invalid user ID format:', targetUserId);
+    // ✅ FIX: Check if it's a MongoDB ObjectId OR a valid database user
+    let targetUser;
+    
+    if (mongoose.Types.ObjectId.isValid(targetUserId)) {
+      // Valid ObjectId - try to find user
+      targetUser = await User.findById(targetUserId);
+    } else {
+      // Not a valid ObjectId - might be an email or fallback ID
+      console.log('❌ Invalid ObjectId format:', targetUserId);
       return res.status(400).json({
         success: false,
         message: 'Invalid user ID format. User must be registered in the system.'
       });
     }
 
-    // If fetching for another user, verify the target user exists
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Target user not found or not registered in the system'
+      });
+    }
+
+    // If fetching for another user, verify permissions
     if (userId && userId !== currentUserId) {
       const currentUser = await User.findById(currentUserId);
-      const targetUser = await User.findById(userId);
 
       if (!currentUser) {
         return res.status(404).json({
@@ -656,15 +668,8 @@ const getApprovedKPIsForTaskLinking = async (req, res) => {
         });
       }
 
-      if (!targetUser) {
-        return res.status(404).json({
-          success: false,
-          message: 'Target user not found or not registered in the system'
-        });
-      }
-
       // Allow supervisors, managers, and authorized roles to fetch KPIs for anyone
-      const authorizedRoles = ['admin', 'supply_chain', 'supervisor', 'manager', 'hr', 'it', 'hse', 'technical'];
+      const authorizedRoles = ['admin', 'supply_chain', 'supervisor', 'manager', 'hr', 'it', 'hse', 'technical', 'ceo'];
       
       if (!authorizedRoles.includes(currentUser.role)) {
         return res.status(403).json({
