@@ -122,7 +122,7 @@ const supplierInvoiceSchema = new mongoose.Schema({
   
   serviceCategory: {
     type: String,
-    enum: ['HSE', 'Refurbishment', 'Project', 'Operations', 'Diesel', 'Supply Chain', 'HR/Admin', 'General', 'civil works', 'rollout', 'security', 'IT'],
+    enum: ['HSE', 'Refurbishment', 'Project', 'Operations', 'Diesel', 'Supply Chain', 'HR/Admin', 'General', 'Civil works', 'Rollout', 'Security', 'IT'],
     default: 'General'
   },
   

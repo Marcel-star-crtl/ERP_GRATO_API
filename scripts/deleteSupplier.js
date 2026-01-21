@@ -1,12 +1,16 @@
-// scripts/deleteSupplier.js
+// scripts/deleteSupplierApplication.js
 const mongoose = require('mongoose');
-const User = require('../models/User'); // Adjust path to your User/Supplier model
 const path = require('path');
 const fs = require('fs');
 
 require('dotenv').config();
 
-const SUPPLIER_EMAIL = 'sunjoasheri@gmail.com';
+// Specify the supplier application to delete
+const SUPPLIER_IDENTIFIER = {
+  email: 'kenservicesarl@gmail.com',
+  // Or use: applicationId: 'APP-1768997713134-LN3I85MYV',
+  // Or use: _id: '6970c351557df1563d9a4dfc',
+};
 
 /**
  * Delete a file safely
@@ -30,10 +34,9 @@ function deleteFile(filePath) {
 /**
  * Delete supplier documents from filesystem
  */
-function deleteSupplierDocuments(supplier) {
+function deleteSupplierDocuments(documents) {
   console.log('\n📁 Deleting supplier documents...');
   
-  const documents = supplier.supplierDetails?.documents;
   if (!documents) {
     console.log('   ℹ️  No documents to delete');
     return;
@@ -76,56 +79,118 @@ function deleteSupplierDocuments(supplier) {
   }
 }
 
-async function deleteSupplier() {
+async function deleteSupplierApplication() {
   try {
     await mongoose.connect(process.env.MONGODB_URI);
     console.log('✅ Connected to MongoDB\n');
 
-    // Find the supplier
-    const supplier = await User.findOne({ 
-      email: SUPPLIER_EMAIL,
-      role: 'supplier'
-    });
-
-    if (!supplier) {
-      console.log(`❌ Supplier not found: ${SUPPLIER_EMAIL}`);
+    // Build query based on identifier
+    let query = {};
+    if (SUPPLIER_IDENTIFIER.email) {
+      query.email = SUPPLIER_IDENTIFIER.email;
+    } else if (SUPPLIER_IDENTIFIER.applicationId) {
+      query.applicationId = SUPPLIER_IDENTIFIER.applicationId;
+    } else if (SUPPLIER_IDENTIFIER._id) {
+      query._id = SUPPLIER_IDENTIFIER._id;
+    } else {
+      console.log('❌ No supplier identifier specified.');
       process.exit(1);
     }
 
-    console.log('📋 SUPPLIER DETAILS');
+    // Get list of all collections
+    const collections = await mongoose.connection.db.listCollections().toArray();
+    console.log('📚 Available collections:');
+    collections.forEach(col => console.log(`   - ${col.name}`));
+    console.log('');
+
+    // Try to find the supplier in different possible collections
+    let supplier = null;
+    let collectionName = null;
+
+    // Common collection names for supplier applications
+    const possibleCollections = [
+      'supplierapplications',
+      'supplier_applications', 
+      'SupplierApplication',
+      'supplierApplications',
+      'users',
+      'suppliers'
+    ];
+
+    for (const collName of possibleCollections) {
+      try {
+        const collection = mongoose.connection.db.collection(collName);
+        const result = await collection.findOne(query);
+        if (result) {
+          supplier = result;
+          collectionName = collName;
+          break;
+        }
+      } catch (error) {
+        // Collection doesn't exist, continue
+      }
+    }
+
+    if (!supplier) {
+      console.log(`❌ Supplier not found with identifier:`, SUPPLIER_IDENTIFIER);
+      console.log('\n💡 Try searching in MongoDB Compass or check the exact collection name.');
+      process.exit(1);
+    }
+
+    console.log('📋 SUPPLIER APPLICATION DETAILS');
     console.log('='.repeat(60));
+    console.log(`Collection: ${collectionName}`);
     console.log(`ID: ${supplier._id}`);
+    console.log(`Application ID: ${supplier.applicationId || 'N/A'}`);
     console.log(`Email: ${supplier.email}`);
-    console.log(`Full Name: ${supplier.fullName}`);
-    console.log(`Company: ${supplier.supplierDetails?.companyName || 'N/A'}`);
-    console.log(`Status: ${supplier.supplierStatus?.accountStatus || 'N/A'}`);
+    console.log(`Contact Name: ${supplier.contactName || 'N/A'}`);
+    console.log(`Company: ${supplier.companyName || 'N/A'}`);
+    console.log(`Status: ${supplier.status || 'N/A'}`);
+    console.log(`Business Reg #: ${supplier.businessRegistrationNumber || 'N/A'}`);
+    console.log(`Tax ID: ${supplier.taxIdNumber || 'N/A'}`);
+    console.log(`Phone: ${supplier.phoneNumber || 'N/A'}`);
+    console.log(`Supplier Type: ${supplier.supplierType || 'N/A'}`);
+    console.log(`Submitted: ${supplier.submittedAt || 'N/A'}`);
     console.log(`Created: ${supplier.createdAt}`);
     console.log('='.repeat(60));
 
-    // Show approval chain
-    if (supplier.approvalChain?.length > 0) {
-      console.log('\n📊 Approval Chain:');
-      supplier.approvalChain.forEach((step, index) => {
-        console.log(`   ${index + 1}. ${step.approver.name} (${step.status})`);
+    // Show review history if exists
+    if (supplier.reviewHistory?.length > 0) {
+      console.log('\n📝 Review History:');
+      supplier.reviewHistory.forEach((review, index) => {
+        console.log(`   ${index + 1}. ${review.status} - ${review.reviewedAt}`);
       });
     }
 
     // Show documents
-    const docs = supplier.supplierDetails?.documents;
+    const docs = supplier.documents;
     if (docs) {
       console.log('\n📄 Documents to be deleted:');
+      let docCount = 0;
+      
       if (docs.businessRegistrationCertificate) {
-        console.log(`   - Business Registration: ${docs.businessRegistrationCertificate.name}`);
+        docCount++;
+        console.log(`   ${docCount}. Business Registration: ${docs.businessRegistrationCertificate.name}`);
+        console.log(`      Size: ${(docs.businessRegistrationCertificate.size / 1024).toFixed(2)} KB`);
       }
       if (docs.taxClearanceCertificate) {
-        console.log(`   - Tax Clearance: ${docs.taxClearanceCertificate.name}`);
+        docCount++;
+        console.log(`   ${docCount}. Tax Clearance: ${docs.taxClearanceCertificate.name}`);
+        console.log(`      Size: ${(docs.taxClearanceCertificate.size / 1024).toFixed(2)} KB`);
       }
       if (docs.bankStatement) {
-        console.log(`   - Bank Statement: ${docs.bankStatement.name}`);
+        docCount++;
+        console.log(`   ${docCount}. Bank Statement: ${docs.bankStatement.name}`);
+        console.log(`      Size: ${(docs.bankStatement.size / 1024).toFixed(2)} KB`);
       }
       if (docs.additionalDocuments?.length > 0) {
-        console.log(`   - Additional Documents: ${docs.additionalDocuments.length} file(s)`);
+        docs.additionalDocuments.forEach((doc, index) => {
+          docCount++;
+          console.log(`   ${docCount}. Additional: ${doc.name}`);
+          console.log(`      Size: ${(doc.size / 1024).toFixed(2)} KB`);
+        });
       }
+      console.log(`\n   Total: ${docCount} document(s)`);
     }
 
     console.log('\n⚠️  WARNING: This action cannot be undone!');
@@ -135,16 +200,22 @@ async function deleteSupplier() {
     await new Promise(resolve => setTimeout(resolve, 5000));
 
     // Delete documents from filesystem
-    deleteSupplierDocuments(supplier);
+    if (supplier.documents) {
+      deleteSupplierDocuments(supplier.documents);
+    }
 
     // Delete supplier from database
-    console.log('\n🗑️  Deleting supplier from database...');
-    await User.deleteOne({ _id: supplier._id });
+    console.log('\n🗑️  Deleting supplier application from database...');
+    const collection = mongoose.connection.db.collection(collectionName);
+    await collection.deleteOne({ _id: supplier._id });
 
     console.log('\n' + '='.repeat(60));
     console.log('✅ DELETION COMPLETE');
     console.log('='.repeat(60));
-    console.log(`Supplier "${supplier.fullName}" has been permanently deleted.`);
+    console.log(`Supplier application for "${supplier.contactName}" has been permanently deleted.`);
+    console.log(`Email: ${supplier.email}`);
+    console.log(`Application ID: ${supplier.applicationId}`);
+    console.log(`Collection: ${collectionName}`);
     console.log('='.repeat(60));
 
     process.exit(0);
@@ -154,6 +225,3 @@ async function deleteSupplier() {
     process.exit(1);
   }
 }
-
-// Run the script
-deleteSupplier();
