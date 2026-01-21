@@ -154,9 +154,25 @@ const UserSchema = new mongoose.Schema({
             postalCode: String
         },
         
+        // supplierType: {
+        //     type: String,
+        //     enum: ['General', 'Supply Chain', 'HR/Admin', 'Operations', 'HSE', 'Refurbishment', 'IT Services', 'Construction' ],
+        //     required: function() { return this.role === 'supplier'; }
+        // },
         supplierType: {
             type: String,
-            enum: ['General', 'Supply Chain', 'HR/Admin', 'Operations', 'HSE', 'Refurbishment', 'IT Services', 'Construction'],
+            enum: [
+                'General', 
+                'Supply Chain', 
+                'HR/Admin', 
+                'Operations', 
+                'HSE', 
+                'Refurbishment',
+                'Civil Works',
+                'Rollout',
+                'Security',
+                'IT'
+            ],
             required: function() { return this.role === 'supplier'; }
         },
         businessType: {
