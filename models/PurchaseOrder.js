@@ -466,31 +466,6 @@ PurchaseOrderSchema.virtual('supplierPerformanceAtCreation').get(function() {
   return this.supplierDetails.performanceSnapshot || null;
 });
 
-// // Method to generate PO number
-// PurchaseOrderSchema.pre('save', async function(next) {
-//   // Only generate PO number if it's a new document and doesn't have one
-//   if (this.isNew && !this.poNumber) {
-//     try {
-//       const count = await this.constructor.countDocuments();
-//       const now = new Date();
-//       const year = now.getFullYear();
-//       this.poNumber = `PO-${year}-${String(count + 1).padStart(6, '0')}`;
-//     } catch (error) {
-//       return next(error);
-//     }
-//   }
-
-//   // Update integration metadata
-//   if (this.isNew || this.isModified('items')) {
-//     const itemsFromDb = this.items.filter(item => item.itemId).length;
-//     this.integrationData.itemsFromDatabase = itemsFromDb;
-//     this.integrationData.manualItems = this.items.length - itemsFromDb;
-//   }
-
-//   this.lastModifiedDate = new Date();
-//   next();
-// });
-
 
 PurchaseOrderSchema.pre('save', function(next) {
   // Recalculate item totals and overall totals with tax
@@ -758,60 +733,6 @@ PurchaseOrderSchema.virtual('approvalProgress').get(function() {
   const approvedSteps = this.approvalChain.filter(step => step.status === 'approved').length;
   return Math.round((approvedSteps / this.approvalChain.length) * 100);
 });
-
-// Methods
-
-// // Assign by Supply Chain (creates approval chain)
-// PurchaseOrderSchema.methods.assignBySupplyChain = function(department, assignedByUserId, comments) {
-//   const { getPOApprovalChain } = require('../config/poApprovalChain');
-  
-//   if (this.status !== 'pending_supply_chain_assignment') {
-//     throw new Error('PO has already been assigned');
-//   }
-  
-//   console.log(`\n=== ASSIGNING PO BY SUPPLY CHAIN ===`);
-//   console.log(`PO: ${this.poNumber}`);
-//   console.log(`Department: ${department}`);
-  
-//   this.assignedDepartment = department;
-//   this.assignedBy = assignedByUserId;
-//   this.assignmentDate = new Date();
-//   this.assignmentTime = new Date().toTimeString().split(' ')[0];
-//   this.status = 'pending_department_approval';
-  
-//   // Supply Chain review (auto-approved by assignment)
-//   this.supplyChainReview = {
-//     reviewedBy: assignedByUserId,
-//     reviewDate: new Date(),
-//     reviewTime: new Date().toTimeString().split(' ')[0],
-//     action: 'assigned',
-//     comments: comments || `Assigned to ${department} department`
-//   };
-  
-//   // Create 3-level approval chain
-//   const chain = getPOApprovalChain(department);
-  
-//   if (!chain || chain.length !== 3) {
-//     throw new Error(`Failed to create complete approval chain for ${department}`);
-//   }
-  
-//   this.approvalChain = chain.map(step => ({
-//     level: step.level,
-//     approver: {
-//       name: step.approver,
-//       email: step.email,
-//       role: step.role,
-//       department: step.department
-//     },
-//     status: 'pending',
-//     activatedDate: step.level === 1 ? new Date() : null
-//   }));
-
-//   this.currentApprovalLevel = 1;
-  
-//   console.log(`✅ PO ${this.poNumber} assigned to ${department}`);
-//   console.log(`First approver: ${this.approvalChain[0]?.approver.name}`);
-// };
 
 
 // Assign by Supply Chain (creates approval chain)

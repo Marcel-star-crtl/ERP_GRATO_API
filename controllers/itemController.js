@@ -12,6 +12,9 @@ const CATEGORY_CODE_MAP = {
   'Software': 'SW',
   'Hardware': 'HW',
   'Furniture': 'FUR',
+  'Civil Works': 'CW',
+  'Security': 'SE',
+  'Rollout': 'RO',
   'Safety Equipment': 'SAF',
   'Maintenance Supplies': 'MNT',
   'Personal Accessories': 'PA',
@@ -32,6 +35,9 @@ const SUBCATEGORIES = {
   'Maintenance Supplies': ['Cleaning', 'Repair Tools', 'Spare Parts', 'Other Maintenance'],
   'Personal Accessories': ['Electronics', 'Household Items', 'Personal Care', 'Entertainment', 'Other Personal'],
   'Spares': ['Spares'],
+  'Civil Works': ['Civil Works'],
+  'Security': ['Security'],
+  'Rollout': ['Rollout'],
   'Other': ['Miscellaneous']
 };
 

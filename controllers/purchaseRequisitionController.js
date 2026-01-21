@@ -3681,6 +3681,184 @@ const getPaymentMethodOptions = async (req, res) => {
 };
 
 
+// const getFinanceRequisitions = async (req, res) => {
+//   try {
+//       console.log('\n=== FETCHING FINANCE REQUISITIONS ===');
+      
+//       const user = await User.findById(req.user.userId);
+      
+//       if (!user) {
+//           return res.status(404).json({ 
+//               success: false, 
+//               message: 'User not found' 
+//           });
+//       }
+
+//       const financeEmail = user.email.toLowerCase();
+
+//       // ✅ FIXED: Get all requisitions where finance officer needs to act or has acted
+//       const query = {
+//           $or: [
+//               // Requisitions at finance verification stage
+//               { status: 'pending_finance_verification' },
+              
+//               // Requisitions where this finance officer is the current pending approver
+//               {
+//                   'approvalChain': {
+//                       $elemMatch: {
+//                           'approver.email': financeEmail,
+//                           'status': 'pending'
+//                       }
+//                   }
+//               },
+              
+//               // Requisitions where finance has already verified (for history)
+//               {
+//                   'financeVerification.verifiedBy': req.user.userId
+//               },
+              
+//               // Requisitions that have been verified and moved forward
+//               {
+//                   'financeVerification.decision': { $exists: true, $ne: 'pending' }
+//               }
+//           ]
+//       };
+
+//       console.log('Finance query:', JSON.stringify(query, null, 2));
+
+//       const requisitions = await PurchaseRequisition.find(query)
+//           .populate('employee', 'fullName email department')
+//           .populate('financeVerification.verifiedBy', 'fullName email')
+//           .sort({ createdAt: -1 })
+//           .lean();
+
+//       console.log(`✅ Found ${requisitions.length} requisitions for finance`);
+
+//       // Add helpful flags to each requisition
+//       const enrichedRequisitions = requisitions.map(req => {
+//           const currentStep = req.approvalChain?.find(step => step.status === 'pending');
+//           const financeStep = req.approvalChain?.find(step => 
+//               step.approver.email.toLowerCase() === financeEmail
+//           );
+
+//           return {
+//               ...req,
+//               currentApprovalStep: currentStep,
+//               financeApprovalStep: financeStep,
+//               isAwaitingFinance: currentStep && 
+//                   currentStep.approver.email.toLowerCase() === financeEmail,
+//               financeHasActed: financeStep && financeStep.status !== 'pending'
+//           };
+//       });
+
+//       res.json({
+//           success: true,
+//           data: enrichedRequisitions,
+//           count: enrichedRequisitions.length,
+//           pending: enrichedRequisitions.filter(r => r.isAwaitingFinance).length
+//       });
+
+//   } catch (error) {
+//       console.error('Get finance requisitions error:', error);
+//       res.status(500).json({
+//           success: false,
+//           message: 'Failed to fetch finance requisitions',
+//           error: error.message
+//       });
+//   }
+// };
+
+
+// const getFinanceRequisitions = async (req, res) => {
+//   try {
+//       console.log('\n=== FETCHING FINANCE REQUISITIONS ===');
+      
+//       const user = await User.findById(req.user.userId);
+      
+//       if (!user) {
+//           return res.status(404).json({ 
+//               success: false, 
+//               message: 'User not found' 
+//           });
+//       }
+
+//       const financeEmail = user.email.toLowerCase();
+//       console.log('Finance user:', financeEmail);
+
+//       // ✅ FIXED: Only get requisitions that need finance action OR have been acted on by finance
+//       const query = {
+//           $or: [
+//               // 1. Requisitions at finance verification stage
+//               { status: 'pending_finance_verification' },
+              
+//               // 2. Requisitions where this finance officer is the current pending approver
+//               {
+//                   status: 'pending_supervisor', // ✅ Include pending_supervisor
+//                   'approvalChain': {
+//                       $elemMatch: {
+//                           'approver.email': financeEmail,
+//                           'approver.role': { $regex: /finance/i }, // ✅ Must be finance role
+//                           'status': 'pending'
+//                       }
+//                   }
+//               },
+              
+//               // 3. Requisitions where finance has already verified (for history)
+//               {
+//                   'financeVerification.verifiedBy': req.user.userId
+//               },
+              
+//               // 4. Approved/disbursement stages (for disbursement management)
+//               {
+//                   status: { $in: ['approved', 'partially_disbursed'] },
+//                   'financeVerification.verifiedBy': req.user.userId
+//               }
+//           ]
+//       };
+
+//       console.log('Finance query:', JSON.stringify(query, null, 2));
+
+//       const requisitions = await PurchaseRequisition.find(query)
+//           .populate('employee', 'fullName email department')
+//           .populate('financeVerification.verifiedBy', 'fullName email')
+//           .sort({ createdAt: -1 })
+//           .lean();
+
+//       console.log(`✅ Found ${requisitions.length} requisitions for finance`);
+
+//       // ✅ Add finance-specific flags
+//       const enrichedRequisitions = requisitions.map(req => {
+//           const financeStep = req.approvalChain?.find(step => 
+//               step.approver.email.toLowerCase() === financeEmail &&
+//               step.approver.role?.toLowerCase().includes('finance')
+//           );
+
+//           return {
+//               ...req,
+//               financeApprovalStep: financeStep,
+//               isAwaitingFinance: financeStep?.status === 'pending',
+//               financeHasActed: financeStep?.status !== 'pending'
+//           };
+//       });
+
+//       res.json({
+//           success: true,
+//           data: enrichedRequisitions,
+//           count: enrichedRequisitions.length,
+//           pending: enrichedRequisitions.filter(r => r.isAwaitingFinance).length
+//       });
+
+//   } catch (error) {
+//       console.error('Get finance requisitions error:', error);
+//       res.status(500).json({
+//           success: false,
+//           message: 'Failed to fetch finance requisitions',
+//           error: error.message
+//       });
+//   }
+// };
+
+
 const getFinanceRequisitions = async (req, res) => {
   try {
       console.log('\n=== FETCHING FINANCE REQUISITIONS ===');
@@ -3695,31 +3873,27 @@ const getFinanceRequisitions = async (req, res) => {
       }
 
       const financeEmail = user.email.toLowerCase();
+      console.log('Finance user:', financeEmail);
 
-      // ✅ FIXED: Get all requisitions where finance officer needs to act or has acted
       const query = {
           $or: [
-              // Requisitions at finance verification stage
               { status: 'pending_finance_verification' },
-              
-              // Requisitions where this finance officer is the current pending approver
               {
+                  status: 'pending_supervisor',
                   'approvalChain': {
                       $elemMatch: {
                           'approver.email': financeEmail,
+                          'approver.role': { $regex: /finance/i },
                           'status': 'pending'
                       }
                   }
               },
-              
-              // Requisitions where finance has already verified (for history)
               {
                   'financeVerification.verifiedBy': req.user.userId
               },
-              
-              // Requisitions that have been verified and moved forward
               {
-                  'financeVerification.decision': { $exists: true, $ne: 'pending' }
+                  status: { $in: ['approved', 'partially_disbursed', 'fully_disbursed'] }, // ✅ ADD fully_disbursed
+                  'financeVerification.verifiedBy': req.user.userId
               }
           ]
       };
@@ -3729,25 +3903,38 @@ const getFinanceRequisitions = async (req, res) => {
       const requisitions = await PurchaseRequisition.find(query)
           .populate('employee', 'fullName email department')
           .populate('financeVerification.verifiedBy', 'fullName email')
+          .populate('disbursements.disbursedBy', 'fullName email') // ✅ NEW: Populate disbursement user
           .sort({ createdAt: -1 })
-          .lean();
+          .lean(); // Keep lean for performance
 
       console.log(`✅ Found ${requisitions.length} requisitions for finance`);
 
-      // Add helpful flags to each requisition
+      // ✅ Add finance-specific flags AND disbursement info
       const enrichedRequisitions = requisitions.map(req => {
-          const currentStep = req.approvalChain?.find(step => step.status === 'pending');
           const financeStep = req.approvalChain?.find(step => 
-              step.approver.email.toLowerCase() === financeEmail
+              step.approver.email.toLowerCase() === financeEmail &&
+              step.approver.role?.toLowerCase().includes('finance')
           );
+
+          // ✅ Calculate disbursement data
+          const totalBudget = req.budgetXAF || 0;
+          const totalDisbursed = req.totalDisbursed || 0;
+          const remainingBalance = req.remainingBalance ?? (totalBudget - totalDisbursed);
+          const disbursementProgress = totalBudget > 0 
+              ? Math.round((totalDisbursed / totalBudget) * 100) 
+              : 0;
 
           return {
               ...req,
-              currentApprovalStep: currentStep,
               financeApprovalStep: financeStep,
-              isAwaitingFinance: currentStep && 
-                  currentStep.approver.email.toLowerCase() === financeEmail,
-              financeHasActed: financeStep && financeStep.status !== 'pending'
+              isAwaitingFinance: financeStep?.status === 'pending',
+              financeHasActed: financeStep?.status !== 'pending',
+              
+              // ✅ NEW: Add disbursement info
+              totalDisbursed: totalDisbursed,
+              remainingBalance: remainingBalance,
+              disbursementProgress: disbursementProgress,
+              disbursements: req.disbursements || []
           };
       });
 
@@ -4205,6 +4392,25 @@ const getFinanceDashboardData = async (req, res) => {
         rejected: monthData.filter(req => req.financeVerification?.decision === 'rejected').length
       });
     }
+
+    // ✅ NEW: Get disbursement stats
+    const pendingDisbursement = await PurchaseRequisition.countDocuments({
+      status: { $in: ['approved', 'partially_disbursed'] },
+      remainingBalance: { $gt: 0 }
+    });
+
+    const partiallyDisbursed = await PurchaseRequisition.countDocuments({
+      status: 'partially_disbursed'
+    });
+
+    const fullyDisbursed = await PurchaseRequisition.countDocuments({
+      status: 'fully_disbursed'
+    });
+
+    // ✅ Add to stats object
+    stats.pendingDisbursement = pendingDisbursement;
+    stats.partiallyDisbursed = partiallyDisbursed;
+    stats.fullyDisbursed = fullyDisbursed;
 
     res.json({
       success: true,
@@ -4863,6 +5069,265 @@ const getPurchaseRequisitionDashboardStats = async (req, res) => {
 };
 
 
+/**
+ * Process disbursement for purchase requisition
+ * POST /api/purchase-requisitions/:requisitionId/disburse
+ */
+const processDisbursement = async (req, res) => {
+  try {
+    const { requisitionId } = req.params;
+    const { amount, notes } = req.body;
+
+    console.log('=== PROCESS PURCHASE REQUISITION DISBURSEMENT ===');
+    console.log('Requisition ID:', requisitionId);
+    console.log('Amount:', amount);
+
+    const disbursementAmount = parseFloat(amount);
+    if (isNaN(disbursementAmount) || disbursementAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid disbursement amount'
+      });
+    }
+
+    const requisition = await PurchaseRequisition.findById(requisitionId)
+      .populate('employee', 'fullName email department')
+      .populate('financeVerification.verifiedBy', 'fullName email');
+
+    if (!requisition) {
+      return res.status(404).json({
+        success: false,
+        message: 'Requisition not found'
+      });
+    }
+
+    // Verify status
+    if (!['approved', 'partially_disbursed'].includes(requisition.status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot disburse. Current status: ${requisition.status}`
+      });
+    }
+
+    // Calculate remaining balance
+    const totalBudget = requisition.budgetXAF || 0;
+    const totalDisbursed = requisition.totalDisbursed || 0;
+    const remainingBalance = requisition.remainingBalance || (totalBudget - totalDisbursed);
+
+    // Verify amount doesn't exceed remaining balance
+    if (disbursementAmount > remainingBalance) {
+      return res.status(400).json({
+        success: false,
+        message: `Amount exceeds remaining balance. Available: XAF ${remainingBalance.toLocaleString()}`
+      });
+    }
+
+    // Deduct from budget code if exists
+    if (requisition.financeVerification?.budgetCode) {
+      const BudgetCode = require('../models/BudgetCode');
+      const budgetCode = await BudgetCode.findOne({ 
+        code: requisition.financeVerification.budgetCode 
+      });
+      
+      if (budgetCode) {
+        // Add to allocations
+        if (!budgetCode.allocations) {
+          budgetCode.allocations = [];
+        }
+        
+        budgetCode.allocations.push({
+          requisitionId: requisition._id,
+          amount: disbursementAmount,
+          allocatedBy: req.user.userId,
+          allocatedDate: new Date(),
+          status: 'disbursed'
+        });
+        
+        budgetCode.used = (budgetCode.used || 0) + disbursementAmount;
+        await budgetCode.save();
+        
+        console.log(`✅ Budget deducted: XAF ${disbursementAmount.toLocaleString()} from ${budgetCode.code}`);
+      }
+    }
+
+    // Add disbursement record
+    const disbursementNumber = (requisition.disbursements?.length || 0) + 1;
+    
+    if (!requisition.disbursements) {
+      requisition.disbursements = [];
+    }
+
+    requisition.disbursements.push({
+      amount: disbursementAmount,
+      date: new Date(),
+      disbursedBy: req.user.userId,
+      notes: notes || '',
+      disbursementNumber
+    });
+
+    // Update totals
+    requisition.totalDisbursed = (requisition.totalDisbursed || 0) + disbursementAmount;
+    requisition.remainingBalance = totalBudget - requisition.totalDisbursed;
+
+    // Update status
+    if (requisition.remainingBalance === 0) {
+      requisition.status = 'fully_disbursed';
+    } else {
+      requisition.status = 'partially_disbursed';
+    }
+
+    await requisition.save();
+
+    // Send notification to employee
+    const user = await User.findById(req.user.userId);
+    const isFullyDisbursed = requisition.status === 'fully_disbursed';
+
+    await sendEmail({
+      to: requisition.employee.email,
+      subject: isFullyDisbursed ? 
+        `✅ Purchase Requisition Fully Disbursed` : 
+        `💰 Partial Disbursement #${disbursementNumber} Processed`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: ${isFullyDisbursed ? '#d4edda' : '#d1ecf1'}; padding: 20px; border-radius: 8px;">
+            <h3>${isFullyDisbursed ? 'Purchase Requisition Fully Disbursed' : 'Partial Disbursement Processed'}</h3>
+            <p>Dear ${requisition.employee.fullName},</p>
+            
+            <p>A disbursement has been processed for your purchase requisition.</p>
+
+            <div style="background-color: white; padding: 15px; border-radius: 5px; margin: 15px 0;">
+              <ul style="list-style: none; padding: 0;">
+                <li><strong>Requisition:</strong> ${requisition.requisitionNumber || requisition.title}</li>
+                <li><strong>Disbursement #:</strong> ${disbursementNumber}</li>
+                <li><strong>Amount Disbursed:</strong> XAF ${disbursementAmount.toLocaleString()}</li>
+                <li><strong>Total Disbursed:</strong> XAF ${requisition.totalDisbursed.toLocaleString()}</li>
+                <li><strong>Remaining Balance:</strong> XAF ${requisition.remainingBalance.toLocaleString()}</li>
+                <li><strong>Progress:</strong> ${Math.round((requisition.totalDisbursed / totalBudget) * 100)}%</li>
+                <li><strong>Disbursed By:</strong> ${user.fullName} (Finance)</li>
+              </ul>
+            </div>
+
+            ${notes ? `
+            <div style="background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin: 10px 0;">
+              <p><strong>Notes:</strong></p>
+              <p style="font-style: italic;">${notes}</p>
+            </div>
+            ` : ''}
+
+            <p>Thank you!</p>
+          </div>
+        </div>
+      `
+    }).catch(err => console.error('Failed to send disbursement notification:', err));
+
+    console.log('✅ Disbursement processed successfully');
+
+    res.json({
+      success: true,
+      message: isFullyDisbursed ? 
+        'Requisition fully disbursed' : 
+        `Partial disbursement #${disbursementNumber} processed successfully`,
+      data: requisition,
+      disbursement: {
+        number: disbursementNumber,
+        amount: disbursementAmount,
+        totalDisbursed: requisition.totalDisbursed,
+        remainingBalance: requisition.remainingBalance,
+        progress: Math.round((requisition.totalDisbursed / totalBudget) * 100),
+        isFullyDisbursed
+      }
+    });
+
+  } catch (error) {
+    console.error('Process disbursement error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process disbursement',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get disbursement history for a requisition
+ * GET /api/purchase-requisitions/:requisitionId/disbursements
+ */
+const getDisbursementHistory = async (req, res) => {
+  try {
+    const { requisitionId } = req.params;
+
+    const requisition = await PurchaseRequisition.findById(requisitionId)
+      .populate('employee', 'fullName email department')
+      .populate('disbursements.disbursedBy', 'fullName email');
+
+    if (!requisition) {
+      return res.status(404).json({
+        success: false,
+        message: 'Requisition not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        requisitionId: requisition._id,
+        requisitionNumber: requisition.requisitionNumber,
+        employee: requisition.employee,
+        budgetXAF: requisition.budgetXAF,
+        totalDisbursed: requisition.totalDisbursed || 0,
+        remainingBalance: requisition.remainingBalance || 0,
+        progress: Math.round(((requisition.totalDisbursed || 0) / requisition.budgetXAF) * 100),
+        status: requisition.status,
+        disbursements: requisition.disbursements || []
+      }
+    });
+
+  } catch (error) {
+    console.error('Get disbursement history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch disbursement history',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get pending disbursements (approved or partially disbursed)
+ * GET /api/purchase-requisitions/finance/pending-disbursements
+ */
+const getPendingDisbursements = async (req, res) => {
+  try {
+    const requisitions = await PurchaseRequisition.find({
+      status: { $in: ['approved', 'partially_disbursed'] },
+      $expr: { 
+        $gt: [
+          { $subtract: ['$budgetXAF', { $ifNull: ['$totalDisbursed', 0] }] },
+          0
+        ]
+      }
+    })
+    .populate('employee', 'fullName email department')
+    .populate('financeVerification.verifiedBy', 'fullName email')
+    .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      data: requisitions,
+      count: requisitions.length
+    });
+
+  } catch (error) {
+    console.error('Get pending disbursements error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch pending disbursements',
+      error: error.message
+    });
+  }
+};
+
+
 // Export all functions
 module.exports = {
   // Core CRUD operations
@@ -4929,5 +5394,8 @@ module.exports = {
   // Draft management
   saveDraft,
 
-  generatePettyCashFormPDF
+  generatePettyCashFormPDF,
+  processDisbursement,
+  getDisbursementHistory,
+  getPendingDisbursements,
 };

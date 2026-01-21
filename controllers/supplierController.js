@@ -503,4 +503,256 @@ exports.updateSupplierStatus = async (req, res) => {
 };
 
 
+/**
+ * Approve supplier at specific approval level
+ */
+exports.approveSupplierAtLevel = async (req, res) => {
+  try {
+    const { supplierId } = req.params;
+    const { comments, signature } = req.body;
+    const approverUser = req.user;
 
+    console.log('=== SUPPLIER APPROVAL REQUEST ===');
+    console.log('Supplier ID:', supplierId);
+    console.log('Approver:', approverUser.email);
+
+    // Find supplier
+    const supplier = await User.findOne({
+      _id: supplierId,
+      role: 'supplier'
+    });
+
+    if (!supplier) {
+      return res.status(404).json({
+        success: false,
+        message: 'Supplier not found'
+      });
+    }
+
+    // Validate approval permissions
+    const { validateSupplierApproval } = require('../config/supplierApprovalChain');
+    const validation = validateSupplierApproval(approverUser, supplier);
+
+    if (!validation.canApprove) {
+      return res.status(403).json({
+        success: false,
+        message: validation.reason
+      });
+    }
+
+    // Find current approval step
+    const currentStep = supplier.approvalChain.find(
+      step => step.level === supplier.currentApprovalLevel && step.status === 'pending'
+    );
+
+    if (!currentStep) {
+      return res.status(400).json({
+        success: false,
+        message: 'No pending approval step found'
+      });
+    }
+
+    // Update approval step
+    currentStep.status = 'approved';
+    currentStep.decision = 'approved';
+    currentStep.comments = comments || '';
+    currentStep.actionDate = new Date();
+    currentStep.actionTime = new Date().toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+
+    if (signature) {
+      currentStep.signature = {
+        url: signature.url,
+        signedAt: new Date(),
+        signedBy: approverUser.fullName
+      };
+    }
+
+    // Check if all approvals are complete
+    const allApproved = supplier.approvalChain.every(
+      step => step.status === 'approved'
+    );
+
+    console.log('Current level:', supplier.currentApprovalLevel);
+    console.log('All approved:', allApproved);
+
+    if (allApproved) {
+      // FINAL APPROVAL - Activate supplier account
+      supplier.supplierStatus.accountStatus = 'approved';
+      supplier.supplierStatus.isVerified = true;
+      supplier.supplierStatus.emailVerified = true;
+      supplier.supplierStatus.approvalDate = new Date();
+      supplier.isActive = true;
+      
+      await supplier.save();
+      
+      // Generate temporary password for new suppliers
+      const tempPassword = crypto.randomBytes(8).toString('hex');
+      
+      // Update supplier password with temp password
+      supplier.password = tempPassword;
+      await supplier.save();
+      
+      // Send comprehensive welcome email
+      await sendEmail({
+        to: supplier.email,
+        subject: 'Welcome to GRATO HUB - Account Approved',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background-color: #1890ff; color: white; padding: 20px; text-align: center;">
+              <h1 style="margin: 0;">Welcome to GRATO HUB!</h1>
+            </div>
+            
+            <div style="padding: 30px; background-color: #f8f9fa;">
+              <p>Dear Partner,</p>
+              
+              <p>We're pleased to inform you that your onboarding on our platform has been successfully completed.</p>
+              
+              <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <h3 style="color: #1890ff; margin-top: 0;">With immediate effect:</h3>
+                <ol style="line-height: 1.8;">
+                  <li>You will receive <strong>Request For Quotes (RFQ)</strong> through the system and upload your quotes through unique purchase links which will be sent per purchase.</li>
+                  <li>You will submit all your invoices exclusively through <strong>GRATO HUB</strong>. Please note that invoices sent outside the platform (by email or other manual methods) will no longer be accepted.</li>
+                </ol>
+                <p style="margin-top: 15px; padding: 10px; background-color: #fff3cd; border-left: 4px solid #ffc107;">
+                  <strong>Note:</strong> Please review invoice acceptance criteria in the attached document.
+                </p>
+              </div>
+              
+              <div style="background-color: #d4edda; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <h3 style="color: #155724; margin-top: 0;">YOUR INITIAL LOGIN DETAILS:</h3>
+                <ul style="list-style: none; padding: 0;">
+                  <li style="margin: 10px 0;"><strong>Platform link:</strong> <a href="${process.env.CLIENT_URL}/supplier/login">${process.env.CLIENT_URL}/supplier/login</a></li>
+                  <li style="margin: 10px 0;"><strong>Username:</strong> ${supplier.email}</li>
+                  <li style="margin: 10px 0;"><strong>Temporary password:</strong> <code style="background-color: #f8f9fa; padding: 5px 10px; border-radius: 3px;">${tempPassword}</code></li>
+                </ul>
+                <p style="color: #721c24; background-color: #f8d7da; padding: 10px; border-radius: 5px; margin-top: 15px;">
+                  <strong>⚠️ Important:</strong> For security reasons, we recommend that you log in as soon as possible and change your password.
+                </p>
+              </div>
+              
+              <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <h3 style="color: #1890ff; margin-top: 0;">What GRATO HUB Allows You To Do:</h3>
+                <ul style="line-height: 1.8;">
+                  <li>Submit invoices electronically</li>
+                  <li>Track invoice status in real-time</li>
+                  <li>View and respond to RFQs</li>
+                  <li>Manage your company profile</li>
+                  <li>Access transparent procurement process</li>
+                </ul>
+              </div>
+              
+              <p>If you have any questions or need support, please don't hesitate to contact us.</p>
+              
+              <p>We look forward to working with you through GRATO HUB.</p>
+              
+              <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #dee2e6;">
+                <p><strong>Kind regards,</strong><br>
+                <span style="color: #1890ff; font-weight: bold;">GRATO IT Team</span></p>
+              </div>
+            </div>
+          </div>
+        `,
+        attachments: [
+          // Add invoice criteria document if you have one
+          // {
+          //   filename: 'Invoice_Acceptance_Criteria.pdf',
+          //   path: './documents/Invoice_Acceptance_Criteria.pdf'
+          // }
+        ]
+      });
+      
+      console.log('✅ Supplier fully approved and welcome email sent');
+      
+      return res.json({
+        success: true,
+        message: 'Supplier fully approved and activated',
+        data: {
+          supplier: {
+            id: supplier._id,
+            companyName: supplier.supplierDetails.companyName,
+            accountStatus: supplier.supplierStatus.accountStatus,
+            isActive: supplier.isActive
+          },
+          approvalComplete: true,
+          tempPasswordSent: true
+        }
+      });
+      
+    } else {
+      // Move to next approval level
+      const { getNextSupplierStatus } = require('../config/supplierApprovalChain');
+      supplier.currentApprovalLevel += 1;
+      supplier.supplierStatus.accountStatus = getNextSupplierStatus(
+        supplier.currentApprovalLevel,
+        supplier.approvalChain.length
+      );
+      
+      await supplier.save();
+
+      // Notify next approver
+      const nextStep = supplier.approvalChain.find(
+        step => step.level === supplier.currentApprovalLevel
+      );
+
+      if (nextStep) {
+        await sendEmail({
+          to: nextStep.approver.email,
+          subject: `Supplier Approval Required - ${supplier.supplierDetails.companyName}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <h2 style="color: #1890ff;">Supplier Approval Required</h2>
+              <p>Dear ${nextStep.approver.name},</p>
+              <p>A supplier registration requires your approval as ${nextStep.approver.role}.</p>
+              
+              <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                <p><strong>Company:</strong> ${supplier.supplierDetails.companyName}</p>
+                <p><strong>Type:</strong> ${supplier.supplierDetails.supplierType}</p>
+                <p><strong>Contact:</strong> ${supplier.supplierDetails.contactName}</p>
+                <p><strong>Email:</strong> ${supplier.email}</p>
+                <p><strong>Previous Approvals:</strong> ${supplier.currentApprovalLevel - 1} of ${supplier.approvalChain.length}</p>
+              </div>
+              
+              <p style="text-align: center;">
+                <a href="${process.env.CLIENT_URL}/admin/suppliers/${supplier._id}/approve" 
+                   style="background-color: #1890ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                  Review Supplier
+                </a>
+              </p>
+            </div>
+          `
+        });
+      }
+
+      console.log(`✅ Approval level ${currentStep.level} completed`);
+      console.log(`➡️ Moving to level ${supplier.currentApprovalLevel}`);
+
+      return res.json({
+        success: true,
+        message: `Approval level ${currentStep.level} completed. Moved to level ${supplier.currentApprovalLevel}`,
+        data: {
+          supplier: {
+            id: supplier._id,
+            companyName: supplier.supplierDetails.companyName,
+            currentLevel: supplier.currentApprovalLevel,
+            accountStatus: supplier.supplierStatus.accountStatus
+          },
+          nextApprover: nextStep ? {
+            name: nextStep.approver.name,
+            role: nextStep.approver.role
+          } : null
+        }
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Supplier approval error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to approve supplier',
+      error: error.message
+    });
+  }
+};

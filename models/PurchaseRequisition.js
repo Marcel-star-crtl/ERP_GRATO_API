@@ -175,6 +175,8 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
       'pending_buyer_assignment',
       'pending_head_approval',
       'approved',
+      'partially_disbursed',  
+      'fully_disbursed',
       'rejected',
       'supply_chain_approved',
       'supply_chain_rejected',
@@ -407,6 +409,40 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
       enum: ['pending', 'in_transit', 'delivered', 'delayed'],
       default: 'pending'
     }
+  },
+
+  // ✅ Disbursement tracking
+  disbursements: [{
+    amount: {
+      type: Number,
+      required: true,
+      min: 0
+    },
+    date: {
+      type: Date,
+      default: Date.now
+    },
+    disbursedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    notes: String,
+    disbursementNumber: {
+      type: Number,
+      required: true
+    }
+  }],
+  
+  totalDisbursed: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  
+  remainingBalance: {
+    type: Number,
+    min: 0
   },
 
   createdAt: {

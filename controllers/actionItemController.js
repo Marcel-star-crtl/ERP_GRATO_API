@@ -29,7 +29,228 @@ function findSubMilestoneById(subMilestones, targetId) {
 }
 
 
-// Create task under milestone
+// // Create task under milestone
+// const createTaskUnderMilestone = async (req, res) => {
+//   try {
+//     const {
+//       projectId,
+//       milestoneId,
+//       title,
+//       description,
+//       priority,
+//       dueDate,
+//       taskWeight,
+//       assignedTo,
+//       linkedKPIs,
+//       notes
+//     } = req.body;
+
+//     console.log('=== CREATE TASK UNDER MILESTONE ===');
+//     console.log('Creator:', req.user.userId);
+//     console.log('Assignees:', assignedTo?.length || 0);
+
+//     // Validate required fields
+//     if (!projectId || !milestoneId || !title || !description || !priority || !dueDate || !taskWeight) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Missing required fields'
+//       });
+//     }
+
+//     // Get project and milestone
+//     const project = await Project.findById(projectId);
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Project not found'
+//       });
+//     }
+
+//     const milestone = project.milestones.id(milestoneId);
+//     if (!milestone) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Milestone not found'
+//       });
+//     }
+
+//     // Get creator user
+//     const creator = await User.findById(req.user.userId);
+//     if (!creator) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Creator user not found'
+//       });
+//     }
+
+//     // Validate task weight
+//     const existingTasks = await ActionItem.find({ milestoneId: milestoneId });
+//     const totalExistingWeight = existingTasks.reduce((sum, t) => sum + t.taskWeight, 0);
+    
+//     if (totalExistingWeight + taskWeight > 100) {
+//       return res.status(400).json({
+//         success: false,
+//         message: `Task weight exceeds available capacity. Available: ${100 - totalExistingWeight}%, Requested: ${taskWeight}%`,
+//         availableWeight: 100 - totalExistingWeight
+//       });
+//     }
+
+//     // Handle assignment
+//     let assignees = [];
+//     let taskStatus = 'Not Started';
+//     let supervisor = null;
+
+//     if (!assignedTo || assignedTo.length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'At least one assignee is required'
+//       });
+//     }
+
+//     // CRITICAL FIX: When assigning to others, creator becomes supervisor
+//     // Validate assignees and their KPIs
+//     for (const assigneeId of assignedTo) {
+//       const assignee = await User.findById(assigneeId);
+//       if (!assignee) {
+//         return res.status(400).json({
+//           success: false,
+//           message: `Assignee ${assigneeId} not found`
+//         });
+//       }
+
+//       assignees.push({
+//         user: assigneeId,
+//         completionStatus: 'pending'
+//       });
+//     }
+
+//     // NEW: Creator becomes the supervisor for this task
+//     supervisor = {
+//       name: creator.fullName,
+//       email: creator.email,
+//       department: creator.department
+//     };
+
+//     console.log(`✅ Task assigned to ${assignees.length} user(s)`);
+//     console.log(`   Supervisor (creator): ${supervisor.name} (${supervisor.email})`);
+
+//     // Process linked KPIs
+//     const processedKPIs = [];
+//     if (linkedKPIs && linkedKPIs.length > 0) {
+//       for (const kpiLink of linkedKPIs) {
+//         const kpiDoc = await QuarterlyKPI.findOne({
+//           _id: kpiLink.kpiDocId,
+//           // Don't validate employee here - could be creator's or assignee's KPIs
+//           approvalStatus: 'approved'
+//         });
+
+//         if (!kpiDoc) {
+//           return res.status(400).json({
+//             success: false,
+//             message: `No approved KPI found for KPI document ${kpiLink.kpiDocId}`
+//           });
+//         }
+
+//         const kpi = kpiDoc.kpis[kpiLink.kpiIndex];
+//         if (!kpi) {
+//           return res.status(400).json({
+//             success: false,
+//             message: `KPI index ${kpiLink.kpiIndex} not found`
+//           });
+//         }
+
+//         processedKPIs.push({
+//           kpiDocId: kpiLink.kpiDocId,
+//           kpiIndex: kpiLink.kpiIndex,
+//           kpiTitle: kpi.title,
+//           kpiWeight: kpi.weight,
+//           contributionToKPI: 0
+//         });
+//       }
+//     }
+
+//     // Create task
+//     const task = new ActionItem({
+//       title,
+//       description,
+//       priority,
+//       dueDate: new Date(dueDate),
+//       taskWeight,
+//       assignedTo: assignees,
+//       linkedKPIs: processedKPIs,
+//       projectId,
+//       milestoneId,
+//       createdBy: req.user.userId,
+//       supervisor, // Creator is the supervisor
+//       status: 'Not Started', // Direct assignment - no approval needed
+//       notes: notes || '',
+//       creationApproval: {
+//         status: 'approved',
+//         approvedBy: req.user.userId,
+//         approvalDate: new Date()
+//       }
+//     });
+
+//     task.logActivity('created', req.user.userId, 
+//       `Task created and assigned by ${creator.fullName} with weight ${taskWeight}%`);
+
+//     await task.save();
+
+//     // Update milestone's total task weight
+//     milestone.totalTaskWeightAssigned = totalExistingWeight + taskWeight;
+//     await project.save();
+
+//     // Populate task
+//     await task.populate([
+//       { path: 'assignedTo.user', select: 'fullName email department' },
+//       { path: 'createdBy', select: 'fullName email' },
+//       { path: 'projectId', select: 'name code' },
+//       { path: 'linkedKPIs.kpiDocId' }
+//     ]);
+
+//     console.log('✅ Task created - creator will grade upon completion');
+
+//     // Send notifications to assignees
+//     if (assignedTo && assignedTo.length > 0) {
+//       for (const assigneeId of assignedTo) {
+//         const assignee = await User.findById(assigneeId);
+//         if (assignee) {
+//           try {
+//             await sendActionItemEmail.taskAssigned(
+//               assignee.email,
+//               assignee.fullName,
+//               creator.fullName,
+//               title,
+//               description,
+//               priority,
+//               dueDate,
+//               task._id,
+//               project.name
+//             );
+//           } catch (emailError) {
+//             console.error('Failed to send notification:', emailError);
+//           }
+//         }
+//       }
+//     }
+
+//     res.status(201).json({
+//       success: true,
+//       message: 'Task created and assigned successfully',
+//       data: task
+//     });
+
+//   } catch (error) {
+//     console.error('Error creating task under milestone:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to create task',
+//       error: error.message
+//     });
+//   }
+// };
+
+
 const createTaskUnderMilestone = async (req, res) => {
   try {
     const {
@@ -97,7 +318,6 @@ const createTaskUnderMilestone = async (req, res) => {
 
     // Handle assignment
     let assignees = [];
-    let taskStatus = 'Not Started';
     let supervisor = null;
 
     if (!assignedTo || assignedTo.length === 0) {
@@ -107,8 +327,7 @@ const createTaskUnderMilestone = async (req, res) => {
       });
     }
 
-    // CRITICAL FIX: When assigning to others, creator becomes supervisor
-    // Validate assignees and their KPIs
+    // ✅ CRITICAL FIX: Validate assignees and determine supervisor
     for (const assigneeId of assignedTo) {
       const assignee = await User.findById(assigneeId);
       if (!assignee) {
@@ -124,15 +343,38 @@ const createTaskUnderMilestone = async (req, res) => {
       });
     }
 
-    // NEW: Creator becomes the supervisor for this task
-    supervisor = {
-      name: creator.fullName,
-      email: creator.email,
-      department: creator.department
-    };
+    // ✅ NEW: Get supervisor based on ASSIGNEE (not creator)
+    // If assigning to self, get MY supervisor
+    // If assigning to others, I become the supervisor
+    const firstAssigneeId = assignedTo[0];
+    const firstAssignee = await User.findById(firstAssigneeId);
+
+    if (firstAssigneeId === req.user.userId) {
+      // ✅ Assigning to self - get MY supervisor from department structure
+      const { getTaskSupervisor } = require('../config/actionItemApprovalChain');
+      supervisor = getTaskSupervisor(firstAssignee.email, firstAssignee.department);
+      
+      if (!supervisor) {
+        return res.status(400).json({
+          success: false,
+          message: 'Unable to determine your supervisor. Please contact HR.'
+        });
+      }
+      
+      console.log(`✅ Task assigned to self - supervisor: ${supervisor.name} (${supervisor.email})`);
+    } else {
+      // ✅ Assigning to others - creator becomes supervisor
+      supervisor = {
+        name: creator.fullName,
+        email: creator.email,
+        department: creator.department
+      };
+      
+      console.log(`✅ Task assigned to others - creator is supervisor: ${supervisor.name}`);
+    }
 
     console.log(`✅ Task assigned to ${assignees.length} user(s)`);
-    console.log(`   Supervisor (creator): ${supervisor.name} (${supervisor.email})`);
+    console.log(`   Supervisor: ${supervisor.name} (${supervisor.email})`);
 
     // Process linked KPIs
     const processedKPIs = [];
@@ -140,7 +382,6 @@ const createTaskUnderMilestone = async (req, res) => {
       for (const kpiLink of linkedKPIs) {
         const kpiDoc = await QuarterlyKPI.findOne({
           _id: kpiLink.kpiDocId,
-          // Don't validate employee here - could be creator's or assignee's KPIs
           approvalStatus: 'approved'
         });
 
@@ -181,8 +422,8 @@ const createTaskUnderMilestone = async (req, res) => {
       projectId,
       milestoneId,
       createdBy: req.user.userId,
-      supervisor, // Creator is the supervisor
-      status: 'Not Started', // Direct assignment - no approval needed
+      supervisor,
+      status: 'Not Started',
       notes: notes || '',
       creationApproval: {
         status: 'approved',
@@ -208,7 +449,7 @@ const createTaskUnderMilestone = async (req, res) => {
       { path: 'linkedKPIs.kpiDocId' }
     ]);
 
-    console.log('✅ Task created - creator will grade upon completion');
+    console.log('✅ Task created - supervisor will grade upon completion');
 
     // Send notifications to assignees
     if (assignedTo && assignedTo.length > 0) {
@@ -473,174 +714,6 @@ const createPersonalTask = async (req, res) => {
   }
 };
 
-// // Submit completion for specific assignee
-// const submitCompletionForAssignee = async (req, res) => {
-//   try {
-//     const { id } = req.params;
-//     const { completionNotes } = req.body;
-//     const userId = req.user.userId;
-
-//     console.log('=== SUBMIT COMPLETION FOR ASSIGNEE ===');
-//     console.log('Task ID:', id);
-//     console.log('User ID:', userId);
-//     console.log('Files:', req.files?.length || 0);
-
-//     const task = await ActionItem.findById(id)
-//       .populate('assignedTo.user', 'fullName email department')
-//       .populate('createdBy', 'fullName email');
-
-//     if (!task) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'Task not found'
-//       });
-//     }
-
-//     // Check if user is an assignee
-//     const assignee = task.assignedTo.find(a => a.user._id.equals(userId));
-//     if (!assignee) {
-//       return res.status(403).json({
-//         success: false,
-//         message: 'You are not assigned to this task'
-//       });
-//     }
-
-//     // Check if task is in valid state
-//     if (task.status === 'Pending Approval') {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Task must be approved by supervisor before you can work on it'
-//       });
-//     }
-
-//     if (assignee.completionStatus === 'approved') {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Your completion has already been approved'
-//       });
-//     }
-
-//     // Process uploaded documents
-//     let documents = [];
-//     if (req.files && req.files.length > 0) {
-//       console.log(`Processing ${req.files.length} completion documents`);
-
-//       const uploadDir = path.join(__dirname, '../uploads/action-items');
-
-//       try {
-//         await fs.promises.mkdir(uploadDir, { recursive: true });
-//       } catch (dirError) {
-//         console.error('Failed to create upload directory:', dirError);
-//         throw new Error('Failed to prepare upload directory');
-//       }
-
-//       for (const file of req.files) {
-//         try {
-//           const timestamp = Date.now();
-//           const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
-//           const fileName = `${timestamp}-${sanitizedName}`;
-//           const filePath = path.join(uploadDir, fileName);
-
-//           if (!file.path || !fs.existsSync(file.path)) {
-//             console.error(`Temp file not found: ${file.path}`);
-//             continue;
-//           }
-
-//           await fs.promises.rename(file.path, filePath);
-
-//           documents.push({
-//             name: file.originalname,
-//             url: `/uploads/action-items/${fileName}`,
-//             publicId: fileName,
-//             size: file.size,
-//             mimetype: file.mimetype,
-//             uploadedAt: new Date()
-//           });
-//         } catch (fileError) {
-//           console.error(`Error processing file ${file.originalname}:`, fileError);
-//           if (file.path && fs.existsSync(file.path)) {
-//             try {
-//               await fs.promises.unlink(file.path);
-//             } catch (cleanupError) {
-//               console.error('Failed to clean up temp file:', cleanupError);
-//             }
-//           }
-//           continue;
-//         }
-//       }
-//     }
-
-//     if (documents.length === 0) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'At least one document must be uploaded'
-//       });
-//     }
-
-//     // Update assignee's submission
-//     assignee.completionStatus = 'submitted';
-//     assignee.completionDocuments = documents;
-//     assignee.completionNotes = completionNotes || '';
-//     assignee.submittedAt = new Date();
-
-//     // Update task status if this is the first submission
-//     if (task.status === 'Not Started' || task.status === 'In Progress') {
-//       task.status = 'Pending Completion Approval';
-//     }
-
-//     task.logActivity('submitted_for_completion', userId, 
-//       `Completion submitted with ${documents.length} document(s)`);
-
-//     await task.save();
-
-//     // Send notification to supervisor
-//     try {
-//       const user = await User.findById(userId);
-//       await sendActionItemEmail.taskCompletionApproval(
-//         task.supervisor.email,
-//         task.supervisor.name,
-//         user.fullName,
-//         task.title,
-//         task.description,
-//         task._id,
-//         documents.length,
-//         completionNotes
-//       );
-//     } catch (emailError) {
-//       console.error('Failed to send supervisor notification:', emailError);
-//     }
-
-//     console.log('✅ Completion submitted for assignee');
-
-//     res.json({
-//       success: true,
-//       message: 'Completion submitted for supervisor approval',
-//       data: task,
-//       documentsUploaded: documents.length
-//     });
-
-//   } catch (error) {
-//     console.error('Error submitting completion:', error);
-
-//     // Clean up uploaded files if submission failed
-//     if (req.files && req.files.length > 0) {
-//       await Promise.allSettled(
-//         req.files.map(file => {
-//           if (file.path && fs.existsSync(file.path)) {
-//             return fs.promises.unlink(file.path).catch(e => console.error('File cleanup failed:', e));
-//           }
-//         })
-//       );
-//     }
-
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to submit completion',
-//       error: error.message
-//     });
-//   }
-// };
-
 
 
 
@@ -806,6 +879,119 @@ const submitCompletionForAssignee = async (req, res) => {
 
 
 
+// const approveCompletionForAssignee = async (req, res) => {
+//   try {
+//     const { id, assigneeId } = req.params;
+//     const { grade, qualityNotes, comments } = req.body;
+//     const userId = req.user.userId;
+
+//     console.log('=== APPROVE COMPLETION FOR ASSIGNEE ===');
+//     console.log('Task ID:', id);
+//     console.log('Assignee ID:', assigneeId);
+//     console.log('Grade:', grade);
+
+//     // ✅ UPDATED: Validate grade with decimal support
+//     if (!grade || grade < 1.0 || grade > 5.0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Grade must be between 1.0 and 5.0'
+//       });
+//     }
+
+//     // Optional: Validate that grade has at most 1 decimal place
+//     if (!Number.isInteger(grade * 10)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Grade can have at most 1 decimal place (e.g., 3.5, 4.2)'
+//       });
+//     }
+
+//     const task = await ActionItem.findById(id)
+//       .populate('assignedTo.user', 'fullName email department')
+//       .populate('linkedKPIs.kpiDocId');
+
+//     if (!task) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Task not found'
+//       });
+//     }
+
+//     const user = await User.findById(userId);
+    
+//     console.log('Task supervisor:', task.supervisor.email);
+//     console.log('Current user:', user.email);
+    
+//     const isTheSupervisor = task.supervisor.email === user.email;
+//     const isAdmin = user.role === 'admin';
+
+//     if (!isTheSupervisor && !isAdmin) {
+//       return res.status(403).json({
+//         success: false,
+//         message: 'Only the assigned supervisor can approve this completion'
+//       });
+//     }
+
+//     const assignee = task.assignedTo.find(a => a.user._id.equals(assigneeId));
+//     if (!assignee) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Assignee not found for this task'
+//       });
+//     }
+
+//     if (assignee.completionStatus !== 'submitted') {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Assignee has not submitted completion yet'
+//       });
+//     }
+
+//     // Approve completion with decimal grading
+//     await task.approveCompletionForAssignee(userId, assigneeId, grade, qualityNotes, comments);
+//     await task.save();
+
+//     await task.populate([
+//       { path: 'assignedTo.user', select: 'fullName email department' },
+//       { path: 'linkedKPIs.kpiDocId' }
+//     ]);
+
+//     // Send notification to assignee
+//     try {
+//       const assigneeUser = await User.findById(assigneeId);
+//       await sendActionItemEmail.taskCompletionApproved(
+//         assigneeUser.email,
+//         assigneeUser.fullName,
+//         user.fullName,
+//         task.title,
+//         task._id,
+//         comments,
+//         grade
+//       );
+//     } catch (emailError) {
+//       console.error('Failed to send notification:', emailError);
+//     }
+
+//     console.log('✅ Completion approved with grade:', grade.toFixed(1));
+
+//     res.json({
+//       success: true,
+//       message: `Completion approved with grade ${grade.toFixed(1)}/5.0`,
+//       data: task
+//     });
+
+//   } catch (error) {
+//     console.error('Error approving completion:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to approve completion',
+//       error: error.message
+//     });
+//   }
+// };
+
+
+
 const approveCompletionForAssignee = async (req, res) => {
   try {
     const { id, assigneeId } = req.params;
@@ -817,7 +1003,7 @@ const approveCompletionForAssignee = async (req, res) => {
     console.log('Assignee ID:', assigneeId);
     console.log('Grade:', grade);
 
-    // ✅ UPDATED: Validate grade with decimal support
+    // ✅ Validate grade with decimal support
     if (!grade || grade < 1.0 || grade > 5.0) {
       return res.status(400).json({
         success: false,
@@ -825,7 +1011,7 @@ const approveCompletionForAssignee = async (req, res) => {
       });
     }
 
-    // Optional: Validate that grade has at most 1 decimal place
+    // Validate that grade has at most 1 decimal place
     if (!Number.isInteger(grade * 10)) {
       return res.status(400).json({
         success: false,
@@ -874,6 +1060,14 @@ const approveCompletionForAssignee = async (req, res) => {
       });
     }
 
+    // ✅ Check if already graded
+    if (assignee.completionGrade && assignee.completionGrade.score) {
+      return res.status(400).json({
+        success: false,
+        message: 'This completion has already been graded'
+      });
+    }
+
     // Approve completion with decimal grading
     await task.approveCompletionForAssignee(userId, assigneeId, grade, qualityNotes, comments);
     await task.save();
@@ -916,96 +1110,6 @@ const approveCompletionForAssignee = async (req, res) => {
     });
   }
 };
-
-// // Reject completion for specific assignee
-// const rejectCompletionForAssignee = async (req, res) => {
-//   try {
-//     const { id, assigneeId } = req.params;
-//     const { comments } = req.body;
-//     const userId = req.user.userId;
-
-//     console.log('=== REJECT COMPLETION FOR ASSIGNEE ===');
-//     console.log('Task ID:', id);
-//     console.log('Assignee ID:', assigneeId);
-
-//     if (!comments) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Rejection reason is required'
-//       });
-//     }
-
-//     const task = await ActionItem.findById(id)
-//       .populate('assignedTo.user', 'fullName email department');
-
-//     if (!task) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'Task not found'
-//       });
-//     }
-
-//     // Verify supervisor
-//     const user = await User.findById(userId);
-//     if (task.supervisor.email !== user.email && user.role !== 'admin') {
-//       return res.status(403).json({
-//         success: false,
-//         message: 'Only the assigned supervisor can reject this completion'
-//       });
-//     }
-
-//     // Find assignee
-//     const assignee = task.assignedTo.find(a => a.user._id.equals(assigneeId));
-//     if (!assignee) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'Assignee not found for this task'
-//       });
-//     }
-
-//     if (assignee.completionStatus !== 'submitted') {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Assignee has not submitted completion yet'
-//       });
-//     }
-
-//     // Reject completion
-//     task.rejectCompletionForAssignee(userId, assigneeId, comments);
-//     await task.save();
-
-//     // Send notification to assignee
-//     try {
-//       const assigneeUser = await User.findById(assigneeId);
-//       await sendActionItemEmail.taskCompletionRejected(
-//         assigneeUser.email,
-//         assigneeUser.fullName,
-//         user.fullName,
-//         task.title,
-//         task._id,
-//         comments
-//       );
-//     } catch (emailError) {
-//       console.error('Failed to send notification:', emailError);
-//     }
-
-//     console.log('❌ Completion rejected for assignee');
-
-//     res.json({
-//       success: true,
-//       message: 'Completion rejected - sent back for revision',
-//       data: task
-//     });
-
-//   } catch (error) {
-//     console.error('Error rejecting completion:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to reject completion',
-//       error: error.message
-//     });
-//   }
-// };
 
 
 const rejectCompletionForAssignee = async (req, res) => {
@@ -1243,157 +1347,6 @@ const reassignTask = async (req, res) => {
     });
   }
 };
-
-
-// const getActionItems = async (req, res) => {
-//   try {
-//     const { status, priority, projectId, assignedTo, view, page = 1, limit = 50 } = req.query;
-//     const user = await User.findById(req.user.userId);
-
-//     console.log('=== GET ACTION ITEMS ===');
-//     console.log(`User: ${user.fullName} (${user.role})`);
-//     console.log(`Email: ${user.email}`);
-//     console.log(`View: ${view || 'default'}`);
-
-//     let filter = {};
-
-//     // ✅ FIX: Check if user IS a supervisor (not if role === 'supervisor')
-//     // A user is a supervisor if tasks have their email in the supervisor field
-//     const isSupervisorOf = await ActionItem.countDocuments({ 
-//       'supervisor.email': user.email 
-//     });
-
-//     console.log(`User supervises ${isSupervisorOf} tasks`);
-
-//     // Apply view-based filters
-//     if (view === 'my-tasks') {
-//       // Tasks assigned to me
-//       filter['assignedTo.user'] = req.user.userId;
-      
-//     } else if (view === 'team-tasks') {
-//       // ✅ FIX: Show tasks based on actual supervision relationship
-//       if (['admin', 'supply_chain'].includes(user.role)) {
-//         // Admins and supply chain see ALL tasks
-//         // No additional filter
-//       } else if (isSupervisorOf > 0) {
-//         // If user supervises ANY tasks, show:
-//         // 1. Tasks they supervise
-//         // 2. Tasks assigned to them
-//         // 3. Tasks in their department
-//         const departmentUsers = await User.find({ department: user.department }).select('_id');
-        
-//         filter.$or = [
-//           { 'supervisor.email': user.email },
-//           { 'assignedTo.user': req.user.userId },
-//           { 'assignedTo.user': { $in: departmentUsers.map(u => u._id) } }
-//         ];
-//       } else {
-//         // Not a supervisor - just show own tasks
-//         filter['assignedTo.user'] = req.user.userId;
-//       }
-      
-//     } else if (view === 'project-tasks') {
-//       if (projectId) {
-//         filter.projectId = projectId;
-//       } else {
-//         filter.projectId = { $ne: null };
-//       }
-      
-//     } else if (view === 'standalone-tasks') {
-//       filter.projectId = null;
-      
-//     } else if (view === 'my-approvals') {
-//       // ✅ CRITICAL FIX: Show tasks awaiting MY approval as supervisor
-//       if (['admin', 'supply_chain'].includes(user.role)) {
-//         // Admins see all pending approvals
-//         filter.$or = [
-//           { status: 'Pending Approval', 'supervisor.email': user.email },
-//           { status: 'Pending Completion Approval', 'supervisor.email': user.email },
-//           { createdBy: req.user.userId }
-//         ];
-//       } else if (isSupervisorOf > 0) {
-//         // ✅ FIX: Show tasks where I'm the supervisor AND they need approval
-//         filter.$or = [
-//           {
-//             'supervisor.email': user.email,
-//             status: { $in: ['Pending Approval', 'Pending Completion Approval'] }
-//           },
-//           {
-//             createdBy: req.user.userId
-//           }
-//         ];
-//       } else {
-//         // Not a supervisor - just show own tasks
-//         filter['assignedTo.user'] = req.user.userId;
-//       }
-      
-//       console.log('My Approvals Filter:', JSON.stringify(filter, null, 2));
-      
-//     } else {
-//       // Default view - show own tasks
-//       filter['assignedTo.user'] = req.user.userId;
-//     }
-
-//     // Apply additional filters
-//     if (status) filter.status = status;
-//     if (priority) filter.priority = priority;
-//     if (projectId && view !== 'project-tasks') filter.projectId = projectId;
-//     if (assignedTo) filter['assignedTo.user'] = assignedTo;
-
-//     console.log('Final Filter:', JSON.stringify(filter, null, 2));
-
-//     const tasks = await ActionItem.find(filter)
-//       .populate('assignedTo.user', 'fullName email department position')
-//       .populate('createdBy', 'fullName email')
-//       .populate('projectId', 'name code department')
-//       .sort({ dueDate: 1, priority: -1, createdAt: -1 })
-//       .limit(limit * 1)
-//       .skip((page - 1) * limit);
-
-//     const total = await ActionItem.countDocuments(filter);
-
-//     console.log(`Found ${tasks.length} action items`);
-
-//     // ✅ Additional debug for 'my-approvals' view
-//     if (view === 'my-approvals' && tasks.length === 0) {
-//       console.log('=== DEBUG: No tasks found for approval ===');
-      
-//       // Check if there are ANY tasks supervised by this user
-//       const supervisedTasks = await ActionItem.find({ 
-//         'supervisor.email': user.email 
-//       }).select('title status supervisor');
-      
-//       console.log(`Total tasks supervised: ${supervisedTasks.length}`);
-//       if (supervisedTasks.length > 0) {
-//         console.log('Supervised tasks:', supervisedTasks.map(t => ({
-//           title: t.title,
-//           status: t.status,
-//           supervisor: t.supervisor.email
-//         })));
-//       }
-//     }
-
-//     res.json({
-//       success: true,
-//       data: tasks,
-//       pagination: {
-//         current: parseInt(page),
-//         total: Math.ceil(total / limit),
-//         count: tasks.length,
-//         totalRecords: total
-//       }
-//     });
-
-//   } catch (error) {
-//     console.error('Get action items error:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'Failed to fetch action items',
-//       error: error.message
-//     });
-//   }
-// };
-
 
 
 const getActionItems = async (req, res) => {
@@ -2777,12 +2730,248 @@ const getProjectActionItems = async (req, res) => {
 };
 
 
+// const createTaskUnderSubMilestone = async (req, res) => {
+//   try {
+//     const {
+//       projectId,
+//       milestoneId,
+//       subMilestoneId, // NEW: Can be nested at any level
+//       title,
+//       description,
+//       priority,
+//       dueDate,
+//       taskWeight,
+//       assignedTo,
+//       linkedKPIs,
+//       notes
+//     } = req.body;
+
+//     console.log('=== CREATE TASK UNDER SUB-MILESTONE ===');
+//     console.log('Creator:', req.user.userId);
+//     console.log('Sub-Milestone:', subMilestoneId);
+//     console.log('Assignees:', assignedTo?.length || 0);
+
+//     // Validate required fields
+//     if (!projectId || !milestoneId || !subMilestoneId || !title || !description || !priority || !dueDate || !taskWeight) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Missing required fields'
+//       });
+//     }
+
+//     // Get project and find sub-milestone
+//     const project = await Project.findById(projectId);
+//     if (!project) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Project not found'
+//       });
+//     }
+
+//     const milestone = project.milestones.id(milestoneId);
+//     if (!milestone) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Milestone not found'
+//       });
+//     }
+
+//     // Find sub-milestone recursively
+//     const subMilestone = findSubMilestoneById(milestone.subMilestones, subMilestoneId);
+//     if (!subMilestone) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Sub-milestone not found'
+//       });
+//     }
+
+//     // Get creator user
+//     const creator = await User.findById(req.user.userId);
+//     if (!creator) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Creator user not found'
+//       });
+//     }
+
+//     // Check if creator is the assigned supervisor of this sub-milestone
+//     if (!subMilestone.assignedSupervisor.equals(req.user.userId) && 
+//         !['admin', 'supply_chain', 'project'].includes(creator.role)) {
+//       return res.status(403).json({
+//         success: false,
+//         message: 'Only the assigned supervisor can create tasks under this sub-milestone'
+//       });
+//     }
+
+//     // Validate task weight against sub-milestone capacity
+//     const existingTasks = await ActionItem.find({ subMilestoneId: subMilestoneId });
+//     const totalExistingWeight = existingTasks.reduce((sum, t) => sum + t.taskWeight, 0);
+    
+//     if (totalExistingWeight + taskWeight > 100) {
+//       return res.status(400).json({
+//         success: false,
+//         message: `Task weight exceeds available capacity. Available: ${100 - totalExistingWeight}%, Requested: ${taskWeight}%`,
+//         availableWeight: 100 - totalExistingWeight
+//       });
+//     }
+
+//     // Handle assignment
+//     let assignees = [];
+//     let supervisor = null;
+
+//     if (!assignedTo || assignedTo.length === 0) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'At least one assignee is required'
+//       });
+//     }
+
+//     // Validate assignees
+//     for (const assigneeId of assignedTo) {
+//       const assignee = await User.findById(assigneeId);
+//       if (!assignee) {
+//         return res.status(400).json({
+//           success: false,
+//           message: `Assignee ${assigneeId} not found'`
+//         });
+//       }
+
+//       assignees.push({
+//         user: assigneeId,
+//         completionStatus: 'pending'
+//       });
+//     }
+
+//     // Creator becomes the supervisor
+//     supervisor = {
+//       name: creator.fullName,
+//       email: creator.email,
+//       department: creator.department
+//     };
+
+//     console.log(`✅ Task assigned to ${assignees.length} user(s)`);
+//     console.log(`   Supervisor (creator): ${supervisor.name}`);
+
+//     // Process linked KPIs
+//     const processedKPIs = [];
+//     if (linkedKPIs && linkedKPIs.length > 0) {
+//       for (const kpiLink of linkedKPIs) {
+//         const kpiDoc = await QuarterlyKPI.findOne({
+//           _id: kpiLink.kpiDocId,
+//           approvalStatus: 'approved'
+//         });
+
+//         if (!kpiDoc) {
+//           return res.status(400).json({
+//             success: false,
+//             message: `No approved KPI found for KPI document ${kpiLink.kpiDocId}`
+//           });
+//         }
+
+//         const kpi = kpiDoc.kpis[kpiLink.kpiIndex];
+//         if (!kpi) {
+//           return res.status(400).json({
+//             success: false,
+//             message: `KPI index ${kpiLink.kpiIndex} not found`
+//           });
+//         }
+
+//         processedKPIs.push({
+//           kpiDocId: kpiLink.kpiDocId,
+//           kpiIndex: kpiLink.kpiIndex,
+//           kpiTitle: kpi.title,
+//           kpiWeight: kpi.weight,
+//           contributionToKPI: 0
+//         });
+//       }
+//     }
+
+//     // Create task
+//     const task = new ActionItem({
+//       title,
+//       description,
+//       priority,
+//       dueDate: new Date(dueDate),
+//       taskWeight,
+//       assignedTo: assignees,
+//       linkedKPIs: processedKPIs,
+//       projectId,
+//       milestoneId,
+//       subMilestoneId, // NEW: Link to sub-milestone
+//       createdBy: req.user.userId,
+//       supervisor,
+//       status: 'Not Started',
+//       notes: notes || '',
+//       creationApproval: {
+//         status: 'approved',
+//         approvedBy: req.user.userId,
+//         approvalDate: new Date()
+//       }
+//     });
+
+//     task.logActivity('created', req.user.userId, 
+//       `Task created under sub-milestone "${subMilestone.title}" with weight ${taskWeight}%`);
+
+//     await task.save();
+
+//     // Populate task
+//     await task.populate([
+//       { path: 'assignedTo.user', select: 'fullName email department' },
+//       { path: 'createdBy', select: 'fullName email' },
+//       { path: 'projectId', select: 'name code' },
+//       { path: 'linkedKPIs.kpiDocId' }
+//     ]);
+
+//     console.log('✅ Task created under sub-milestone');
+
+//     // Send notifications to assignees
+//     if (assignedTo && assignedTo.length > 0) {
+//       for (const assigneeId of assignedTo) {
+//         const assignee = await User.findById(assigneeId);
+//         if (assignee) {
+//           try {
+//             await sendActionItemEmail.taskAssigned(
+//               assignee.email,
+//               assignee.fullName,
+//               creator.fullName,
+//               title,
+//               description,
+//               priority,
+//               dueDate,
+//               task._id,
+//               `${project.name} > ${milestone.title} > ${subMilestone.title}`
+//             );
+//           } catch (emailError) {
+//             console.error('Failed to send notification:', emailError);
+//           }
+//         }
+//       }
+//     }
+
+//     res.status(201).json({
+//       success: true,
+//       message: 'Task created under sub-milestone successfully',
+//       data: task
+//     });
+
+//   } catch (error) {
+//     console.error('Error creating task under sub-milestone:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to create task',
+//       error: error.message
+//     });
+//   }
+// };
+
+
+
 const createTaskUnderSubMilestone = async (req, res) => {
   try {
     const {
       projectId,
       milestoneId,
-      subMilestoneId, // NEW: Can be nested at any level
+      subMilestoneId,
       title,
       description,
       priority,
@@ -2873,13 +3062,13 @@ const createTaskUnderSubMilestone = async (req, res) => {
       });
     }
 
-    // Validate assignees
+    // ✅ CRITICAL FIX: Validate assignees and determine supervisor
     for (const assigneeId of assignedTo) {
       const assignee = await User.findById(assigneeId);
       if (!assignee) {
         return res.status(400).json({
           success: false,
-          message: `Assignee ${assigneeId} not found'`
+          message: `Assignee ${assigneeId} not found`
         });
       }
 
@@ -2889,15 +3078,36 @@ const createTaskUnderSubMilestone = async (req, res) => {
       });
     }
 
-    // Creator becomes the supervisor
-    supervisor = {
-      name: creator.fullName,
-      email: creator.email,
-      department: creator.department
-    };
+    // ✅ NEW: Get supervisor based on ASSIGNEE (not creator)
+    const firstAssigneeId = assignedTo[0];
+    const firstAssignee = await User.findById(firstAssigneeId);
+
+    if (firstAssigneeId === req.user.userId) {
+      // ✅ Assigning to self - get MY supervisor
+      const { getTaskSupervisor } = require('../config/actionItemApprovalChain');
+      supervisor = getTaskSupervisor(firstAssignee.email, firstAssignee.department);
+      
+      if (!supervisor) {
+        return res.status(400).json({
+          success: false,
+          message: 'Unable to determine your supervisor. Please contact HR.'
+        });
+      }
+      
+      console.log(`✅ Task assigned to self - supervisor: ${supervisor.name} (${supervisor.email})`);
+    } else {
+      // ✅ Assigning to others - creator becomes supervisor
+      supervisor = {
+        name: creator.fullName,
+        email: creator.email,
+        department: creator.department
+      };
+      
+      console.log(`✅ Task assigned to others - creator is supervisor: ${supervisor.name}`);
+    }
 
     console.log(`✅ Task assigned to ${assignees.length} user(s)`);
-    console.log(`   Supervisor (creator): ${supervisor.name}`);
+    console.log(`   Supervisor: ${supervisor.name} (${supervisor.email})`);
 
     // Process linked KPIs
     const processedKPIs = [];
@@ -2944,7 +3154,7 @@ const createTaskUnderSubMilestone = async (req, res) => {
       linkedKPIs: processedKPIs,
       projectId,
       milestoneId,
-      subMilestoneId, // NEW: Link to sub-milestone
+      subMilestoneId,
       createdBy: req.user.userId,
       supervisor,
       status: 'Not Started',
@@ -3010,6 +3220,7 @@ const createTaskUnderSubMilestone = async (req, res) => {
     });
   }
 };
+
 
 // Get tasks for sub-milestone
 const getSubMilestoneTasks = async (req, res) => {

@@ -47,6 +47,13 @@ router.get('/finance/dashboard-data',
   purchaseRequisitionController.getFinanceDashboardData
 );
 
+// ✅ NEW: Pending disbursements (BEFORE generic routes)
+router.get('/finance/pending-disbursements',
+  authMiddleware,
+  requireRoles('finance', 'admin'),
+  purchaseRequisitionController.getPendingDisbursements
+);
+
 router.get('/finance/budget-codes', 
   authMiddleware,
   requireRoles('finance', 'admin'),
@@ -181,6 +188,7 @@ router.get(
 // ============================================
 // ACTION ROUTES - NEW APPROVAL FLOW
 // ============================================
+
 
 // STEP 1: Finance Verification (Budget Check)
 router.put('/:requisitionId/finance-verification', 
@@ -557,6 +565,23 @@ router.delete('/:requisitionId/attachments/:attachmentId',
       });
     }
   }
+);
+
+// ============================================
+// DISBURSEMENT ROUTES (BEFORE generic :requisitionId)
+// ============================================
+
+// ✅ NEW: Process disbursement
+router.post('/:requisitionId/disburse',
+  authMiddleware,
+  requireRoles('finance', 'admin'),
+  purchaseRequisitionController.processDisbursement
+);
+
+// ✅ NEW: Get disbursement history
+router.get('/:requisitionId/disbursements',
+  authMiddleware,
+  purchaseRequisitionController.getDisbursementHistory
 );
 
 // ============================================

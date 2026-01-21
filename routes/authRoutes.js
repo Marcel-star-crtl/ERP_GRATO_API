@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
+const { sendEmail } = require('../services/emailService');
 const authController = require('../controllers/authController');
 const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware');
 const User = require('../models/User');
@@ -449,6 +451,169 @@ router.get('/org-chart', authMiddleware, async (req, res) => {
             error: error.message
         });
     }
+});
+
+
+// ==========================================
+// SUPPLIER PASSWORD RESET
+// ==========================================
+
+// Request password reset
+router.post('/supplier/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    const supplier = await User.findOne({ 
+      email: email.toLowerCase(),
+      role: 'supplier'
+    });
+    
+    if (!supplier) {
+      return res.status(404).json({
+        success: false,
+        message: 'No supplier account found with this email'
+      });
+    }
+    
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpiry = Date.now() + 3600000; // 1 hour
+    
+    supplier.supplierStatus.verificationToken = resetToken;
+    supplier.supplierStatus.verificationTokenExpiry = resetTokenExpiry;
+    await supplier.save();
+    
+    const resetUrl = `${process.env.CLIENT_URL}/supplier/reset-password/${resetToken}`;
+    
+    await sendEmail({
+      to: email,
+      subject: 'Password Reset Request - Grato Hub',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2>Password Reset Request</h2>
+          <p>Dear ${supplier.supplierDetails.contactName},</p>
+          <p>We received a request to reset your password for your Grato Hub supplier account.</p>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${resetUrl}" 
+               style="background-color: #1890ff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
+              Reset Password
+            </a>
+          </div>
+          
+          <p>This link will expire in 1 hour.</p>
+          <p>If you didn't request this, please ignore this email.</p>
+          
+          <p>Best regards,<br>Grato IT Team</p>
+        </div>
+      `
+    });
+    
+    res.json({
+      success: true,
+      message: 'Password reset link sent to your email'
+    });
+    
+  } catch (error) {
+    console.error('Password reset request error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process password reset request'
+    });
+  }
+});
+
+// Reset password with token
+router.post('/supplier/reset-password/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { newPassword } = req.body;
+    
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters long'
+      });
+    }
+    
+    const supplier = await User.findOne({
+      role: 'supplier',
+      'supplierStatus.verificationToken': token,
+      'supplierStatus.verificationTokenExpiry': { $gt: Date.now() }
+    });
+    
+    if (!supplier) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset token'
+      });
+    }
+    
+    // Update password
+    supplier.password = newPassword;
+    supplier.supplierStatus.verificationToken = undefined;
+    supplier.supplierStatus.verificationTokenExpiry = undefined;
+    await supplier.save();
+    
+    res.json({
+      success: true,
+      message: 'Password reset successful. You can now log in with your new password.'
+    });
+    
+  } catch (error) {
+    console.error('Password reset error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reset password'
+    });
+  }
+});
+
+// Change password (authenticated supplier)
+router.post('/supplier/change-password', authMiddleware, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    
+    const supplier = await User.findById(req.user.userId);
+    
+    if (!supplier || supplier.role !== 'supplier') {
+      return res.status(404).json({
+        success: false,
+        message: 'Supplier not found'
+      });
+    }
+    
+    // Verify current password
+    const isValidPassword = await supplier.comparePassword(currentPassword);
+    if (!isValidPassword) {
+      return res.status(401).json({
+        success: false,
+        message: 'Current password is incorrect'
+      });
+    }
+    
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 6 characters long'
+      });
+    }
+    
+    supplier.password = newPassword;
+    await supplier.save();
+    
+    res.json({
+      success: true,
+      message: 'Password changed successfully'
+    });
+    
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to change password'
+    });
+  }
 });
 
 module.exports = router;

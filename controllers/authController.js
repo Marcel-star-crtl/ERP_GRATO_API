@@ -515,35 +515,6 @@ exports.validateUserHierarchy = async (req, res) => {
     }
 };
 
-// ==========================================
-// USER MANAGEMENT (Admin)
-// ==========================================
-
-// exports.getActiveUsers = async (req, res) => {
-//     try {
-//         const users = await User.find({ 
-//             isActive: true,
-//             role: { $in: ['admin', 'finance', 'employee', 'hr', 'supply_chain', 'technical', 'hse', 'buyer'] }
-//         })
-//         .select('fullName email role department position hierarchyLevel')
-//         .sort({ fullName: 1 });
-
-//         res.json({
-//             success: true,
-//             data: users
-//         });
-
-//     } catch (error) {
-//         console.error('Get active users error:', error);
-//         res.status(500).json({
-//             success: false,
-//             message: 'Failed to fetch active users',
-//             error: error.message
-//         });
-//     }
-// };
-
-
 
 exports.getActiveUsers = async (req, res) => {
     try {

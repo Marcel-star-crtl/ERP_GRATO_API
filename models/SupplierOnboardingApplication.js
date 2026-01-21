@@ -38,7 +38,7 @@ const SupplierOnboardingApplicationSchema = new mongoose.Schema({
   },
   supplierType: {
     type: String,
-    enum: ['General', 'Supply Chain', 'HR/Admin', 'Operations', 'HSE', 'Refurbishment'],
+    enum: ['General', 'Supply Chain', 'HR/Admin', 'Operations', 'HSE', 'Refurbishment', 'Civil Works', 'Rollout', 'Security', 'IT'],
     default: 'General'
   },
   status: {
