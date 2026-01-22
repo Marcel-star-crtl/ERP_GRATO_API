@@ -225,3 +225,4 @@ async function deleteSupplierApplication() {
     process.exit(1);
   }
 }
+

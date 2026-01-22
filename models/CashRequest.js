@@ -31,7 +31,8 @@ const CashRequestSchema = new mongoose.Schema({
       'staff-transportation', 
       'staff-entertainment',  
       'toll-gates',        
-      'office-items',      
+      'office-items',
+      'mission',      
       'other'
     ],
     required: true

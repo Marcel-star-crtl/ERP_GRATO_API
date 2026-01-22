@@ -4436,8 +4436,6 @@ const getFinanceDashboardData = async (req, res) => {
 };
 
 
-
-
 const processSupplyChainBusinessDecisions = async (req, res) => {
   try {
     const { requisitionId } = req.params;
@@ -5328,6 +5326,267 @@ const getPendingDisbursements = async (req, res) => {
 };
 
 
+/**
+ * Submit justification for a fully disbursed purchase requisition
+ * POST /api/purchase-requisitions/:requisitionId/justify
+ */
+const submitPurchaseRequisitionJustification = async (req, res) => {
+  try {
+    const { requisitionId } = req.params;
+    const { actualExpenses, totalSpent, changeReturned, justificationSummary } = req.body;
+
+    console.log('=== SUBMIT PURCHASE REQUISITION JUSTIFICATION ===');
+    console.log('Requisition ID:', requisitionId);
+    console.log('User:', req.user.userId);
+
+    const requisition = await PurchaseRequisition.findById(requisitionId)
+      .populate('employee', 'fullName email department');
+
+    if (!requisition) {
+      return res.status(404).json({
+        success: false,
+        message: 'Purchase requisition not found'
+      });
+    }
+
+    // Verify user is the owner
+    if (requisition.employee._id.toString() !== req.user.userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. You can only justify your own requisitions.'
+      });
+    }
+
+    // Verify requisition is fully disbursed
+    if (requisition.status !== 'fully_disbursed') {
+      return res.status(400).json({
+        success: false,
+        message: 'Can only submit justification for fully disbursed requisitions'
+      });
+    }
+
+    // Validate actual expenses
+    if (!actualExpenses || !Array.isArray(actualExpenses) || actualExpenses.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least one expense item is required'
+      });
+    }
+
+    // Process file uploads (receipts)
+    let receipts = [];
+    if (req.files && req.files.length > 0) {
+      console.log(`Processing ${req.files.length} receipt file(s)...`);
+      
+      for (const file of req.files) {
+        try {
+          const fileMetadata = await saveFile(
+            file,
+            STORAGE_CATEGORIES.PURCHASE_REQUISITIONS,
+            'receipts',
+            requisitionId
+          );
+
+          receipts.push({
+            name: file.originalname,
+            publicId: fileMetadata.publicId,
+            url: fileMetadata.url,
+            localPath: fileMetadata.localPath,
+            size: file.size,
+            mimetype: file.mimetype,
+            uploadedAt: new Date(),
+            uploadedBy: req.user.userId
+          });
+
+          console.log(`✅ Receipt saved: ${fileMetadata.publicId}`);
+        } catch (fileError) {
+          console.error(`❌ Error processing ${file.originalname}:`, fileError);
+          continue;
+        }
+      }
+    }
+
+    // Update requisition with justification
+    requisition.justification = {
+      actualExpenses: actualExpenses.map(expense => ({
+        description: expense.description,
+        amount: parseFloat(expense.amount),
+        category: expense.category,
+        date: expense.date ? new Date(expense.date) : new Date()
+      })),
+      totalSpent: parseFloat(totalSpent),
+      changeReturned: parseFloat(changeReturned || 0),
+      justificationSummary: justificationSummary,
+      receipts: receipts,
+      submittedDate: new Date(),
+      submittedBy: req.user.userId,
+      status: 'pending_supervisor'
+    };
+
+    requisition.status = 'justification_pending_supervisor';
+
+    await requisition.save();
+
+    console.log('✅ Justification submitted successfully');
+
+    // Send notification to supervisor (first in approval chain)
+    const supervisorStep = requisition.approvalChain.find(step => step.level === 1);
+    if (supervisorStep) {
+      await sendEmail({
+        to: supervisorStep.approver.email,
+        subject: `Justification Submitted - Purchase Requisition ${requisition.requisitionNumber}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background-color: #e6f7ff; padding: 20px; border-radius: 8px;">
+              <h2 style="color: #1890ff;">Purchase Requisition Justification Submitted</h2>
+              <p>Dear ${supervisorStep.approver.name},</p>
+              <p>${requisition.employee.fullName} has submitted justification for a completed purchase requisition.</p>
+              
+              <div style="background-color: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                <h4>Requisition Details</h4>
+                <ul>
+                  <li><strong>Requisition Number:</strong> ${requisition.requisitionNumber}</li>
+                  <li><strong>Title:</strong> ${requisition.title}</li>
+                  <li><strong>Approved Amount:</strong> XAF ${requisition.budgetXAF.toLocaleString()}</li>
+                  <li><strong>Total Spent:</strong> XAF ${totalSpent.toLocaleString()}</li>
+                  <li><strong>Change Returned:</strong> XAF ${(changeReturned || 0).toLocaleString()}</li>
+                  <li><strong>Receipts:</strong> ${receipts.length} file(s)</li>
+                </ul>
+              </div>
+              
+              <div style="text-align: center; margin: 20px 0;">
+                <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/supervisor/purchase-requisitions/${requisition._id}/justify"
+                   style="background-color: #1890ff; color: white; padding: 12px 24px;
+                          text-decoration: none; border-radius: 6px; font-weight: bold;">
+                  Review Justification
+                </a>
+              </div>
+            </div>
+          </div>
+        `
+      }).catch(err => console.error('Failed to send supervisor notification:', err));
+    }
+
+    res.json({
+      success: true,
+      message: 'Justification submitted successfully',
+      data: requisition
+    });
+
+  } catch (error) {
+    console.error('Submit justification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to submit justification',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get justification details for a purchase requisition
+ * GET /api/purchase-requisitions/:requisitionId/justification
+ */
+const getPurchaseRequisitionJustification = async (req, res) => {
+  try {
+    const { requisitionId } = req.params;
+
+    const requisition = await PurchaseRequisition.findById(requisitionId)
+      .populate('employee', 'fullName email department')
+      .populate('justification.submittedBy', 'fullName email')
+      .populate('justification.supervisorReview.reviewedBy', 'fullName email')
+      .populate('justification.financeReview.reviewedBy', 'fullName email');
+
+    if (!requisition) {
+      return res.status(404).json({
+        success: false,
+        message: 'Purchase requisition not found'
+      });
+    }
+
+    // Check permissions
+    const user = await User.findById(req.user.userId);
+    const canView = 
+      requisition.employee._id.equals(req.user.userId) ||
+      user.role === 'admin' ||
+      user.role === 'finance' ||
+      requisition.approvalChain.some(step => step.approver.email === user.email);
+
+    if (!canView) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        requisition,
+        justification: requisition.justification
+      }
+    });
+
+  } catch (error) {
+    console.error('Get justification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch justification',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Download justification receipt
+ * GET /api/purchase-requisitions/:requisitionId/receipts/:receiptId/download
+ */
+const downloadJustificationReceipt = async (req, res) => {
+  try {
+    const { requisitionId, receiptId } = req.params;
+
+    const requisition = await PurchaseRequisition.findById(requisitionId);
+
+    if (!requisition) {
+      return res.status(404).json({
+        success: false,
+        message: 'Purchase requisition not found'
+      });
+    }
+
+    const receipt = requisition.justification?.receipts?.find(
+      r => r._id.toString() === receiptId
+    );
+
+    if (!receipt) {
+      return res.status(404).json({
+        success: false,
+        message: 'Receipt not found'
+      });
+    }
+
+    // Stream file
+    const filePath = path.join(__dirname, '../', receipt.localPath);
+    
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Receipt file not found on server'
+      });
+    }
+
+    res.download(filePath, receipt.name);
+
+  } catch (error) {
+    console.error('Download receipt error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to download receipt',
+      error: error.message
+    });
+  }
+};
+
 // Export all functions
 module.exports = {
   // Core CRUD operations
@@ -5398,4 +5657,7 @@ module.exports = {
   processDisbursement,
   getDisbursementHistory,
   getPendingDisbursements,
+  submitPurchaseRequisitionJustification,
+  getPurchaseRequisitionJustification,
+  downloadJustificationReceipt
 };

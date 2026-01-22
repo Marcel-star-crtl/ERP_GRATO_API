@@ -182,7 +182,11 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
       'supply_chain_rejected',
       'in_procurement',
       'procurement_complete',
-      'delivered'
+      'delivered',
+      'justification_pending_supervisor',
+      'justification_pending_finance',
+      'justification_rejected',
+      'completed'
     ],
     default: 'pending_supervisor'
   },
@@ -443,6 +447,85 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
   remainingBalance: {
     type: Number,
     min: 0
+  },
+
+  justification: {
+    actualExpenses: [{
+      description: {
+        type: String,
+        required: true
+      },
+      amount: {
+        type: Number,
+        required: true,
+        min: 0
+      },
+      category: {
+        type: String,
+        required: true
+      },
+      date: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+    totalSpent: {
+      type: Number,
+      min: 0
+    },
+    changeReturned: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    justificationSummary: String,
+    receipts: [{
+      name: String,
+      publicId: String,
+      url: String,
+      localPath: String,
+      size: Number,
+      mimetype: String,
+      uploadedAt: Date,
+      uploadedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      }
+    }],
+    submittedDate: Date,
+    submittedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    status: {
+      type: String,
+      enum: ['pending_supervisor', 'pending_finance', 'approved', 'rejected'],
+      default: 'pending_supervisor'
+    },
+    supervisorReview: {
+      decision: {
+        type: String,
+        enum: ['approved', 'rejected']
+      },
+      comments: String,
+      reviewedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      reviewedDate: Date
+    },
+    financeReview: {
+      decision: {
+        type: String,
+        enum: ['approved', 'rejected']
+      },
+      comments: String,
+      reviewedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      reviewedDate: Date
+    }
   },
 
   createdAt: {

@@ -585,6 +585,29 @@ router.get('/:requisitionId/disbursements',
 );
 
 // ============================================
+// JUSTIFICATION ROUTES (BEFORE generic :requisitionId)
+// ============================================
+
+router.post(
+  '/:requisitionId/justify',
+  authMiddleware,
+  upload.array('receipts', 10),
+  purchaseRequisitionController.submitPurchaseRequisitionJustification
+);
+
+router.get(
+  '/:requisitionId/justification',
+  authMiddleware,
+  purchaseRequisitionController.getPurchaseRequisitionJustification
+);
+
+router.get(
+  '/:requisitionId/receipts/:receiptId/download',
+  authMiddleware,
+  purchaseRequisitionController.downloadJustificationReceipt
+);
+
+// ============================================
 // GENERIC ROUTES (last)
 // ============================================
 
@@ -601,6 +624,11 @@ router.put('/:requisitionId',
 router.delete('/:requisitionId',
   authMiddleware,
   purchaseRequisitionController.deleteRequisition
+);
+
+router.get('/:requisitionId', 
+  authMiddleware, 
+  purchaseRequisitionController.getEmployeeRequisition
 );
 
 module.exports = router;
