@@ -155,6 +155,16 @@ const DEPARTMENT_STRUCTURE = {
       // LEVEL 1 - Field Technicians (Joseph's Team)
       // ========================================
       'Field Technician - Boris': {
+        email: 'jules.mouna@gratoglobal.com',
+        name: 'Mr. Jules Mouna',
+        position: 'Field Technician',
+        reportsTo: 'joseph.tayou@gratoglobal.com',
+        hierarchyLevel: 1,
+        canSupervise: [],
+        approvalAuthority: 'staff',
+        allowMultipleInstances: false
+      },
+      'Field Technician - Boris': {
         email: 'kamgang.junior@gratoglobal.com',
         name: 'Mr. Boris Kamgang',
         position: 'Field Technician',
@@ -269,7 +279,7 @@ const DEPARTMENT_STRUCTURE = {
         allowMultipleInstances: false
       },
       'Field Technician - Danick': {
-        email: 'djiyap.danick@gratoglobal.com',
+        email: 'rodrigue.nono@gratoglobal.com',
         name: 'Mr. Danick Djiyap',
         position: 'Field Technician',
         reportsTo: 'felix.tientcheu@gratoglobal.com',

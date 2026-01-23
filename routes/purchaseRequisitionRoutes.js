@@ -607,6 +607,12 @@ router.get(
   purchaseRequisitionController.downloadJustificationReceipt
 );
 
+// ✅ NEW: Acknowledge disbursement receipt
+router.post('/:requisitionId/disbursements/:disbursementId/acknowledge',
+    authMiddleware,
+    purchaseRequisitionController.acknowledgeDisbursement
+);
+
 // ============================================
 // GENERIC ROUTES (last)
 // ============================================

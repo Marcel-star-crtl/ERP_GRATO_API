@@ -153,12 +153,6 @@ const UserSchema = new mongoose.Schema({
             country: { type: String, default: 'Cameroon' },
             postalCode: String
         },
-        
-        // supplierType: {
-        //     type: String,
-        //     enum: ['General', 'Supply Chain', 'HR/Admin', 'Operations', 'HSE', 'Refurbishment', 'IT Services', 'Construction' ],
-        //     required: function() { return this.role === 'supplier'; }
-        // },
         supplierType: {
             type: String,
             enum: [
@@ -171,7 +165,8 @@ const UserSchema = new mongoose.Schema({
                 'Civil Works',
                 'Rollout',
                 'Security',
-                'IT'
+                'IT',
+                'Generator Maintenance'
             ],
             required: function() { return this.role === 'supplier'; }
         },
