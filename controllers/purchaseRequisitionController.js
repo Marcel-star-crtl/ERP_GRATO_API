@@ -3778,6 +3778,111 @@ const getPaymentMethodOptions = async (req, res) => {
 // };
 
 
+// const getFinanceRequisitions = async (req, res) => {
+//   try {
+//       console.log('\n=== FETCHING FINANCE REQUISITIONS ===');
+      
+//       const user = await User.findById(req.user.userId);
+      
+//       if (!user) {
+//           return res.status(404).json({ 
+//               success: false, 
+//               message: 'User not found' 
+//           });
+//       }
+
+//       const financeEmail = user.email.toLowerCase();
+//       console.log('Finance user:', financeEmail);
+
+//       const query = {
+//           $or: [
+//               { status: 'pending_finance_verification' },
+//               {
+//                   status: 'pending_supervisor',
+//                   'approvalChain': {
+//                       $elemMatch: {
+//                           'approver.email': financeEmail,
+//                           'approver.role': { $regex: /finance/i },
+//                           'status': 'pending'
+//                       }
+//                   }
+//               },
+//               {
+//                   'financeVerification.verifiedBy': req.user.userId
+//               },
+//               {
+//                   status: { $in: ['approved', 'partially_disbursed', 'fully_disbursed'] },
+//                   'financeVerification.verifiedBy': req.user.userId
+//               }
+//           ]
+//       };
+
+//       console.log('Finance query:', JSON.stringify(query, null, 2));
+
+//       // const requisitions = await PurchaseRequisition.find(query)
+//       //     .populate('employee', 'fullName email department')
+//       //     .populate('financeVerification.verifiedBy', 'fullName email')
+//       //     .populate('disbursements.disbursedBy', 'fullName email')
+//       //     .populate('disbursements.acknowledgedBy', 'fullName email') // ✅ ADD THIS
+//       //     .sort({ createdAt: -1 })
+//       //     .lean();
+
+//       // In getFinanceRequisitions controller
+//     const requisitions = await PurchaseRequisition.find(query)
+//       .populate('employee', 'fullName email department')
+//       .populate('financeVerification.verifiedBy', 'fullName email')
+//       .populate('disbursements.disbursedBy', 'fullName email')
+//       .populate('disbursements.acknowledgedBy', 'fullName email') // ✅ CRITICAL
+//       .sort({ createdAt: -1 })
+//       .lean();
+
+//       console.log(`✅ Found ${requisitions.length} requisitions for finance`);
+
+//       // ✅ Add finance-specific flags AND disbursement info
+//       const enrichedRequisitions = requisitions.map(req => {
+//           const financeStep = req.approvalChain?.find(step => 
+//               step.approver.email.toLowerCase() === financeEmail &&
+//               step.approver.role?.toLowerCase().includes('finance')
+//           );
+
+//           const totalBudget = req.budgetXAF || 0;
+//           const totalDisbursed = req.totalDisbursed || 0;
+//           const remainingBalance = req.remainingBalance ?? (totalBudget - totalDisbursed);
+//           const disbursementProgress = totalBudget > 0 
+//               ? Math.round((totalDisbursed / totalBudget) * 100) 
+//               : 0;
+
+//           return {
+//               ...req,
+//               financeApprovalStep: financeStep,
+//               isAwaitingFinance: financeStep?.status === 'pending',
+//               financeHasActed: financeStep?.status !== 'pending',
+              
+//               totalDisbursed: totalDisbursed,
+//               remainingBalance: remainingBalance,
+//               disbursementProgress: disbursementProgress,
+//               disbursements: req.disbursements || []
+//           };
+//       });
+
+//       res.json({
+//           success: true,
+//           data: enrichedRequisitions,
+//           count: enrichedRequisitions.length,
+//           pending: enrichedRequisitions.filter(r => r.isAwaitingFinance).length
+//       });
+
+//   } catch (error) {
+//       console.error('Get finance requisitions error:', error);
+//       res.status(500).json({
+//           success: false,
+//           message: 'Failed to fetch finance requisitions',
+//           error: error.message
+//       });
+//   }
+// };
+
+
 const getFinanceRequisitions = async (req, res) => {
   try {
       console.log('\n=== FETCHING FINANCE REQUISITIONS ===');
@@ -3819,32 +3924,45 @@ const getFinanceRequisitions = async (req, res) => {
 
       console.log('Finance query:', JSON.stringify(query, null, 2));
 
+      // ✅ CRITICAL FIX: Don't use .lean() to preserve document methods
       const requisitions = await PurchaseRequisition.find(query)
           .populate('employee', 'fullName email department')
           .populate('financeVerification.verifiedBy', 'fullName email')
           .populate('disbursements.disbursedBy', 'fullName email')
-          .populate('disbursements.acknowledgedBy', 'fullName email') // ✅ ADD THIS
-          .sort({ createdAt: -1 })
-          .lean();
+          .populate('disbursements.acknowledgedBy', 'fullName email') // ✅ CRITICAL
+          .sort({ createdAt: -1 });
+          // ❌ REMOVED .lean() 
 
       console.log(`✅ Found ${requisitions.length} requisitions for finance`);
+      
+      // ✅ Log disbursement acknowledgment status for debugging
+      requisitions.forEach(req => {
+          if (req.disbursements?.length > 0) {
+              console.log(`📋 ${req.requisitionNumber}:`);
+              req.disbursements.forEach((d, i) => {
+                  console.log(`   Disbursement ${i + 1}: ${d.acknowledged ? '✅ Acknowledged' : '⏳ Pending'}`);
+              });
+          }
+      });
 
-      // ✅ Add finance-specific flags AND disbursement info
+      // ✅ Convert to plain objects and add finance-specific flags
       const enrichedRequisitions = requisitions.map(req => {
-          const financeStep = req.approvalChain?.find(step => 
+          const reqObj = req.toObject(); // ✅ Convert to plain object AFTER population
+          
+          const financeStep = reqObj.approvalChain?.find(step => 
               step.approver.email.toLowerCase() === financeEmail &&
               step.approver.role?.toLowerCase().includes('finance')
           );
 
-          const totalBudget = req.budgetXAF || 0;
-          const totalDisbursed = req.totalDisbursed || 0;
-          const remainingBalance = req.remainingBalance ?? (totalBudget - totalDisbursed);
+          const totalBudget = reqObj.budgetXAF || 0;
+          const totalDisbursed = reqObj.totalDisbursed || 0;
+          const remainingBalance = reqObj.remainingBalance ?? (totalBudget - totalDisbursed);
           const disbursementProgress = totalBudget > 0 
               ? Math.round((totalDisbursed / totalBudget) * 100) 
               : 0;
 
           return {
-              ...req,
+              ...reqObj,
               financeApprovalStep: financeStep,
               isAwaitingFinance: financeStep?.status === 'pending',
               financeHasActed: financeStep?.status !== 'pending',
@@ -3852,7 +3970,7 @@ const getFinanceRequisitions = async (req, res) => {
               totalDisbursed: totalDisbursed,
               remainingBalance: remainingBalance,
               disbursementProgress: disbursementProgress,
-              disbursements: req.disbursements || []
+              disbursements: reqObj.disbursements || []
           };
       });
 
@@ -3872,6 +3990,7 @@ const getFinanceRequisitions = async (req, res) => {
       });
   }
 };
+
 
 // NEW: Get Available Buyers
 const getAvailableBuyers = async (req, res) => {
@@ -5696,11 +5815,7 @@ const downloadJustificationReceipt = async (req, res) => {
 // };
 
 
-
-// purchaseRequisitionController.js - acknowledgeDisbursement
-// ✅ ENSURE PROPER RESPONSE STRUCTURE
-
-const acknowledgeDisbursement = async (req, res) => {
+  const acknowledgeDisbursement = async (req, res) => {
     try {
         const { requisitionId, disbursementId } = req.params;
         const { acknowledgmentNotes, acknowledgmentMethod } = req.body;
@@ -5713,7 +5828,8 @@ const acknowledgeDisbursement = async (req, res) => {
         const requisition = await PurchaseRequisition.findById(requisitionId)
             .populate('employee', 'fullName email department')
             .populate('disbursements.disbursedBy', 'fullName email')
-            .populate('disbursements.acknowledgedBy', 'fullName email'); // ✅ CRITICAL
+            .populate('disbursements.acknowledgedBy', 'fullName email'); 
+            
 
         if (!requisition) {
             return res.status(404).json({
@@ -5758,8 +5874,54 @@ const acknowledgeDisbursement = async (req, res) => {
         // ✅ SAVE CHANGES
         await requisition.save();
 
+         // Send notification to finance
+        const financeUser = await User.findById(disbursement.disbursedBy);
+        if (financeUser) {
+            await sendEmail({
+                to: financeUser.email,
+                subject: `Disbursement Acknowledged - ${requisition.requisitionNumber}`,
+                html: `
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                        <div style="background-color: #d4edda; padding: 20px; border-radius: 8px;">
+                            <h3 style="color: #155724;">✅ Disbursement Receipt Acknowledged</h3>
+                            <p>Dear ${financeUser.fullName},</p>
+                            <p>${requisition.employee.fullName} has confirmed receipt of disbursement.</p>
+                            
+                            <div style="background-color: white; padding: 15px; border-radius: 5px; margin: 15px 0;">
+                                <ul style="list-style: none; padding: 0;">
+                                    <li><strong>Requisition:</strong> ${requisition.requisitionNumber}</li>
+                                    <li><strong>Disbursement #:</strong> ${disbursement.disbursementNumber}</li>
+                                    <li><strong>Amount:</strong> XAF ${disbursement.amount.toLocaleString()}</li>
+                                    <li><strong>Receipt Method:</strong> ${acknowledgmentMethod?.replace('_', ' ').toUpperCase()}</li>
+                                    <li><strong>Acknowledged:</strong> ${new Date().toLocaleString('en-GB')}</li>
+                                </ul>
+                            </div>
+
+                            ${acknowledgmentNotes ? `
+                            <div style="background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin: 10px 0;">
+                                <p><strong>Acknowledgment Notes:</strong></p>
+                                <p style="font-style: italic;">${acknowledgmentNotes}</p>
+                            </div>
+                            ` : ''}
+
+                            <p>This confirms the money was received successfully.</p>
+                        </div>
+                    </div>
+                `
+            }).catch(err => console.error('Failed to send acknowledgment notification:', err));
+        }
+
         // ✅ RE-POPULATE after save to get fresh data
         await requisition.populate('disbursements.acknowledgedBy', 'fullName email');
+
+        res.json({
+            success: true,
+            message: 'Disbursement receipt acknowledged successfully',
+            data: {
+                disbursement: disbursement.toObject(), // ✅ Full disbursement with populated data
+                requisition: requisition.toObject()     // ✅ Full requisition
+            }
+        });
 
         console.log('✅ Disbursement acknowledged successfully');
         console.log('Updated disbursement:', {

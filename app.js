@@ -71,6 +71,7 @@ const headApprovalRoutes = require('./routes/headApproval');
 const quotationRoutes = require('./routes/quotationRoutes');
 const debitNoteRoutes = require('./routes/debitNoteRoutes');
 const projectPlanRoutes = require('./routes/projectPlanRoutes');
+const salaryPaymentRoutes = require('./routes/salaryPaymentRoutes');
 
 // Critical check for projectRoutes
 if (!projectRoutes) {
@@ -441,6 +442,15 @@ if (buyerRoutes) {
 }
 
 app.use('/api/project-plans', projectPlanRoutes);
+
+// app.use('/api/salary-payments', salaryPaymentRoutes);
+
+if (salaryPaymentRoutes) {
+  app.use('/api/salary-payments', salaryPaymentRoutes);
+  console.log('✅ Mounted: /api/salary-payments');
+} else {
+  console.error('❌ Failed to load salaryPaymentRoutes');
+}
 
 try {
   app.use('/api/hr', require('./routes/hrRoutes'));
