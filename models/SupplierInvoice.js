@@ -275,6 +275,25 @@ const supplierInvoiceSchema = new mongoose.Schema({
     enum: ['low', 'medium', 'high', 'urgent'],
     default: 'medium'
   },
+
+  allocatedBudgetCode: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'BudgetCode',
+    description: 'Budget code assigned during finance approval for payment'
+  },
+
+  allocationAmount: {
+    type: Number,
+    default: null,
+    description: 'Amount to be deducted from the allocated budget code'
+  },
+
+  paymentMethod: {
+    type: String,
+    enum: ['Bank Transfer', 'Mobile Money', 'Cash'],
+    default: 'Bank Transfer',
+    description: 'Payment method selected during finance approval'
+  },
   
   tags: [String],
   
@@ -402,10 +421,10 @@ supplierInvoiceSchema.methods.assignBySupplyChain = function(department, assigne
   this.approvalChain = chain.map(step => ({
     level: step.level,
     approver: {
-      name: step.approver,
-      email: step.email,
-      role: step.role,
-      department: step.department
+      name: step.approver.name,
+      email: step.approver.email,
+      role: step.approver.role,
+      department: step.approver.department
     },
     status: 'pending',
     activatedDate: step.level === 1 ? new Date() : null // Activate Level 1 immediately
@@ -521,36 +540,25 @@ supplierInvoiceSchema.statics.getPendingSupplyChainAssignment = function() {
 
 // Static method to get pending invoices for approver
 supplierInvoiceSchema.statics.getPendingForApprover = function(approverEmail) {
+  // Simplified query: Find invoices where:
+  // 1. The approver is in the approval chain with pending status
+  // 2. The approval chain at currentApprovalLevel matches this approver
   return this.find({
+    // Must have the approver in chain
     'approvalChain.approver.email': approverEmail,
+    // Must have a pending step in the chain
     'approvalChain.status': 'pending',
+    // Must be in an approval status
     approvalStatus: { 
       $in: [
         'pending_department_head_approval', 
         'pending_head_of_business_approval',
         'pending_finance_approval'
       ] 
-    },
-    $expr: {
-      $let: {
-        vars: {
-          currentStep: {
-            $arrayElemAt: [
-              {
-                $filter: {
-                  input: '$approvalChain',
-                  cond: { $eq: ['$$this.level', '$currentApprovalLevel'] }
-                }
-              },
-              0
-            ]
-          }
-        },
-        in: { $eq: ['$$currentStep.approver.email', approverEmail] }
-      }
     }
-  }).populate('supplier', 'supplierDetails.companyName supplierDetails.contactName email supplierDetails.supplierType')
-    .sort({ assignmentDate: -1 });
+  })
+  .populate('supplier', 'supplierDetails.companyName supplierDetails.contactName email supplierDetails.supplierType')
+  .sort({ assignmentDate: -1 });
 };
 
 // Method to send notification to current approver

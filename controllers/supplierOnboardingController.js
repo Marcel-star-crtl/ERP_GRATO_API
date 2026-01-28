@@ -1,10 +1,14 @@
 const SupplierOnboardingApplication = require('../models/SupplierOnboardingApplication');
 const User = require('../models/User');
 const { sendEmail } = require('../services/emailService');
-const { uploadFile, deleteFile } = require('../services/fileUploadService');
+const { 
+  saveFile, 
+  deleteFile, 
+  STORAGE_CATEGORIES 
+} = require('../utils/localFileStorage');
 const crypto = require('crypto');
 const path = require('path');
-const fs = require('fs');
+const fs = require('fs').promises;
 
 
 // Helper function
@@ -622,7 +626,14 @@ exports.uploadAdditionalDocuments = async (req, res) => {
 
     for (const file of req.files.documents) {
       try {
-        const uploadResult = await uploadFile(file, `supplier-documents/${applicationId}/additional`);
+        const customFilename = `${applicationId}-${documentType}-${Date.now()}${path.extname(file.originalname)}`;
+        
+        const uploadResult = await saveFile(
+          file,
+          STORAGE_CATEGORIES.SUPPLIER_DOCUMENTS,
+          applicationId,
+          customFilename
+        );
         
         const newDocument = {
           name: description || file.originalname,
@@ -638,9 +649,15 @@ exports.uploadAdditionalDocuments = async (req, res) => {
 
         application.documents.push(newDocument);
         uploadedDocs.push(newDocument);
+
+        // Delete temp file
+        await fs.unlink(file.path).catch(err => 
+          console.warn('Failed to delete temp file:', err.message)
+        );
         
       } catch (uploadError) {
         console.error('Failed to upload document:', uploadError);
+        await fs.unlink(file.path).catch(() => {});
       }
     }
 

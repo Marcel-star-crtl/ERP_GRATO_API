@@ -2,7 +2,6 @@ const SupplierInvoice = require('../models/SupplierInvoice');
 const User = require('../models/User');
 const { sendEmail } = require('../services/emailService');
 const { getSupplyChainCoordinator } = require('../config/supplierApprovalChain');
-const { cloudinary } = require('../config/cloudinary');
 const { 
   saveFile, 
   deleteFile, 
@@ -323,13 +322,18 @@ exports.assignSupplierInvoiceBySupplyChain = async (req, res) => {
   try {
     console.log('=== SUPPLY CHAIN ASSIGNING SUPPLIER INVOICE WITH SIGNED DOCUMENT (LOCAL) ===');
     const { invoiceId } = req.params;
-    const { department, comments } = req.body;
+    let { department, comments } = req.body;
     
     if (!department) {
       return res.status(400).json({
         success: false,
         message: 'Department is required'
       });
+    }
+    
+    // ✅ NORMALIZE: Convert "HR & Admin" to "HR/Admin"
+    if (department === 'HR & Admin') {
+      department = 'HR/Admin';
     }
     
     // Check if signed document is uploaded
@@ -837,7 +841,7 @@ exports.processSupplierApprovalStep = async (req, res) => {
   try {
     console.log('=== PROCESSING SUPPLIER INVOICE APPROVAL STEP (LOCAL) ===');
     const { invoiceId } = req.params;
-    const { decision, comments } = req.body;
+    const { decision, comments, budgetCode, allocationAmount, paymentMethod } = req.body;
     
     if (!decision || !['approved', 'rejected'].includes(decision)) {
       return res.status(400).json({
@@ -845,12 +849,20 @@ exports.processSupplierApprovalStep = async (req, res) => {
         message: 'Valid decision (approved/rejected) is required'
       });
     }
-    
+
     // Check if signed document is uploaded (required for approval, not for rejection)
     if (decision === 'approved' && (!req.files || !req.files.signedDocument || req.files.signedDocument.length === 0)) {
       return res.status(400).json({
         success: false,
         message: 'Signed document is required for approval. Please download, sign, and upload the invoice.'
+      });
+    }
+
+    // Finance level must have budget code for approval
+    if (decision === 'approved' && budgetCode === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Budget code is required for payment processing'
       });
     }
     
@@ -943,6 +955,18 @@ exports.processSupplierApprovalStep = async (req, res) => {
     if (signedDocData) {
       processedStep.signedDocument = signedDocData;
     }
+
+    // Assign budget code and payment method if at finance level
+    if (decision === 'approved' && invoice.currentApprovalLevel === 3 && budgetCode) {
+      invoice.allocatedBudgetCode = budgetCode;
+      invoice.allocationAmount = allocationAmount ? parseFloat(allocationAmount) : invoice.invoiceAmount;
+      if (paymentMethod) {
+        invoice.paymentMethod = paymentMethod;
+      }
+      console.log(`✓ Budget code assigned: ${budgetCode}`);
+      console.log(`✓ Allocation amount: ${invoice.allocationAmount}`);
+      console.log(`✓ Payment method: ${paymentMethod}`);
+    }
     
     await invoice.save();
     
@@ -1026,8 +1050,7 @@ exports.getSupplierInvoiceDetails = async (req, res) => {
     const invoice = await SupplierInvoice.findById(invoiceId)
       .populate('supplier', 'supplierDetails email')
       .populate('assignedBy', 'fullName email')
-      .populate('approvalChain.approver.userId', 'fullName email')
-      .populate('financeReview.reviewedBy', 'fullName email');
+      .populate('approvalChain.approver.userId', 'fullName email');
     
     if (!invoice) {
       return res.status(404).json({
@@ -1567,19 +1590,53 @@ exports.getPendingSupplierApprovalsForUser = async (req, res) => {
     
     console.log('Fetching pending supplier approvals for:', user.email);
     
-    // Get supplier invoices where this user is the current active approver
-    const pendingInvoices = await SupplierInvoice.getPendingForApprover(user.email);
+    // Get supplier invoices where this user appears in the pending approval chain
+    let pendingInvoices = await SupplierInvoice.getPendingForApprover(user.email);
     
-    console.log(`Found ${pendingInvoices.length} pending supplier invoices for ${user.email}`);
+    console.log(`Found ${pendingInvoices.length} total invoices with ${user.email} in approval chain`);
+    
+    // Filter to only invoices where user is the CURRENT approver at currentApprovalLevel
+    pendingInvoices = pendingInvoices.filter(invoice => {
+      if (!invoice.approvalChain || !Array.isArray(invoice.approvalChain)) {
+        return false;
+      }
+      
+      // Find the current approval step
+      const currentStep = invoice.approvalChain.find(step => step.level === invoice.currentApprovalLevel);
+      
+      // Check if user is the current approver
+      return currentStep && currentStep.approver && currentStep.approver.email === user.email;
+    });
+    
+    console.log(`Filtered to ${pendingInvoices.length} invoices where ${user.email} is current approver`);
     
     // Add additional details for each invoice
-    const invoicesWithDetails = pendingInvoices.map(invoice => ({
-      ...invoice.toObject(),
-      currentApprover: invoice.getCurrentApprover(),
-      approvalProgress: invoice.approvalProgress,
-      canUserApprove: invoice.canUserApprove(user.email),
-      daysUntilDue: invoice.daysUntilDue
-    }));
+    const invoicesWithDetails = pendingInvoices.map(invoice => {
+      // For lean objects, manually construct the response
+      const currentStep = invoice.approvalChain?.find(s => s.level === invoice.currentApprovalLevel);
+      
+      return {
+        _id: invoice._id,
+        invoiceNumber: invoice.invoiceNumber,
+        poNumber: invoice.poNumber,
+        invoiceAmount: invoice.invoiceAmount,
+        currency: invoice.currency,
+        serviceCategory: invoice.serviceCategory,
+        assignedDepartment: invoice.assignedDepartment,
+        approvalStatus: invoice.approvalStatus,
+        currentApprovalLevel: invoice.currentApprovalLevel,
+        supplier: invoice.supplier,
+        approvalChain: invoice.approvalChain,
+        assignmentDate: invoice.assignmentDate,
+        createdAt: invoice.createdAt,
+        currentApprover: currentStep?.approver || null,
+        approvalProgress: {
+          current: invoice.currentApprovalLevel,
+          total: invoice.approvalChain?.length || 0
+        },
+        canUserApprove: currentStep?.approver?.email === user.email
+      };
+    });
     
     res.json({
       success: true,
@@ -1595,7 +1652,8 @@ exports.getPendingSupplierApprovalsForUser = async (req, res) => {
     console.error('Error fetching pending supplier approvals:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch pending supplier approvals'
+      message: 'Failed to fetch pending supplier approvals',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -1615,7 +1673,7 @@ exports.processSupplierInvoicePayment = async (req, res) => {
     } = req.body;
     
     const invoice = await SupplierInvoice.findById(invoiceId)
-      .populate('supplier', 'supplierDetails email');
+      .populate('supplier', 'email fullName');
     
     if (!invoice) {
       return res.status(404).json({
@@ -1659,16 +1717,17 @@ exports.processSupplierInvoicePayment = async (req, res) => {
     
     await invoice.save();
     
-    // Notify supplier of payment
-    if (invoice.supplier.email) {
+    // Notify supplier of payment - use supplierDetails email or supplier email
+    const supplierEmail = invoice.supplierDetails?.email || invoice.supplier?.email;
+    if (supplierEmail) {
       await sendEmail({
-        to: invoice.supplier.email,
+        to: supplierEmail,
         subject: `Payment Processed - Invoice ${invoice.invoiceNumber}`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             <div style="background-color: #d4edda; padding: 20px; border-radius: 8px;">
               <h2>Payment Processed Successfully</h2>
-              <p>Dear ${invoice.supplierDetails.contactName},</p>
+              <p>Dear ${invoice.supplierDetails?.contactName || invoice.supplier?.fullName},</p>
               <p>Your invoice payment has been processed successfully.</p>
               
               <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0;">

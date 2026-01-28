@@ -4,52 +4,49 @@ const { DEPARTMENT_STRUCTURE } = require('./departmentStructure');
 
 /**
  * Get supplier approval chain with 3-level hierarchy:
- * 1. Supply Chain Coordinator - initial review and verification
+ * 1. Department Head of assigned department
  * 2. Head of Business - executive approval
  * 3. Finance - final approval and activation
  */
-const getSupplierApprovalChain = (supplierType = 'General') => {
+const getSupplierApprovalChain = (departmentName = 'General') => {
   const chain = [];
   
-  console.log(`Getting supplier approval chain for type: ${supplierType}`);
+  console.log(`Getting supplier approval chain for department: ${departmentName}`);
 
-  // Level 1: Supply Chain Coordinator
-  const supplyChain = DEPARTMENT_STRUCTURE['Business Development & Supply Chain'];
-  if (supplyChain && supplyChain.positions['Supply Chain Coordinator']) {
-    const coordinator = supplyChain.positions['Supply Chain Coordinator'];
+  // Level 1: Department Head of the assigned department
+  // Normalize the department name to match the structure
+  let dept = departmentName;
+  if (departmentName === 'HR/Admin') {
+    dept = 'HR & Admin';
+  }
+
+  const assignedDept = DEPARTMENT_STRUCTURE[dept];
+  if (assignedDept && assignedDept.head) {
+    const deptHead = assignedDept.head;
     chain.push({
       level: 1,
       approver: {
-        name: coordinator.name,
-        email: coordinator.email,
-        role: 'Supply Chain Coordinator',
-        department: 'Business Development & Supply Chain'
+        name: deptHead.name,
+        email: deptHead.email,
+        role: `${dept} Head`,
+        department: dept
       },
       status: 'pending',
       assignedDate: new Date()
     });
   }
 
-  // Level 2: Head of Business (President)
-  const executive = DEPARTMENT_STRUCTURE['Business Development & Supply Chain'];
-  if (executive) {
-    let executiveHead, executiveEmail;
-    
-    if (typeof executive.head === 'object' && executive.head !== null) {
-      executiveHead = executive.head.name;
-      executiveEmail = executive.head.email;
-    } else {
-      executiveHead = executive.head;
-      executiveEmail = executive.headEmail;
-    }
-    
+  // Level 2: Head of Business (President/Executive)
+  const executive = DEPARTMENT_STRUCTURE['IT'];
+  if (executive && executive.head) {
+    const headOfBusiness = executive.head;
     chain.push({
       level: 2,
       approver: {
-        name: executiveHead,
-        email: executiveEmail,
+        name: headOfBusiness.name,
+        email: headOfBusiness.email,
         role: 'Head of Business',
-        department: 'Business Development & Supply Chain'
+        department: 'IT'
       },
       status: 'pending',
       assignedDate: new Date()
@@ -63,7 +60,7 @@ const getSupplierApprovalChain = (supplierType = 'General') => {
       name: 'Ms. Rambell Mambo',
       email: 'ranibellmambo@gratoengineering.com',
       role: 'Finance Officer',
-      department: 'Business Development & Supply Chain'
+      department: 'Finance'
     },
     status: 'pending',
     assignedDate: new Date()
@@ -238,13 +235,26 @@ const getSupplierApprovalStats = (suppliers) => {
   return stats;
 };
 
+/**
+ * Get Supply Chain Coordinator info
+ */
+const getSupplyChainCoordinator = () => {
+  return {
+    name: 'Mr. Lukong Lambert',
+    email: 'lukong.lambert@gratoglobal.com',
+    role: 'Supply Chain Coordinator',
+    department: 'Business Development & Supply Chain'
+  };
+};
+
 module.exports = {
   getSupplierApprovalChain,
   getNextSupplierStatus,
   getUserSupplierApprovalLevel,
   canUserApproveSupplier,
   validateSupplierApproval,
-  getSupplierApprovalStats
+  getSupplierApprovalStats,
+  getSupplyChainCoordinator
 };
 
 

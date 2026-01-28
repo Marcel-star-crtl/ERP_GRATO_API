@@ -2,6 +2,7 @@ const SalaryPayment = require('../models/SalaryPayment');
 const BudgetCode = require('../models/BudgetCode');
 const { saveFile, STORAGE_CATEGORIES } = require('../utils/localFileStorage'); // ✅ Use local storage
 const fs = require('fs');
+const path = require('path');
 
 const createSalaryPayment = async (req, res) => {
   try {
@@ -235,11 +236,64 @@ const getDashboardStats = async (req, res) => {
   }
 };
 
+const downloadDocument = async (req, res) => {
+  try {
+    const { id, documentIndex } = req.params;
+    
+    const salaryPayment = await SalaryPayment.findById(id);
+    
+    if (!salaryPayment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Salary payment not found'
+      });
+    }
+    
+    const document = salaryPayment.supportingDocuments[parseInt(documentIndex)];
+    
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        message: 'Document not found'
+      });
+    }
+    
+    // Get file path
+    const filePath = path.join(process.cwd(), document.url);
+    
+    // Check if file exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'File not found on server'
+      });
+    }
+    
+    // Set headers
+    res.setHeader('Content-Type', document.mimetype);
+    res.setHeader('Content-Disposition', `attachment; filename="${document.name}"`);
+    
+    // Stream file
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+    
+  } catch (error) {
+    console.error('Download document error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to download document',
+      error: error.message
+    });
+  }
+};
+
+
 module.exports = {
   createSalaryPayment,
   getAllSalaryPayments,
   getSalaryPaymentById,
-  getDashboardStats
+  getDashboardStats,
+  downloadDocument 
 };
 
 

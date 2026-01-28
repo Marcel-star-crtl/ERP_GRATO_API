@@ -17,5 +17,6 @@ router.post(
 router.get('/', salaryPaymentController.getAllSalaryPayments);
 router.get('/dashboard-stats', salaryPaymentController.getDashboardStats);
 router.get('/:id', salaryPaymentController.getSalaryPaymentById);
+router.get('/:id/documents/:documentIndex/download', salaryPaymentController.downloadDocument);
 
 module.exports = router;

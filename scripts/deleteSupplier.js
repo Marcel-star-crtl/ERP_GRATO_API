@@ -2,14 +2,19 @@
 const mongoose = require('mongoose');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 
 require('dotenv').config();
 
-// Specify the supplier application to delete
+// ACTION: 'delete' or 'changePassword'
+const ACTION = process.env.SCRIPT_ACTION || 'changePassword';
+
+// Specify the supplier application / user to target
 const SUPPLIER_IDENTIFIER = {
-  email: 'kenservicesarl@gmail.com',
-  // Or use: applicationId: 'APP-1768997713134-LN3I85MYV',
-  // Or use: _id: '6970c351557df1563d9a4dfc',
+  // Set the supplier email or _id here
+  email: 'marcelngong50@gmail.com',
+  // Or: _id: '6970df46473211b313cd729c'
 };
 
 /**
@@ -30,6 +35,9 @@ function deleteFile(filePath) {
     return false;
   }
 }
+
+// Invoke the script
+deleteSupplierApplication();
 
 /**
  * Delete supplier documents from filesystem
@@ -199,6 +207,38 @@ async function deleteSupplierApplication() {
     // Wait 5 seconds before proceeding
     await new Promise(resolve => setTimeout(resolve, 5000));
 
+    // Obtain collection reference
+    const collection = mongoose.connection.db.collection(collectionName);
+
+    if (ACTION === 'changePassword') {
+      console.log('\n🔐 Changing password for user...');
+
+      // Generate a new temporary password (16 hex chars)
+      const newPassword = crypto.randomBytes(8).toString('hex');
+      const saltRounds = 12;
+      const hashed = await bcrypt.hash(newPassword, saltRounds);
+
+      const updateResult = await collection.updateOne({ _id: supplier._id }, { $set: { password: hashed } });
+
+      if (updateResult.matchedCount === 0) {
+        console.error('❌ Failed to find the user for password update.');
+        process.exit(1);
+      }
+
+      if (updateResult.modifiedCount === 0) {
+        console.warn('⚠️  Password update did not modify the document (it may already have that password).');
+      }
+
+      console.log('\n✅ Password updated successfully.');
+      console.log('--- NEW CREDENTIALS ---');
+      console.log(`Email: ${supplier.email}`);
+      console.log(`New Password: ${newPassword}`);
+      console.log('----------------------');
+
+      process.exit(0);
+    }
+
+    // Default action: delete (existing behavior)
     // Delete documents from filesystem
     if (supplier.documents) {
       deleteSupplierDocuments(supplier.documents);
@@ -206,7 +246,6 @@ async function deleteSupplierApplication() {
 
     // Delete supplier from database
     console.log('\n🗑️  Deleting supplier application from database...');
-    const collection = mongoose.connection.db.collection(collectionName);
     await collection.deleteOne({ _id: supplier._id });
 
     console.log('\n' + '='.repeat(60));
