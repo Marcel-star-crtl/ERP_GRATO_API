@@ -28,22 +28,36 @@ const getPendingHeadApprovals = async (req, res) => {
     
     switch (tab) {
       case 'pending':
-        query.status = 'pending_head_approval';
+        query.status = { $in: ['pending_head_approval', 'justification_pending_head'] };
         break;
       case 'approved':
-        query.status = 'approved';
-        query['headApproval.decision'] = 'approved';
+        query.status = { $in: ['approved', 'justification_approved'] };
+        query.$or = [
+          { 'headApproval.decision': 'approved' },
+          { 'justification.headReview.decision': 'approved' }
+        ];
         break;
       case 'rejected':
-        query['headApproval.decision'] = 'rejected';
+        query.status = { $in: ['rejected', 'justification_rejected'] };
+        query.$or = [
+          { 'headApproval.decision': 'rejected' },
+          { 'justification.headReview.decision': 'rejected' }
+        ];
         break;
       case 'all':
         query.status = { 
-          $in: ['pending_head_approval', 'approved', 'rejected'] 
+          $in: [
+            'pending_head_approval',
+            'justification_pending_head',
+            'approved',
+            'justification_approved',
+            'rejected',
+            'justification_rejected'
+          ] 
         };
         break;
       default:
-        query.status = 'pending_head_approval';
+        query.status = { $in: ['pending_head_approval', 'justification_pending_head'] };
     }
     
     // Apply additional status filter if provided
@@ -130,7 +144,7 @@ const getHeadApprovalStats = async (req, res) => {
     
     // Get pending count
     const pending = await PurchaseRequisition.countDocuments({
-      status: 'pending_head_approval'
+      status: { $in: ['pending_head_approval', 'justification_pending_head'] }
     });
     
     // Get approved today
@@ -138,8 +152,16 @@ const getHeadApprovalStats = async (req, res) => {
     startOfDay.setHours(0, 0, 0, 0);
     
     const approvedToday = await PurchaseRequisition.countDocuments({
-      'headApproval.decision': 'approved',
-      'headApproval.decisionDate': { $gte: startOfDay }
+      $or: [
+        {
+          'headApproval.decision': 'approved',
+          'headApproval.decisionDate': { $gte: startOfDay }
+        },
+        {
+          'justification.headReview.decision': 'approved',
+          'justification.headReview.reviewedDate': { $gte: startOfDay }
+        }
+      ]
     });
     
     // Get total pending value
@@ -314,6 +336,33 @@ const processHeadApproval = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'Requisition not found'
+      });
+    }
+
+    // ✅ Justification approval flow (Head)
+    if (requisition.status === 'justification_pending_head') {
+      requisition.justification = requisition.justification || {};
+      requisition.justification.headReview = {
+        decision: decision === 'approved' ? 'approved' : 'rejected',
+        comments,
+        reviewedDate: new Date(),
+        reviewedBy: req.user.userId
+      };
+
+      if (decision === 'approved') {
+        requisition.status = 'justification_approved';
+        requisition.justification.status = 'approved';
+      } else {
+        requisition.status = 'justification_rejected';
+        requisition.justification.status = 'rejected';
+      }
+
+      await requisition.save();
+
+      return res.json({
+        success: true,
+        message: `Justification ${decision}`,
+        data: requisition
       });
     }
     

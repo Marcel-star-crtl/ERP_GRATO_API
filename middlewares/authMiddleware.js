@@ -86,7 +86,11 @@ exports.requireRoles = (...roles) => {
     console.log('Checking roles:', { 
       requiredRoles: roles, 
       userRole: req.user?.role,
-      userId: req.user?.userId 
+      userId: req.user?.userId,
+      roleIncludes: roles.includes(req.user?.role),
+      rolesArray: Array.isArray(roles),
+      roleType: typeof req.user?.role,
+      roleLength: req.user?.role?.length
     });
     
     // Check if req.user exists

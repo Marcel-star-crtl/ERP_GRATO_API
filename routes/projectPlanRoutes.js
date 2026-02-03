@@ -55,6 +55,21 @@ router.post(
 router.put('/:id', authMiddleware, projectPlanController.updateProjectPlan);
 router.delete('/:id', authMiddleware, projectPlanController.deleteProjectPlan);
 
+// Completion item tracking (BEFORE /:id GET route)
+router.post(
+  '/:planId/completion-items/:itemId/complete',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'project'),
+  projectPlanController.markCompletionItemComplete
+);
+
+router.post(
+  '/:planId/completion-items/:itemId/uncomplete',
+  authMiddleware,
+  requireRoles('admin', 'supply_chain', 'project'),
+  projectPlanController.unmarkCompletionItemComplete
+);
+
 // ========================================
 // Dynamic Routes - MUST BE LAST
 // ========================================

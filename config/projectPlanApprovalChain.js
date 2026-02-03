@@ -3,9 +3,10 @@
 const { DEPARTMENT_STRUCTURE } = require('./departmentStructure');
 
 /**
- * Get Project Plan approval chain (2 levels):
+ * Get Project Plan approval chain (3 levels):
  * Level 1: Project Coordinator (Christabel Mangwi)
- * Level 2: Head of Business (Kelvin Eyong)
+ * Level 2: Supply Chain Coordinator (Lukong Lambert)
+ * Level 3: Head of Business (Kelvin Eyong)
  */
 const getProjectPlanApprovalChain = (department) => {
   console.log(`\n=== BUILDING PROJECT PLAN APPROVAL CHAIN ===`);
@@ -34,11 +35,30 @@ const getProjectPlanApprovalChain = (department) => {
   
   console.log(`✓ Level 1: ${projectCoordinator.name} (Project Coordinator) - ${projectCoordinator.email}`);
   
-  // Level 2: Head of Business (Kelvin Eyong) - ALWAYS LAST
-  const headOfBusiness = DEPARTMENT_STRUCTURE['Business Development & Supply Chain'].head;
-  
+  // Level 2: Supply Chain Coordinator (Lukong Lambert)
+  const supplyChainCoordinator = DEPARTMENT_STRUCTURE['Business Development & Supply Chain']?.positions?.['Supply Chain Coordinator'] || {
+    name: 'Mr. Lukong Lambert',
+    email: 'lukong.lambert@gratoglobal.com',
+    department: 'Business Development & Supply Chain'
+  };
+
   chain.push({
     level: 2,
+    approver: supplyChainCoordinator.name,
+    email: supplyChainCoordinator.email,
+    role: 'Supply Chain Coordinator',
+    department: supplyChainCoordinator.department || 'Business Development & Supply Chain',
+    status: 'pending',
+    assignedDate: new Date()
+  });
+
+  console.log(`✓ Level 2: ${supplyChainCoordinator.name} (Supply Chain Coordinator) - ${supplyChainCoordinator.email}`);
+
+  // Level 3: Head of Business (Kelvin Eyong) - ALWAYS LAST
+  const headOfBusiness = DEPARTMENT_STRUCTURE['Business Development & Supply Chain'].head;
+
+  chain.push({
+    level: 3,
     approver: headOfBusiness.name,
     email: headOfBusiness.email,
     role: 'Head of Business',
@@ -46,11 +66,11 @@ const getProjectPlanApprovalChain = (department) => {
     status: 'pending',
     assignedDate: new Date()
   });
-  
-  console.log(`✓ Level 2: ${headOfBusiness.name} (Head of Business) - ${headOfBusiness.email}`);
+
+  console.log(`✓ Level 3: ${headOfBusiness.name} (Head of Business) - ${headOfBusiness.email}`);
   
   const finalChain = chain.map(s => `L${s.level}: ${s.approver} (${s.role})`).join(' → ');
-  console.log(`\n✅ Final Chain (2 levels): ${finalChain}`);
+  console.log(`\n✅ Final Chain (3 levels): ${finalChain}`);
   console.log('=== END PROJECT PLAN APPROVAL CHAIN ===\n');
   
   return chain;
@@ -64,6 +84,28 @@ const getProjectCoordinator = () => {
     name: 'Ms. Christabel Mangwi',
     email: 'christabel@gratoengineering.com',
     role: 'Project Coordinator',
+    department: 'Business Development & Supply Chain'
+  };
+};
+
+/**
+ * Get Supply Chain Coordinator details
+ */
+const getSupplyChainCoordinator = () => {
+  const coordinator = DEPARTMENT_STRUCTURE['Business Development & Supply Chain']?.positions?.['Supply Chain Coordinator'];
+  if (coordinator) {
+    return {
+      name: coordinator.name,
+      email: coordinator.email,
+      role: 'Supply Chain Coordinator',
+      department: 'Business Development & Supply Chain'
+    };
+  }
+
+  return {
+    name: 'Mr. Lukong Lambert',
+    email: 'lukong.lambert@gratoglobal.com',
+    role: 'Supply Chain Coordinator',
     department: 'Business Development & Supply Chain'
   };
 };
@@ -86,6 +128,7 @@ const getHeadOfBusiness = () => {
  */
 const canApproveProjectPlan = (userEmail, level) => {
   const projectCoordinator = getProjectCoordinator();
+  const supplyChainCoordinator = getSupplyChainCoordinator();
   const headOfBusiness = getHeadOfBusiness();
   
   if (level === 1) {
@@ -93,6 +136,10 @@ const canApproveProjectPlan = (userEmail, level) => {
   }
   
   if (level === 2) {
+    return userEmail === supplyChainCoordinator.email;
+  }
+
+  if (level === 3) {
     return userEmail === headOfBusiness.email;
   }
   
@@ -186,6 +233,7 @@ const getApprovalProgress = (approvalChain) => {
 module.exports = {
   getProjectPlanApprovalChain,
   getProjectCoordinator,
+  getSupplyChainCoordinator,
   getHeadOfBusiness,
   canApproveProjectPlan,
   getCurrentApprover,

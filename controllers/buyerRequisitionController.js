@@ -11,7 +11,7 @@ const { sendBuyerNotificationEmail } = require('../services/buyerEmailService');
 // Get purchase requisitions assigned to buyer
 const getAssignedRequisitions = async (req, res) => {
     try {
-      const { status, sourcingStatus, page = 1, limit = 20, search } = req.query;
+      const { status, sourcingStatus, page = 1, limit = 20, search, justified } = req.query;
       
       console.log('=== BUYER - GET ASSIGNED REQUISITIONS ===');
       console.log('User ID:', req.user.userId);
@@ -45,8 +45,19 @@ const getAssignedRequisitions = async (req, res) => {
         });
       }
       
-      // FIXED: Handle both status and sourcingStatus filters
-      if (status) {
+      // FIXED: Handle justified filter first
+      if (justified === 'true') {
+        query.status = {
+          $in: [
+            'justification_pending_supervisor',
+            'justification_pending_finance',
+            'justification_pending_supply_chain',
+            'justification_pending_head',
+            'justification_rejected',
+            'justification_approved'
+          ]
+        };
+      } else if (status) {
         query.status = status;
       } else if (sourcingStatus) {
         // Map frontend sourcingStatus to backend status
@@ -69,7 +80,13 @@ const getAssignedRequisitions = async (req, res) => {
             'in_procurement',
             'quotes_received',
             'procurement_complete',
-            'delivered'
+            'delivered',
+            'justification_pending_supervisor',
+            'justification_pending_finance',
+            'justification_pending_supply_chain',
+            'justification_pending_head',
+            'justification_rejected',
+            'justification_approved'
           ]
         };
       }
@@ -158,7 +175,14 @@ const mapBackendStatusToFrontend = (backendStatus) => {
       'in_procurement': 'in_progress',
       'quotes_received': 'quotes_received',
       'procurement_complete': 'completed',
-      'delivered': 'completed'
+      'delivered': 'completed',
+      'justification_pending_supervisor': 'justified',
+      'justification_pending_finance': 'justified',
+      'justification_pending_supply_chain': 'justified',
+      'justification_pending_head': 'justified',
+      'justification_rejected': 'justified',
+      'justification_approved': 'justified',
+      'completed': 'completed'
     };
     
     return statusMapping[backendStatus] || 'pending_sourcing';
@@ -175,7 +199,6 @@ const getRequisitionDetails = async (req, res) => {
       const requisition = await PurchaseRequisition.findById(requisitionId)
         .populate('employee', 'fullName email department')
         .populate('supplyChainReview.assignedBuyer', 'fullName email role')
-        .populate('procurementDetails.rfqId')
         .populate('procurementDetails.assignedOfficer', 'fullName email');
       
       if (!requisition) {
@@ -2511,8 +2534,7 @@ const getPettyCashForms = async (req, res) => {
     let query = {
       'supplyChainReview.assignedBuyer': req.user.userId,
       'paymentMethod': 'cash',
-      'pettyCashForm.generated': true,
-      'status': 'approved' // Only show approved requisitions
+      'pettyCashForm.generated': true
     };
     
     if (status) {
@@ -2903,6 +2925,71 @@ const getPettyCashStats = async (req, res) => {
   }
 };
 
+// ✅ NEW: Buyer adds/updates purchase justification
+const updatePurchaseJustification = async (req, res) => {
+  try {
+    const { requisitionId } = req.params;
+    const { justificationOfPurchase, justificationOfPreferredSupplier } = req.body;
+    const buyerId = req.user.userId;
+
+    console.log('=== BUYER UPDATE JUSTIFICATION ===');
+    console.log('Requisition ID:', requisitionId);
+    console.log('Buyer ID:', buyerId);
+
+    // Validate input
+    if (!justificationOfPurchase || justificationOfPurchase.trim().length < 20) {
+      return res.status(400).json({
+        success: false,
+        message: 'Purchase justification must be at least 20 characters'
+      });
+    }
+
+    // Find requisition
+    const requisition = await PurchaseRequisition.findById(requisitionId);
+    if (!requisition) {
+      return res.status(404).json({
+        success: false,
+        message: 'Requisition not found'
+      });
+    }
+
+    // Verify the requester is the assigned buyer
+    if (!requisition.supplyChainReview?.assignedBuyer?.equals(buyerId)) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not the assigned buyer for this requisition'
+      });
+    }
+
+    // Update justification fields
+    requisition.justificationOfPurchase = justificationOfPurchase.trim();
+    if (justificationOfPreferredSupplier) {
+      requisition.justificationOfPreferredSupplier = justificationOfPreferredSupplier.trim();
+    }
+
+    await requisition.save();
+
+    console.log('✅ Justification updated successfully');
+
+    res.json({
+      success: true,
+      message: 'Justification updated successfully',
+      data: {
+        justificationOfPurchase: requisition.justificationOfPurchase,
+        justificationOfPreferredSupplier: requisition.justificationOfPreferredSupplier
+      }
+    });
+
+  } catch (error) {
+    console.error('Update justification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update justification',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
     getAssignedRequisitions,
     getRequisitionDetails,
@@ -2920,6 +3007,7 @@ module.exports = {
     getPettyCashFormDetails,
     downloadPettyCashFormPDF,
     getPettyCashStats,
+    updatePurchaseJustification,  // ✅ NEW: Buyer can add/update justification
     
     // Placeholder implementations for missing functions
     evaluateQuote: async (req, res) => {

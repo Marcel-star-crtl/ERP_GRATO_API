@@ -18,7 +18,9 @@ const {
   getBudgetRevisions,
   approveBudgetRevision,
   rejectBudgetRevision,
-  getPendingRevisions
+  getPendingRevisions,
+  getBudgetCodeUsageTracking,
+  getDepartmentBudgetDashboard
 } = require('../controllers/budgetCodeController');
 
 // ============================================
@@ -35,6 +37,17 @@ router.get(
   authMiddleware,
   requireRoles('finance', 'admin'),
   getBudgetDashboard
+);
+
+/**
+ * @route   GET /api/budget-codes/department/dashboard
+ * @desc    Get department-specific budget dashboard for department heads
+ * @access  Private (All authenticated users - filtered by department)
+ */
+router.get(
+  '/department/dashboard',
+  authMiddleware,
+  getDepartmentBudgetDashboard
 );
 
 /**
@@ -338,6 +351,17 @@ router.get(
   authMiddleware,
   requireRoles('employee', 'finance', 'admin', 'buyer', 'hr', 'supply_chain', 'technical', 'hse', 'supplier', 'it', 'project'),
   getBudgetCodeUtilization
+);
+
+/**
+ * @route   GET /api/budget-codes/:codeId/usage-tracking
+ * @desc    Get detailed usage tracking for budget code (shows where it's used across system)
+ * @access  Private (All authenticated users - filtered by department in controller)
+ */
+router.get(
+  '/:codeId/usage-tracking',
+  authMiddleware,
+  getBudgetCodeUsageTracking
 );
 
 /**

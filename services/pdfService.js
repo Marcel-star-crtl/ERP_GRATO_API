@@ -504,7 +504,8 @@ class PDFService {
   drawFooter(doc, poData, pageNum, totalPages) {
     doc.save(); // Save state before drawing footer
     
-    const footerY = doc.page.height - 80;
+    const footerBlockHeight = 60;
+    const footerY = doc.page.height - this.pageMargins.bottom - footerBlockHeight;
     
     // Horizontal line
     doc.strokeColor('#CCCCCC')
@@ -521,11 +522,15 @@ class PDFService {
     // Registration and page number
     doc.text('RC/DLA/2014/B/2690 NIU: M061421030521 Access Bank Cameroon PLC 10041000010010130003616', 40, footerY + 8, {
       width: 470,
+      height: 10,
+      lineBreak: false,
+      ellipsis: true,
       continued: false
     });
     
     doc.text(`Page ${pageNum} / ${totalPages}`, 520, footerY + 8, {
       width: 35,
+      height: 10,
       align: 'right',
       continued: false
     });
@@ -533,16 +538,25 @@ class PDFService {
     // Contact information
     doc.text('679586444 info@gratoengineering.com www.gratoengineering.com', 40, footerY + 20, {
       width: 515,
+      height: 10,
+      lineBreak: false,
+      ellipsis: true,
       continued: false
     });
     
     doc.text('Location: Bonaberi-Douala, beside Santa', 40, footerY + 32, {
       width: 515,
+      height: 10,
+      lineBreak: false,
+      ellipsis: true,
       continued: false
     });
     
     doc.text('Lucia Telecommunications, Civil, Electrical and Mechanical Engineering Services.', 40, footerY + 44, {
       width: 515,
+      height: 10,
+      lineBreak: false,
+      ellipsis: true,
       continued: false
     });
     
@@ -1585,6 +1599,7 @@ async generatePettyCashFormPDF(formData, outputPath) {
       const doc = new PDFDocument({ 
         size: 'A4', 
         margins: this.pageMargins,
+        bufferPages: true,
         info: {
           Title: `Petty Cash Form - ${formData.displayId}`,
           Author: 'GRATO ENGINEERING GLOBAL LTD',
@@ -1596,6 +1611,11 @@ async generatePettyCashFormPDF(formData, outputPath) {
       if (outputPath) {
         doc.pipe(fs.createWriteStream(outputPath));
       }
+
+      doc.on('pageAdded', () => {
+        const range = doc.bufferedPageRange();
+        console.log('🧾 Page added (petty cash). Buffered pages:', range.count);
+      });
 
       const chunks = [];
       doc.on('data', chunk => chunks.push(chunk));
@@ -1609,7 +1629,12 @@ async generatePettyCashFormPDF(formData, outputPath) {
         });
       });
 
-      this.generateCashRequestContent(doc, formData);
+      const totalPages = this.generateCashRequestContent(doc, formData);
+      const preTrim = doc.bufferedPageRange();
+      console.log('🧾 Pre-trim buffered pages (petty cash):', preTrim);
+      this.trimBufferedPages(doc, totalPages);
+      const postTrim = doc.bufferedPageRange();
+      console.log('🧾 Post-trim buffered pages (petty cash):', postTrim);
       doc.end();
     } catch (error) {
       console.error('Petty Cash Form PDF generation error:', error);
@@ -1634,6 +1659,7 @@ async generatePettyCashFormPDF(formData, outputPath) {
         const doc = new PDFDocument({ 
           size: 'A4', 
           margins: this.pageMargins,
+          bufferPages: true,
           info: {
             Title: `Cash Request - ${requestData.displayId || requestData._id}`,
             Author: 'GRATO ENGINEERING GLOBAL LTD',
@@ -1645,6 +1671,17 @@ async generatePettyCashFormPDF(formData, outputPath) {
         if (outputPath) {
           doc.pipe(fs.createWriteStream(outputPath));
         }
+
+        doc.on('pageAdded', () => {
+          const range = doc.bufferedPageRange();
+          const stack = new Error().stack.split('\n')[2];
+          console.log(`🧾 Page added (cash request). Buffered pages: ${range.count} | Source: ${stack?.trim()}`);
+        });
+
+        doc.on('pageBreak', (intentional) => {
+          const range = doc.bufferedPageRange();
+          console.log(`🛑 PageBreak event (intentional: ${intentional}). Buffered pages: ${range.count}`);
+        });
 
         const chunks = [];
         doc.on('data', chunk => chunks.push(chunk));
@@ -1658,7 +1695,12 @@ async generatePettyCashFormPDF(formData, outputPath) {
           });
         });
 
-        this.generateCashRequestContent(doc, requestData);
+        const totalPages = this.generateCashRequestContent(doc, requestData);
+        const preTrim = doc.bufferedPageRange();
+        console.log('🧾 Pre-trim buffered pages (cash request):', preTrim);
+        this.trimBufferedPages(doc, totalPages);
+        const postTrim = doc.bufferedPageRange();
+        console.log('🧾 Post-trim buffered pages (cash request):', postTrim);
         doc.end();
       } catch (error) {
         console.error('Cash Request PDF generation error:', error);
@@ -1763,6 +1805,12 @@ async generatePettyCashFormPDF(formData, outputPath) {
   generateCashRequestContent(doc, data) {
   let yPos = 50;
   let currentPage = 1;
+  const addPageAndReset = (reason) => {
+    doc.addPage();
+    currentPage++;
+    yPos = 50;
+    console.log(`🧾 Manual page break: ${reason}. Now on page ${currentPage}`);
+  };
 
   console.log('=== STARTING CASH REQUEST PDF GENERATION ===');
   console.log('Form Number:', data.displayId);
@@ -1787,9 +1835,7 @@ async generatePettyCashFormPDF(formData, outputPath) {
 
   // Check page break before items table
   if (yPos > 650) {
-    doc.addPage();
-    currentPage++;
-    yPos = 50;
+    addPageAndReset('before items table');
   }
 
   // ✅ FIXED: Items Table - ONLY if items exist (Petty Cash)
@@ -1800,9 +1846,7 @@ async generatePettyCashFormPDF(formData, outputPath) {
 
     // Check page break before purpose
     if (yPos > 650) {
-      doc.addPage();
-      currentPage++;
-      yPos = 50;
+      addPageAndReset('before purpose');
     }
   }
 
@@ -1811,9 +1855,7 @@ async generatePettyCashFormPDF(formData, outputPath) {
 
   // Check page break before approval chain
   if (yPos > 600) {
-    doc.addPage();
-    currentPage++;
-    yPos = 50;
+    addPageAndReset('before approval chain');
   }
 
   // Approval Chain Timeline
@@ -1823,9 +1865,7 @@ async generatePettyCashFormPDF(formData, outputPath) {
   if (data.disbursements && data.disbursements.length > 0) {
     // Check page break before disbursement history
     if (yPos > 600) {
-      doc.addPage();
-      currentPage++;
-      yPos = 50;
+      addPageAndReset('before disbursement history');
     }
     
     yPos = this.drawDisbursementHistory(doc, yPos, data);
@@ -1833,9 +1873,7 @@ async generatePettyCashFormPDF(formData, outputPath) {
 
   // Check page break before financial summary
   if (yPos > 650) {
-    doc.addPage();
-    currentPage++;
-    yPos = 50;
+    addPageAndReset('before financial summary');
   }
 
   // Financial Summary
@@ -1843,9 +1881,7 @@ async generatePettyCashFormPDF(formData, outputPath) {
 
   // Check page break before signature
   if (yPos > 680) {
-    doc.addPage();
-    currentPage++;
-    yPos = 50;
+    addPageAndReset('before signature');
   }
 
   // ✅ UPDATED: Conditional Signature Section
@@ -1858,17 +1894,48 @@ async generatePettyCashFormPDF(formData, outputPath) {
   // ✅ FIXED: Footer ONLY on the LAST page
   const range = doc.bufferedPageRange();
   console.log('📄 Drawing footer on last page only. Total pages:', range.count);
+  console.log('📄 Current Y position before footer:', doc.y);
+  console.log('📄 Page height:', doc.page.height);
+  console.log('📄 Bottom margin:', this.pageMargins.bottom);
 
   try {
     // Stay on current page (which is the last page)
+    const beforeFooterPages = doc.bufferedPageRange().count;
+    console.log(`🔍 Pages before footer: ${beforeFooterPages}`);
+    
     this.drawCashRequestFooter(doc, data, range.count, range.count);
+    
+    const afterFooterPages = doc.bufferedPageRange().count;
+    console.log(`🔍 Pages after footer: ${afterFooterPages}`);
     console.log(`✅ Footer drawn on final page (${range.count})`);
   } catch (error) {
     console.error(`❌ Error drawing footer:`, error.message);
   }
   
   console.log('=== CASH REQUEST PDF CONTENT GENERATION COMPLETE ===');
+  return currentPage;
 }
+
+  trimBufferedPages(doc, keepPages) {
+    if (!doc || !doc.bufferedPageRange) return;
+
+    const range = doc.bufferedPageRange();
+    const totalPages = range.count;
+
+    if (!keepPages || keepPages >= totalPages) return;
+
+    try {
+      const pages = doc._root?.data?.Pages?.data;
+      if (!pages || !Array.isArray(pages.Kids)) return;
+
+      // Trim buffered pages and page tree to keep only the content pages
+      doc._pageBuffer = doc._pageBuffer.slice(0, keepPages);
+      pages.Kids = pages.Kids.slice(0, keepPages);
+      pages.Count = pages.Kids.length;
+    } catch (error) {
+      console.error('Error trimming buffered pages:', error);
+    }
+  }
 
   drawPettyCashItemsTable(doc, yPos, data, currentPage) {
   console.log('=== DRAWING ITEMS TABLE ===');
@@ -2036,8 +2103,10 @@ drawPettyCashPurpose(doc, yPos, data) {
      .fillColor('#333333')
      .text(purposeText, 40, yPos, {
        width: 515,
+       height: 60,
        align: 'justify',
-       lineGap: 3
+       lineGap: 3,
+       ellipsis: true
      });
 
   const purposeHeight = doc.heightOfString(purposeText, { width: 515 });
@@ -2061,8 +2130,10 @@ drawPettyCashPurpose(doc, yPos, data) {
      .fillColor('#333333')
      .text(justificationText, 40, yPos, {
        width: 515,
+       height: 70,
        align: 'justify',
-       lineGap: 3
+       lineGap: 3,
+       ellipsis: true
      });
 
   const justificationHeight = doc.heightOfString(justificationText, { width: 515 });
@@ -2854,7 +2925,9 @@ drawBuyerAcknowledgmentSignature(doc, yPos, data) {
           doc.fillColor('#333333')
              .fontSize(7)
              .text(`"${shortComment}${step.comments.length > 80 ? '...' : ''}"`, 75, yPos + 40, {
-               width: 450
+               width: 450,
+               height: 18,
+               ellipsis: true
              });
           yPos += 55;
         } else {
@@ -2876,7 +2949,9 @@ drawBuyerAcknowledgmentSignature(doc, yPos, data) {
           doc.fillColor('#f5222d')
              .fontSize(7)
              .text(`"${shortComment}${step.comments.length > 80 ? '...' : ''}"`, 75, yPos + 40, {
-               width: 450
+               width: 450,
+               height: 18,
+               ellipsis: true
              });
           yPos += 55;
         } else {
@@ -3066,9 +3141,13 @@ drawBuyerAcknowledgmentSignature(doc, yPos, data) {
   }
 
   drawCashRequestFooter(doc, data, pageNum, totalPages) {
-  // Don't save/restore state - we're already on the correct page
+  // Suppress auto-pagination during footer rendering
+  const originalContinueOnNewPage = doc.continueOnNewPage;
+  doc.continueOnNewPage = false;
   
-  const footerY = doc.page.height - 80; // Increased space to avoid cramping
+  // Position footer with explicit bounds to prevent overflow
+  const footerY = doc.page.height - 75; // Positioned to fit within content area
+  const footerLineHeight = 11; // Fixed line height
   
   // Horizontal line
   doc.strokeColor('#CCCCCC')
@@ -3082,47 +3161,71 @@ drawBuyerAcknowledgmentSignature(doc, yPos, data) {
      .font(this.defaultFont)
      .fillColor('#666666');
 
-  // ✅ FIXED: All text on same page, proper line spacing
-  let currentY = footerY + 8;
+  // ✅ FIXED: All text with explicit height constraints to prevent auto-pagination
+  let currentY = footerY + 6;
 
   // Line 1: Registration and page number
   doc.text('RC/DLA/2014/B/2690 NIU: M061421030521', 40, currentY, {
+    width: 420,
+    height: 9,
+    lineBreak: false,
+    ellipsis: true,
     continued: false
   });
   
   doc.text(`Page ${pageNum} / ${totalPages}`, 480, currentY, {
     width: 75,
+    height: 9,
     align: 'right',
     continued: false
   });
 
-  currentY += 12; // Move to next line
+  currentY += footerLineHeight;
 
   // Line 2: Generation timestamp
   doc.text(`Generated: ${new Date().toLocaleString('en-GB')}`, 40, currentY, {
+    width: 515,
+    height: 9,
+    lineBreak: false,
+    ellipsis: true,
     continued: false
   });
 
-  currentY += 12; // Move to next line
+  currentY += footerLineHeight;
 
   // Line 3: Contact
   doc.text('679586444 | info@gratoengineering.com | www.gratoengineering.com', 40, currentY, {
+    width: 515,
+    height: 9,
+    lineBreak: false,
+    ellipsis: true,
     continued: false
   });
 
-  currentY += 12; // Move to next line
+  currentY += footerLineHeight;
 
   // Line 4: Location
   doc.text('Location: Bonaberi-Douala, beside Santa Lucia Telecommunications', 40, currentY, {
+    width: 515,
+    height: 9,
+    lineBreak: false,
+    ellipsis: true,
     continued: false
   });
 
-  currentY += 12; // Move to next line
+  currentY += footerLineHeight;
 
   // Line 5: Services
   doc.text('Civil, Electrical and Mechanical Engineering Services', 40, currentY, {
+    width: 515,
+    height: 9,
+    lineBreak: false,
+    ellipsis: true,
     continued: false
   });
+  
+  // Restore original setting
+  doc.continueOnNewPage = originalContinueOnNewPage;
 }
 
   // ============================================

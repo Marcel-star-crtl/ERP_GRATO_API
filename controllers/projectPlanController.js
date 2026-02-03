@@ -398,6 +398,10 @@ exports.approveProjectPlan = async (req, res) => {
       
       if (nextApprover) {
         if (nextApprover.level === 2) {
+          projectPlan.status = 'Pending Supply Chain Coordinator Approval';
+        }
+
+        if (nextApprover.level === 3) {
           projectPlan.status = 'Pending Head of Business Approval';
         }
         
@@ -608,6 +612,122 @@ exports.getProjectPlanById = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch project plan',
+      error: error.message
+    });
+  }
+};
+
+// Mark completion item as complete
+exports.markCompletionItemComplete = async (req, res) => {
+  try {
+    const { planId, itemId } = req.params;
+    const { notes } = req.body;
+    const userId = req.user?.id;
+
+    const projectPlan = await ProjectPlan.findById(planId);
+
+    if (!projectPlan) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project plan not found'
+      });
+    }
+
+    // Check if user is Christabel (project coordinator) or supply chain coordinator
+    const userEmail = req.user?.email || '';
+    const isProjectCoordinator = userEmail === 'christabel@gratoengineering.com';
+    const isSupplyChainCoordinator = userEmail === 'lukong.lambert@gratoglobal.com';
+
+    if (!isProjectCoordinator && !isSupplyChainCoordinator) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only project coordinator or supply chain coordinator can mark items complete'
+      });
+    }
+
+    const item = projectPlan.completionItems.id(itemId);
+
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: 'Completion item not found'
+      });
+    }
+
+    item.isCompleted = true;
+    item.completedBy = userId;
+    item.completedDate = new Date();
+    item.notes = notes || '';
+
+    await projectPlan.save();
+
+    res.json({
+      success: true,
+      message: 'Item marked as complete successfully',
+      data: projectPlan
+    });
+  } catch (error) {
+    console.error('Error marking completion item:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to mark item complete',
+      error: error.message
+    });
+  }
+};
+
+// Unmark completion item
+exports.unmarkCompletionItemComplete = async (req, res) => {
+  try {
+    const { planId, itemId } = req.params;
+    const userId = req.user?.id;
+
+    const projectPlan = await ProjectPlan.findById(planId);
+
+    if (!projectPlan) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project plan not found'
+      });
+    }
+
+    // Check if user is Christabel (project coordinator)
+    const userEmail = req.user?.email || '';
+    const isProjectCoordinator = userEmail === 'christabel@gratoengineering.com';
+
+    if (!isProjectCoordinator) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only project coordinator can unmark items'
+      });
+    }
+
+    const item = projectPlan.completionItems.id(itemId);
+
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: 'Completion item not found'
+      });
+    }
+
+    item.isCompleted = false;
+    item.completedBy = null;
+    item.completedDate = null;
+    item.notes = '';
+
+    await projectPlan.save();
+
+    res.json({
+      success: true,
+      message: 'Item unmarked successfully',
+      data: projectPlan
+    });
+  } catch (error) {
+    console.error('Error unmarking completion item:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to unmark item',
       error: error.message
     });
   }

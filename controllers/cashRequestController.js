@@ -1161,14 +1161,28 @@ const submitJustification = async (req, res) => {
       });
     }
 
-    // Validate amounts match total disbursed
+    // Validate amounts
     const totalDisbursed = request.totalDisbursed || 0;
-    const total = spentAmount + returnedAmount;
-
-    if (Math.abs(total - totalDisbursed) > 0.01) {
-      throw new Error(
-        `Total must equal disbursed amount (${totalDisbursed})`
-      );
+    
+    // Allow employees to spend more than disbursed (from their own pocket)
+    // Negative balance returned means reimbursement is owed to employee
+    const calculatedBalance = totalDisbursed - spentAmount;
+    
+    if (spentAmount < 0) {
+      throw new Error('Amount spent cannot be negative');
+    }
+    
+    // Auto-correct balance returned if it was manually entered (should always be disbursed - spent)
+    const correctedBalance = calculatedBalance;
+    
+    console.log(`💰 Amount Analysis:`);
+    console.log(`   Disbursed: ${totalDisbursed}`);
+    console.log(`   Spent: ${spentAmount}`);
+    console.log(`   Balance Returned: ${returnedAmount}`);
+    console.log(`   Corrected Balance: ${correctedBalance}`);
+    
+    if (Math.abs(returnedAmount - correctedBalance) > 0.01) {
+      console.log(`   ⚠️  Balance mismatch - auto-correcting to ${correctedBalance}`);
     }
 
     // Process documents
@@ -1218,10 +1232,10 @@ const submitJustification = async (req, res) => {
       }
     }
 
-    // Update justification
+    // Update justification with corrected balance
     request.justification = {
       amountSpent: spentAmount,
-      balanceReturned: returnedAmount,
+      balanceReturned: correctedBalance,
       details,
       documents,
       justificationDate: new Date(),

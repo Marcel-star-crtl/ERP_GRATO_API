@@ -1292,6 +1292,13 @@ router.get('/requisitions/:requisitionId',
   buyerRequisitionController.getRequisitionDetails
 );
 
+// ✅ NEW: Buyer adds/updates purchase justification
+router.post('/requisitions/:requisitionId/justification',
+  authMiddleware,
+  buyerAuthMiddleware,
+  buyerRequisitionController.updatePurchaseJustification
+);
+
 // =============================================
 // DELIVERY MANAGEMENT ROUTES
 // =============================================

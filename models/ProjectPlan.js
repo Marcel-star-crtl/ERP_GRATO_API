@@ -98,12 +98,33 @@ const projectPlanSchema = new mongoose.Schema({
     min: 0,
     max: 100
   },
+  completionItems: [{
+    _id: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: () => new mongoose.Types.ObjectId()
+    },
+    description: {
+      type: String,
+      required: true
+    },
+    isCompleted: {
+      type: Boolean,
+      default: false
+    },
+    completedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    completedDate: Date,
+    notes: String
+  }],
   status: {
     type: String,
     enum: [
       'Draft', 
       'Submitted', 
       'Pending Project Coordinator Approval',
+      'Pending Supply Chain Coordinator Approval',
       'Pending Head of Business Approval',
       'Approved', 
       'In Progress', 

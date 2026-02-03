@@ -372,31 +372,46 @@ exports.updateSupplierProfile = async (req, res) => {
 // Get all suppliers (admin/finance only)
 exports.getAllSuppliers = async (req, res) => {
   try {
-    const { status, type, page = 1, limit = 10 } = req.query;
+    const { status, type, page = 1, limit = 100 } = req.query;
     
     const filter = { role: 'supplier' };
-    if (status) filter['supplierStatus.accountStatus'] = status;
-    if (type) filter['supplierDetails.supplierType'] = type;
     
-    const skip = (page - 1) * limit;
+    // Filter by status if provided
+    if (status) {
+      filter['supplierStatus.accountStatus'] = status;
+    }
+    
+    // Filter by type if provided
+    if (type) {
+      filter['supplierDetails.supplierType'] = type;
+    }
+    
+    // Ensure limit is a number and not exceeding a reasonable max
+    const parsedLimit = Math.min(parseInt(limit) || 100, 500);
+    const parsedPage = Math.max(parseInt(page) || 1, 1);
+    const skip = (parsedPage - 1) * parsedLimit;
+    
+    console.log('📋 Fetching suppliers with filter:', filter, 'limit:', parsedLimit);
     
     const suppliers = await User.find(filter)
       .select('-password')
       .populate('supplierStatus.approvedBy', 'fullName email')
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit));
+      .limit(parsedLimit);
     
     const total = await User.countDocuments(filter);
+    
+    console.log(`✅ Found ${suppliers.length} suppliers out of ${total} total`);
     
     res.json({
       success: true,
       data: suppliers,
       pagination: {
-        current: parseInt(page),
-        pageSize: parseInt(limit),
+        current: parsedPage,
+        pageSize: parsedLimit,
         total,
-        pages: Math.ceil(total / limit)
+        pages: Math.ceil(total / parsedLimit)
       }
     });
 
@@ -404,7 +419,8 @@ exports.getAllSuppliers = async (req, res) => {
     console.error('Error fetching suppliers:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch suppliers'
+      message: 'Failed to fetch suppliers',
+      error: error.message
     });
   }
 };

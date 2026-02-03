@@ -1,8 +1,76 @@
 const BudgetCode = require('../models/BudgetCode');
 const PurchaseRequisition = require('../models/PurchaseRequisition');
+const CashRequest = require('../models/CashRequest');
+const SalaryPayment = require('../models/SalaryPayment');
 const User = require('../models/User');
 const { getBudgetCodeApprovalChain, validateBudgetCodeApproval, getNextBudgetCodeStatus } = require('../config/budgetCodeApprovalChain');
 const { sendEmail } = require('../services/emailService');
+
+// Helper function to calculate actual budget usage from all sources
+const calculateBudgetUsage = async (budgetCodeId) => {
+  try {
+    let totalUsed = 0;
+
+    // 1. Calculate usage from Purchase Requisitions (only count those approved by head or beyond)
+    const requisitionStatuses = [
+      'approved',
+      'assigned_to_buyer',
+      'converted_to_po',
+      'partially_delivered',
+      'fully_delivered',
+      'fully_disbursed',
+      'sourcing',
+      'justified',
+      'justification_pending_supervisor',
+      'justification_pending_finance',
+      'justification_pending_supply_chain',
+      'justification_pending_head',
+      'justification_approved'
+    ];
+
+    const purchaseRequisitions = await PurchaseRequisition.find({
+      budgetCode: budgetCodeId,
+      status: { $in: requisitionStatuses }
+    }).select('budgetXAF');
+
+    const requisitionTotal = purchaseRequisitions.reduce((sum, req) => sum + (req.budgetXAF || 0), 0);
+    totalUsed += requisitionTotal;
+
+    // 2. Calculate usage from Cash Requests (only approved and disbursed)
+    const cashRequestStatuses = [
+      'approved',
+      'fully_disbursed',
+      'completed'
+    ];
+
+    const cashRequests = await CashRequest.find({
+      'budgetAllocation.budgetCodeId': budgetCodeId,
+      status: { $in: cashRequestStatuses }
+    }).select('amountRequested');
+
+    const cashRequestTotal = cashRequests.reduce((sum, req) => sum + (req.amountRequested || 0), 0);
+    totalUsed += cashRequestTotal;
+
+    // 3. Calculate usage from Salary Payments
+    const salaryPayments = await SalaryPayment.find({
+      'departmentPayments.budgetCode': budgetCodeId,
+      status: 'processed'
+    }).select('departmentPayments');
+
+    salaryPayments.forEach(payment => {
+      payment.departmentPayments.forEach(dept => {
+        if (dept.budgetCode && dept.budgetCode.toString() === budgetCodeId.toString()) {
+          totalUsed += dept.amount || 0;
+        }
+      });
+    });
+
+    return Math.round(totalUsed * 100) / 100; // Round to 2 decimal places
+  } catch (error) {
+    console.error('Error calculating budget usage:', error);
+    return 0;
+  }
+};
 
 // Create new budget code with approval workflow
 const createBudgetCode = async (req, res) => {
@@ -317,10 +385,22 @@ const getBudgetCodes = async (req, res) => {
       .limit(limit * 1)
       .skip((page - 1) * limit);
 
-    let filteredCodes = budgetCodes;
+    // Calculate actual usage for each budget code
+    const budgetCodesWithUsage = await Promise.all(
+      budgetCodes.map(async (code) => {
+        const actualUsed = await calculateBudgetUsage(code._id);
+        const codeObj = code.toObject();
+        codeObj.used = actualUsed;
+        codeObj.remaining = code.budget - actualUsed;
+        codeObj.utilizationPercentage = code.budget > 0 ? Math.round((actualUsed / code.budget) * 100) : 0;
+        return codeObj;
+      })
+    );
+
+    let filteredCodes = budgetCodesWithUsage;
     if (utilizationThreshold) {
       const threshold = parseFloat(utilizationThreshold);
-      filteredCodes = budgetCodes.filter(code => code.utilizationPercentage >= threshold);
+      filteredCodes = budgetCodesWithUsage.filter(code => code.utilizationPercentage >= threshold);
     }
 
     const total = await BudgetCode.countDocuments(filter);
@@ -414,9 +494,16 @@ const getBudgetCode = async (req, res) => {
       });
     }
 
+    // Calculate actual usage
+    const actualUsed = await calculateBudgetUsage(budgetCode._id);
+    const budgetCodeObj = budgetCode.toObject();
+    budgetCodeObj.used = actualUsed;
+    budgetCodeObj.remaining = budgetCode.budget - actualUsed;
+    budgetCodeObj.utilizationPercentage = budgetCode.budget > 0 ? Math.round((actualUsed / budgetCode.budget) * 100) : 0;
+
     res.json({
       success: true,
-      data: budgetCode
+      data: budgetCodeObj
     });
 
   } catch (error) {
@@ -698,6 +785,10 @@ const getBudgetCodeUtilization = async (req, res) => {
       });
     }
 
+    // Calculate actual usage
+    const actualUsed = await calculateBudgetUsage(budgetCode._id);
+    const utilizationPercentage = budgetCode.budget > 0 ? Math.round((actualUsed / budgetCode.budget) * 100) : 0;
+
     let allocations = budgetCode.allocations;
     if (startDate || endDate) {
       allocations = allocations.filter(alloc => {
@@ -716,8 +807,8 @@ const getBudgetCodeUtilization = async (req, res) => {
         code: budgetCode.code,
         name: budgetCode.name,
         totalBudget: budgetCode.budget,
-        totalUsed: budgetCode.used,
-        utilizationPercentage: budgetCode.utilizationPercentage,
+        totalUsed: actualUsed,
+        utilizationPercentage: utilizationPercentage,
         status: budgetCode.status
       },
       summary: {
@@ -825,16 +916,120 @@ const getBudgetDashboard = async (req, res) => {
   try {
     const { department, budgetType, fiscalYear } = req.query;
 
-    const filters = {};
+    const filters = { active: true };
     if (department) filters.department = department;
     if (budgetType) filters.budgetType = budgetType;
     if (fiscalYear) filters.fiscalYear = parseInt(fiscalYear);
 
-    const dashboardData = await BudgetCode.getDashboardData(filters);
+    // Get budget codes with filters
+    const budgetCodes = await BudgetCode.find(filters)
+      .populate('budgetOwner', 'fullName email department')
+      .populate('createdBy', 'fullName email');
+
+    // Calculate actual usage for each budget code dynamically
+    const codesWithActualUsage = await Promise.all(
+      budgetCodes.map(async (code) => {
+        const actualUsed = await calculateBudgetUsage(code._id);
+        return {
+          ...code.toObject(),
+          used: actualUsed,
+          remaining: code.budget - actualUsed,
+          utilizationPercentage: code.budget > 0 ? Math.round((actualUsed / code.budget) * 10000) / 100 : 0
+        };
+      })
+    );
+
+    // Sort by utilization percentage descending
+    codesWithActualUsage.sort((a, b) => b.utilizationPercentage - a.utilizationPercentage);
+
+    // Calculate summary
+    const summary = {
+      totalBudget: 0,
+      totalUsed: 0,
+      totalRemaining: 0,
+      totalCodes: codesWithActualUsage.length,
+      activeReservations: 0,
+      criticalCodes: 0,
+      warningCodes: 0,
+      healthyCodes: 0,
+      overallUtilization: 0
+    };
+
+    codesWithActualUsage.forEach(code => {
+      summary.totalBudget += code.budget;
+      summary.totalUsed += code.used;
+      summary.totalRemaining += code.remaining;
+
+      const utilization = code.utilizationPercentage;
+      if (utilization >= 90) summary.criticalCodes++;
+      else if (utilization >= 75) summary.warningCodes++;
+      else summary.healthyCodes++;
+
+      summary.activeReservations += code.allocations?.filter(
+        a => a.status === 'allocated'
+      ).length || 0;
+    });
+
+    if (summary.totalBudget > 0) {
+      summary.overallUtilization = Math.round(
+        (summary.totalUsed / summary.totalBudget) * 10000
+      ) / 100;
+    }
+
+    // Generate alerts
+    const alerts = [];
+    codesWithActualUsage.forEach(code => {
+      const utilization = code.utilizationPercentage;
+
+      if (utilization >= 90) {
+        alerts.push({
+          type: 'critical',
+          budgetCode: code.code,
+          name: code.name,
+          message: `${code.name} is ${utilization}% utilized. Immediate action required.`,
+          utilization,
+          remaining: code.remaining,
+          owner: code.budgetOwner
+        });
+      } else if (utilization >= 75) {
+        alerts.push({
+          type: 'warning',
+          budgetCode: code.code,
+          name: code.name,
+          message: `${code.name} is ${utilization}% utilized. Monitor closely.`,
+          utilization,
+          remaining: code.remaining,
+          owner: code.budgetOwner
+        });
+      }
+
+      // Check for stale reservations
+      const staleReservations = code.allocations?.filter(alloc => {
+        if (alloc.status !== 'allocated') return false;
+        const daysSince = (Date.now() - alloc.allocatedDate) / (1000 * 60 * 60 * 24);
+        return daysSince > 30;
+      }) || [];
+
+      if (staleReservations.length > 0) {
+        alerts.push({
+          type: 'info',
+          budgetCode: code.code,
+          name: code.name,
+          message: `${staleReservations.length} stale reservation(s) detected (>30 days).`,
+          action: 'Review and release if no longer needed',
+          staleCount: staleReservations.length,
+          owner: code.budgetOwner
+        });
+      }
+    });
 
     res.json({
       success: true,
-      data: dashboardData
+      data: {
+        summary,
+        budgetCodes: codesWithActualUsage,
+        alerts
+      }
     });
   } catch (error) {
     console.error('Get budget dashboard error:', error);
@@ -1170,6 +1365,478 @@ const getPendingRevisions = async (req, res) => {
   }
 };
 
+// Get detailed usage tracking for a budget code
+const getBudgetCodeUsageTracking = async (req, res) => {
+  try {
+    const { codeId } = req.params;
+    const { startDate, endDate, limit = 50 } = req.query;
+
+    let budgetCode = await BudgetCode.findById(codeId);
+    if (!budgetCode) {
+      budgetCode = await BudgetCode.findOne({ code: codeId.toUpperCase() });
+    }
+
+    if (!budgetCode) {
+      return res.status(404).json({
+        success: false,
+        message: 'Budget code not found'
+      });
+    }
+
+    // Calculate actual usage
+    const actualUsed = await calculateBudgetUsage(budgetCode._id);
+
+    // Build date filter
+    const dateFilter = {};
+    if (startDate) dateFilter.$gte = new Date(startDate);
+    if (endDate) dateFilter.$lte = new Date(endDate);
+
+    // 1. Get Purchase Requisitions (only count those approved by head or beyond)
+    const requisitionStatuses = [
+      'approved',
+      'assigned_to_buyer',
+      'converted_to_po',
+      'partially_delivered',
+      'fully_delivered',
+      'fully_disbursed',
+      'sourcing',
+      'justified',
+      'justification_pending_supervisor',
+      'justification_pending_finance',
+      'justification_pending_supply_chain',
+      'justification_pending_head',
+      'justification_approved'
+    ];
+
+    const requisitionQuery = {
+      budgetCode: budgetCode._id,
+      status: { $in: requisitionStatuses }
+    };
+    if (Object.keys(dateFilter).length > 0) {
+      requisitionQuery.createdAt = dateFilter;
+    }
+
+    const purchaseRequisitions = await PurchaseRequisition.find(requisitionQuery)
+      .populate('employee', 'fullName email department')
+      .select('requisitionNumber title budgetXAF status createdAt employee')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+
+    const requisitionTotal = purchaseRequisitions.reduce((sum, req) => sum + (req.budgetXAF || 0), 0);
+
+    // 2. Get Cash Requests (only approved and disbursed)
+    const cashRequestStatuses = [
+      'approved',
+      'fully_disbursed',
+      'completed'
+    ];
+
+    const cashRequestQuery = {
+      'budgetAllocation.budgetCodeId': budgetCode._id,
+      status: { $in: cashRequestStatuses }
+    };
+    if (Object.keys(dateFilter).length > 0) {
+      cashRequestQuery.createdAt = dateFilter;
+    }
+
+    const cashRequests = await CashRequest.find(cashRequestQuery)
+      .populate('employee', 'fullName email department')
+      .select('requestType amountRequested status createdAt employee totalDisbursed')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+
+    const cashRequestTotal = cashRequests.reduce((sum, req) => sum + (req.amountRequested || 0), 0);
+
+    // 3. Get Salary Payments
+    const salaryQuery = {
+      'departmentPayments.budgetCode': budgetCode._id,
+      status: 'processed'
+    };
+    if (Object.keys(dateFilter).length > 0) {
+      salaryQuery.createdAt = dateFilter;
+    }
+
+    const salaryPayments = await SalaryPayment.find(salaryQuery)
+      .populate('submittedBy', 'fullName email')
+      .select('paymentPeriod departmentPayments totalAmount status createdAt submittedBy')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+
+    let salaryTotal = 0;
+    const salaryDetails = [];
+    salaryPayments.forEach(payment => {
+      payment.departmentPayments.forEach(dept => {
+        if (dept.budgetCode && dept.budgetCode.toString() === budgetCode._id.toString()) {
+          salaryTotal += dept.amount || 0;
+          salaryDetails.push({
+            _id: payment._id,
+            department: dept.department,
+            amount: dept.amount,
+            notes: dept.notes,
+            paymentPeriod: payment.paymentPeriod,
+            submittedBy: payment.submittedBy,
+            createdAt: payment.createdAt
+          });
+        }
+      });
+    });
+
+    // Calculate usage by month (last 6 months)
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+    const monthlyUsage = [];
+    for (let i = 5; i >= 0; i--) {
+      const monthDate = new Date();
+      monthDate.setMonth(monthDate.getMonth() - i);
+      const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+      const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+
+      const reqInMonth = await PurchaseRequisition.find({
+        budgetCode: budgetCode._id,
+        status: { $in: requisitionStatuses },
+        createdAt: { $gte: monthStart, $lte: monthEnd }
+      }).select('budgetXAF');
+
+      const cashInMonth = await CashRequest.find({
+        'budgetAllocation.budgetCodeId': budgetCode._id,
+        status: { $in: cashRequestStatuses },
+        createdAt: { $gte: monthStart, $lte: monthEnd }
+      }).select('amountRequested');
+
+      const salaryInMonth = await SalaryPayment.find({
+        'departmentPayments.budgetCode': budgetCode._id,
+        status: 'processed',
+        createdAt: { $gte: monthStart, $lte: monthEnd }
+      }).select('departmentPayments');
+
+      let salaryMonthTotal = 0;
+      salaryInMonth.forEach(payment => {
+        payment.departmentPayments.forEach(dept => {
+          if (dept.budgetCode && dept.budgetCode.toString() === budgetCode._id.toString()) {
+            salaryMonthTotal += dept.amount || 0;
+          }
+        });
+      });
+
+      const reqTotal = reqInMonth.reduce((sum, r) => sum + (r.budgetXAF || 0), 0);
+      const cashTotal = cashInMonth.reduce((sum, c) => sum + (c.amountRequested || 0), 0);
+
+      monthlyUsage.push({
+        month: monthDate.toLocaleString('default', { month: 'short', year: 'numeric' }),
+        purchaseRequisitions: reqTotal,
+        cashRequests: cashTotal,
+        salaryPayments: salaryMonthTotal,
+        total: reqTotal + cashTotal + salaryMonthTotal
+      });
+    }
+
+    // Usage by department
+    const departmentUsage = {};
+    
+    // From Purchase Requisitions
+    const allRequisitions = await PurchaseRequisition.find({
+      budgetCode: budgetCode._id,
+      status: { $in: requisitionStatuses }
+    }).populate('employee', 'department').select('totalCost employee');
+
+    allRequisitions.forEach(req => {
+      const dept = req.employee?.department || 'Unknown';
+      if (!departmentUsage[dept]) {
+        departmentUsage[dept] = { purchaseRequisitions: 0, cashRequests: 0, salaryPayments: 0, total: 0 };
+      }
+      departmentUsage[dept].purchaseRequisitions += req.totalCost || 0;
+      departmentUsage[dept].total += req.totalCost || 0;
+    });
+
+    // From Cash Requests
+    const allCashRequests = await CashRequest.find({
+      'budgetAllocation.budgetCodeId': budgetCode._id,
+      status: { $in: cashRequestStatuses }
+    }).populate('employee', 'department').select('amountRequested employee');
+
+    allCashRequests.forEach(req => {
+      const dept = req.employee?.department || 'Unknown';
+      if (!departmentUsage[dept]) {
+        departmentUsage[dept] = { purchaseRequisitions: 0, cashRequests: 0, salaryPayments: 0, total: 0 };
+      }
+      departmentUsage[dept].cashRequests += req.amountRequested || 0;
+      departmentUsage[dept].total += req.amountRequested || 0;
+    });
+
+    // From Salary Payments
+    const allSalaryPayments = await SalaryPayment.find({
+      'departmentPayments.budgetCode': budgetCode._id,
+      status: 'processed'
+    }).select('departmentPayments');
+
+    allSalaryPayments.forEach(payment => {
+      payment.departmentPayments.forEach(dept => {
+        if (dept.budgetCode && dept.budgetCode.toString() === budgetCode._id.toString()) {
+          const deptName = dept.department || 'Unknown';
+          if (!departmentUsage[deptName]) {
+            departmentUsage[deptName] = { purchaseRequisitions: 0, cashRequests: 0, salaryPayments: 0, total: 0 };
+          }
+          departmentUsage[deptName].salaryPayments += dept.amount || 0;
+          departmentUsage[deptName].total += dept.amount || 0;
+        }
+      });
+    });
+
+    // Convert to array
+    const departmentBreakdown = Object.keys(departmentUsage).map(dept => ({
+      department: dept,
+      ...departmentUsage[dept]
+    })).sort((a, b) => b.total - a.total);
+
+    // Response
+    res.json({
+      success: true,
+      data: {
+        budgetCode: {
+          _id: budgetCode._id,
+          code: budgetCode.code,
+          name: budgetCode.name,
+          department: budgetCode.department,
+          budget: budgetCode.budget,
+          used: actualUsed,
+          remaining: budgetCode.budget - actualUsed,
+          utilizationPercentage: budgetCode.budget > 0 ? Math.round((actualUsed / budgetCode.budget) * 10000) / 100 : 0
+        },
+        summary: {
+          totalBudget: budgetCode.budget,
+          usedAmount: actualUsed,
+          remainingBudget: budgetCode.budget - actualUsed,
+          utilizationPercentage: budgetCode.budget > 0 ? Math.round((actualUsed / budgetCode.budget) * 10000) / 100 : 0,
+          bySource: {
+            purchaseRequisitions: {
+              count: purchaseRequisitions.length,
+              total: requisitionTotal
+            },
+            cashRequests: {
+              count: cashRequests.length,
+              total: cashRequestTotal
+            },
+            salaryPayments: {
+              count: salaryDetails.length,
+              total: salaryTotal
+            }
+          }
+        },
+        recentTransactions: {
+          purchaseRequisitions: purchaseRequisitions.map(req => ({
+            _id: req._id,
+            requisitionNumber: req.requisitionNumber,
+            title: req.title,
+            amount: req.budgetXAF,
+            status: req.status,
+            employee: req.employee,
+            date: req.createdAt,
+            type: 'Purchase Requisition'
+          })),
+          cashRequests: cashRequests.map(req => ({
+            _id: req._id,
+            requestType: req.requestType,
+            amount: req.amountRequested,
+            disbursed: req.totalDisbursed,
+            status: req.status,
+            employee: req.employee,
+            date: req.createdAt,
+            type: 'Cash Request'
+          })),
+          salaryPayments: salaryDetails.map(sal => ({
+            _id: sal._id,
+            department: sal.department,
+            amount: sal.amount,
+            notes: sal.notes,
+            paymentPeriod: sal.paymentPeriod,
+            submittedBy: sal.submittedBy,
+            date: sal.createdAt,
+            type: 'Salary Payment'
+          }))
+        },
+        trends: {
+          monthlyUsage,
+          departmentBreakdown
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get budget code usage tracking error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch usage tracking',
+      error: error.message
+    });
+  }
+};
+
+// ============================================
+// DEPARTMENT HEAD BUDGET DASHBOARD
+// ============================================
+
+/**
+ * Get department-specific budget dashboard for department heads
+ * Shows all budget codes for their department with real-time utilization
+ */
+const getDepartmentBudgetDashboard = async (req, res) => {
+  try {
+    const userDepartment = req.user.department;
+    
+    if (!userDepartment) {
+      return res.status(400).json({
+        success: false,
+        message: 'User department not found'
+      });
+    }
+
+    console.log(`Fetching budget dashboard for department: ${userDepartment}`);
+
+    // Get all active budget codes for this department
+    const budgetCodes = await BudgetCode.find({ 
+      department: userDepartment,
+      active: true 
+    })
+      .populate('budgetOwner', 'fullName email department')
+      .populate('createdBy', 'fullName email')
+      .sort({ code: 1 });
+
+    // Calculate actual usage for each budget code dynamically
+    const codesWithActualUsage = await Promise.all(
+      budgetCodes.map(async (code) => {
+        const actualUsed = await calculateBudgetUsage(code._id);
+        return {
+          ...code.toObject(),
+          used: actualUsed,
+          remaining: code.budget - actualUsed,
+          utilizationPercentage: code.budget > 0 ? Math.round((actualUsed / code.budget) * 10000) / 100 : 0
+        };
+      })
+    );
+
+    // Sort by utilization percentage descending
+    codesWithActualUsage.sort((a, b) => b.utilizationPercentage - a.utilizationPercentage);
+
+    // Calculate department summary
+    const summary = {
+      department: userDepartment,
+      totalBudget: 0,
+      totalUsed: 0,
+      totalRemaining: 0,
+      totalCodes: codesWithActualUsage.length,
+      criticalCodes: 0,
+      warningCodes: 0,
+      healthyCodes: 0,
+      overallUtilization: 0,
+      byBudgetType: {
+        OPEX: { budget: 0, used: 0, count: 0 },
+        CAPEX: { budget: 0, used: 0, count: 0 },
+        PROJECT: { budget: 0, used: 0, count: 0 },
+        OPERATIONAL: { budget: 0, used: 0, count: 0 }
+      }
+    };
+
+    codesWithActualUsage.forEach(code => {
+      summary.totalBudget += code.budget;
+      summary.totalUsed += code.used;
+      summary.totalRemaining += code.remaining;
+
+      const utilization = code.utilizationPercentage;
+      if (utilization >= 90) summary.criticalCodes++;
+      else if (utilization >= 75) summary.warningCodes++;
+      else summary.healthyCodes++;
+
+      // Budget type breakdown
+      if (code.budgetType && summary.byBudgetType[code.budgetType]) {
+        summary.byBudgetType[code.budgetType].budget += code.budget;
+        summary.byBudgetType[code.budgetType].used += code.used;
+        summary.byBudgetType[code.budgetType].count += 1;
+      }
+    });
+
+    if (summary.totalBudget > 0) {
+      summary.overallUtilization = Math.round(
+        (summary.totalUsed / summary.totalBudget) * 10000
+      ) / 100;
+    }
+
+    // Add utilization percentage to each budget type
+    Object.keys(summary.byBudgetType).forEach(type => {
+      const typeData = summary.byBudgetType[type];
+      if (typeData.budget > 0) {
+        typeData.utilizationPercentage = Math.round((typeData.used / typeData.budget) * 10000) / 100;
+      } else {
+        typeData.utilizationPercentage = 0;
+      }
+    });
+
+    // Generate alerts
+    const alerts = [];
+    codesWithActualUsage.forEach(code => {
+      const utilization = code.utilizationPercentage;
+
+      if (utilization >= 90) {
+        alerts.push({
+          type: 'critical',
+          budgetCode: code.code,
+          name: code.name,
+          message: `${code.name} is ${utilization}% utilized. Immediate action required.`,
+          utilization,
+          remaining: code.remaining,
+          budget: code.budget,
+          used: code.used
+        });
+      } else if (utilization >= 75) {
+        alerts.push({
+          type: 'warning',
+          budgetCode: code.code,
+          name: code.name,
+          message: `${code.name} is ${utilization}% utilized. Monitor closely.`,
+          utilization,
+          remaining: code.remaining,
+          budget: code.budget,
+          used: code.used
+        });
+      }
+
+      // Check if budget is near expiry (within 30 days)
+      if (code.endDate) {
+        const daysUntilExpiry = Math.ceil((new Date(code.endDate) - new Date()) / (1000 * 60 * 60 * 24));
+        if (daysUntilExpiry > 0 && daysUntilExpiry <= 30 && code.remaining > 0) {
+          alerts.push({
+            type: 'info',
+            budgetCode: code.code,
+            name: code.name,
+            message: `Budget expires in ${daysUntilExpiry} days with XAF ${code.remaining.toLocaleString()} remaining.`,
+            action: 'Consider reallocating or extending budget period',
+            daysUntilExpiry,
+            remaining: code.remaining
+          });
+        }
+      }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        summary,
+        budgetCodes: codesWithActualUsage,
+        alerts,
+        department: userDepartment
+      }
+    });
+
+  } catch (error) {
+    console.error('Get department budget dashboard error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch department budget dashboard',
+      error: error.message
+    });
+  }
+};
+
 
 module.exports = {
   createBudgetCode,
@@ -1188,7 +1855,9 @@ module.exports = {
   getBudgetRevisions,
   approveBudgetRevision,
   rejectBudgetRevision,
-  getPendingRevisions
+  getPendingRevisions,
+  getBudgetCodeUsageTracking,
+  getDepartmentBudgetDashboard
 };
 
 

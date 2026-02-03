@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const invoiceController = require('../controllers/invoiceController');
 const invoiceApprovalController = require('../controllers/invoiceApprovalController');
+const financeInvoiceController = require('../controllers/financeInvoiceController');
 const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware');
 
 const uploadMiddleware = require('../middlewares/uploadMiddleware');
@@ -206,6 +207,68 @@ router.get('/departments/:department/employees',
   authMiddleware,
   requireRoles('finance', 'admin'),
   invoiceApprovalController.getDepartmentEmployees
+);
+
+// ==================== FINANCE INVOICE PREPARATION ROUTES ====================
+/**
+ * @route   GET /api/invoices/finance/po-list
+ * @desc    Get purchase orders available for invoicing (Finance only)
+ * @access  Private (Finance, Admin)
+ */
+router.get(
+  '/finance/po-list',
+  authMiddleware,
+  requireRoles('finance', 'admin'),
+  financeInvoiceController.getPOsForInvoicing
+);
+
+/**
+ * @route   GET /api/invoices/finance/prepared
+ * @desc    Get invoices prepared by Finance user
+ * @access  Private (Finance, Admin)
+ */
+router.get(
+  '/finance/prepared',
+  authMiddleware,
+  requireRoles('finance', 'admin'),
+  financeInvoiceController.getFinancePreparedInvoices
+);
+
+/**
+ * @route   POST /api/invoices/finance/prepare
+ * @desc    Create/prepare invoice from PO (Finance only)
+ * @access  Private (Finance, Admin)
+ */
+router.post(
+  '/finance/prepare',
+  authMiddleware,
+  requireRoles('finance', 'admin'),
+  upload.single('invoiceFile'),
+  financeInvoiceController.prepareInvoiceFromPO
+);
+
+/**
+ * @route   PUT /api/invoices/:invoiceId/finance/submit
+ * @desc    Submit Finance-prepared invoice for approval
+ * @access  Private (Finance, Admin)
+ */
+router.put(
+  '/:invoiceId/finance/submit',
+  authMiddleware,
+  requireRoles('finance', 'admin'),
+  financeInvoiceController.submitInvoiceForApproval
+);
+
+/**
+ * @route   DELETE /api/invoices/:invoiceId/finance
+ * @desc    Delete draft invoice prepared by Finance
+ * @access  Private (Finance, Admin)
+ */
+router.delete(
+  '/:invoiceId/finance',
+  authMiddleware,
+  requireRoles('finance', 'admin'),
+  financeInvoiceController.deleteFinanceInvoice
 );
 
 // ==================== INDIVIDUAL INVOICE ROUTES ====================

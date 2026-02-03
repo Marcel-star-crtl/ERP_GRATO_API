@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const purchaseRequisitionController = require('../controllers/purchaseRequisitionController');
+const resubmitController = require('../controllers/resubmitRequisitionController');
+const clarificationController = require('../controllers/clarificationController');
+const supplyChainRejectionController = require('../controllers/supplyChainRejectionController');
 const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware');
 const { 
   downloadFile, 
@@ -214,6 +217,13 @@ router.post('/:requisitionId/supply-chain-decisions',
   authMiddleware, 
   requireRoles('supply_chain', 'admin'),
   purchaseRequisitionController.processSupplyChainBusinessDecisions
+);
+
+// Supply Chain Reject
+router.post('/:requisitionId/supply-chain-reject',
+  authMiddleware,
+  requireRoles('supply_chain', 'admin'),
+  supplyChainRejectionController.rejectSupplyChainRequisition
 );
 
 router.get('/head-approval/:requisitionId', 
@@ -611,6 +621,37 @@ router.get(
 router.post('/:requisitionId/disbursements/:disbursementId/acknowledge',
     authMiddleware,
     purchaseRequisitionController.acknowledgeDisbursement
+);
+
+// ✅ NEW: Resubmit rejected requisition
+router.post('/:requisitionId/resubmit',
+  authMiddleware,
+  upload.array('attachments', 5),
+  resubmitController.resubmitRequisition
+);
+
+// ✅ NEW: Get rejection history
+router.get('/:requisitionId/rejection-history',
+  authMiddleware,
+  resubmitController.getRejectionHistory
+);
+
+// ✅ NEW: Request clarification from previous approver
+router.post('/:requisitionId/request-clarification',
+  authMiddleware,
+  clarificationController.requestClarification
+);
+
+// ✅ NEW: Provide clarification response
+router.post('/:requisitionId/provide-clarification',
+  authMiddleware,
+  clarificationController.provideClarification
+);
+
+// ✅ NEW: Get clarification history
+router.get('/:requisitionId/clarification-history',
+  authMiddleware,
+  clarificationController.getClarificationHistory
 );
 
 // ============================================

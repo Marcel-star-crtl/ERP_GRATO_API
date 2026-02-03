@@ -1056,13 +1056,25 @@ const getSupervisorRequisitions = async (req, res) => {
 
     // Find requisitions where current user is in the approval chain and status is pending
     const requisitions = await PurchaseRequisition.find({
-      'approvalChain': {
-        $elemMatch: {
-          'approver.email': user.email,
-          'status': 'pending'
+      $or: [
+        {
+          'approvalChain': {
+            $elemMatch: {
+              'approver.email': user.email,
+              'status': 'pending'
+            }
+          },
+          status: { $in: ['pending_supervisor'] }
+        },
+        {
+          'approvalChain': {
+            $elemMatch: {
+              'approver.email': user.email
+            }
+          },
+          status: { $in: ['justification_pending_supervisor'] }
         }
-      },
-      status: { $in: ['pending_supervisor'] }
+      ]
     })
     .populate('employee', 'fullName email department')
     .sort({ createdAt: -1 });
@@ -1105,6 +1117,34 @@ const processSupervisorDecision = async (req, res) => {
       return res.status(404).json({ 
         success: false, 
         message: 'Purchase requisition not found' 
+      });
+    }
+
+    // ✅ Justification approval flow (Requester line supervisor)
+    if (requisition.status === 'justification_pending_supervisor') {
+      requisition.justification = requisition.justification || {};
+
+      requisition.justification.supervisorReview = {
+        decision,
+        comments,
+        reviewedBy: req.user.userId,
+        reviewedDate: new Date()
+      };
+
+      if (decision === 'approved') {
+        requisition.status = 'justification_pending_finance';
+        requisition.justification.status = 'pending_finance';
+      } else {
+        requisition.status = 'justification_rejected';
+        requisition.justification.status = 'rejected';
+      }
+
+      await requisition.save();
+
+      return res.json({
+        success: true,
+        message: `Justification ${decision}`,
+        data: requisition
       });
     }
 
@@ -1305,35 +1345,34 @@ const getSupplyChainRequisitions = async (req, res) => {
     let query = {};
 
     if (user.role === 'supply_chain' || user.department === 'Business Development & Supply Chain') {
-      // Supply chain users see requisitions in their workflow
+      // Supply chain users ONLY see requisitions pending their specific action
+      // Show requisitions where:
+      // 1. Status is pending_supply_chain_review (awaiting their business decisions)
+      // 2. OR they are the current pending approver in the approval chain
       query = {
         $or: [
           { status: 'pending_supply_chain_review' },
-          { status: 'pending_buyer_assignment' },
-          { status: 'pending_head_approval' },
-          { status: 'supply_chain_approved' },
-          { status: 'approved' },
-          { status: 'in_procurement' },
-          { status: 'procurement_complete' },
-          { status: 'delivered' },
-          { status: 'supply_chain_rejected' },
+          { status: 'justification_pending_supply_chain' },
           { 
             'approvalChain': {
               $elemMatch: {
-                'approver.email': user.email
+                'approver.email': user.email,
+                'status': 'pending'
               }
             }
           }
         ]
       };
     } else if (user.role === 'admin') {
-      // Admins see all supply chain related requisitions
+      // Admins see all supply chain related requisitions for oversight
       query = {
         status: { 
           $in: [
             'pending_supply_chain_review', 
+            'justification_pending_supply_chain',
             'pending_buyer_assignment',
             'pending_head_approval',
+            'justification_pending_head',
             'supply_chain_approved', 
             'supply_chain_rejected', 
             'approved',
@@ -1409,6 +1448,62 @@ const processSupplyChainDecision = async (req, res) => {
       return res.status(403).json({
         success: false,
         message: 'Access denied'
+      });
+    }
+
+    // ✅ Justification approval flow (Supply Chain)
+    if (requisition.status === 'justification_pending_supply_chain') {
+      requisition.justification = requisition.justification || {};
+
+      requisition.justification.supplyChainReview = {
+        decision,
+        comments,
+        reviewedBy: req.user.userId,
+        reviewedDate: new Date()
+      };
+
+      if (decision === 'approve' || decision === 'approved') {
+        requisition.status = 'justification_pending_head';
+        requisition.justification.status = 'pending_head';
+      } else {
+        requisition.status = 'justification_rejected';
+        requisition.justification.status = 'rejected';
+      }
+
+      await requisition.save();
+
+      return res.json({
+        success: true,
+        message: `Justification ${decision}`,
+        data: requisition
+      });
+    }
+
+    // ✅ Justification approval flow (Finance)
+    if (requisition.status === 'justification_pending_finance') {
+      requisition.justification = requisition.justification || {};
+
+      requisition.justification.financeReview = {
+        decision,
+        comments,
+        reviewedBy: req.user.userId,
+        reviewedDate: new Date()
+      };
+
+      if (decision === 'approve' || decision === 'approved') {
+        requisition.status = 'justification_pending_supply_chain';
+        requisition.justification.status = 'pending_supply_chain';
+      } else {
+        requisition.status = 'justification_rejected';
+        requisition.justification.status = 'rejected';
+      }
+
+      await requisition.save();
+
+      return res.json({
+        success: true,
+        message: `Justification ${decision}`,
+        data: requisition
       });
     }
 
@@ -3899,25 +3994,21 @@ const getFinanceRequisitions = async (req, res) => {
       const financeEmail = user.email.toLowerCase();
       console.log('Finance user:', financeEmail);
 
+      // ONLY show requisitions that are pending THIS user's finance action
       const query = {
           $or: [
+              // Requisitions pending finance verification (initial status)
               { status: 'pending_finance_verification' },
+            // Justification pending finance review
+            { status: 'justification_pending_finance' },
+              // OR requisitions where this user has a pending approval step
               {
-                  status: 'pending_supervisor',
                   'approvalChain': {
                       $elemMatch: {
                           'approver.email': financeEmail,
-                          'approver.role': { $regex: /finance/i },
                           'status': 'pending'
                       }
                   }
-              },
-              {
-                  'financeVerification.verifiedBy': req.user.userId
-              },
-              {
-                  status: { $in: ['approved', 'partially_disbursed', 'fully_disbursed'] },
-                  'financeVerification.verifiedBy': req.user.userId
               }
           ]
       };
@@ -5388,18 +5479,21 @@ const submitPurchaseRequisitionJustification = async (req, res) => {
       });
     }
 
+    const assignedBuyerId = requisition.supplyChainReview?.assignedBuyer?.toString();
+
     console.log('Requisition found:', {
       id: requisition._id,
       status: requisition.status,
-      employee: requisition.employee._id,
+      employee: requisition.employee?._id,
+      assignedBuyer: assignedBuyerId,
       currentUser: req.user.userId
     });
 
-    // Verify user is the owner
-    if (requisition.employee._id.toString() !== req.user.userId) {
+    // Verify user is the assigned buyer
+    if (!assignedBuyerId || assignedBuyerId !== req.user.userId) {
       return res.status(403).json({
         success: false,
-        message: 'Access denied. You can only justify your own requisitions.'
+        message: 'Access denied. Only the assigned buyer can justify this requisition.'
       });
     }
 

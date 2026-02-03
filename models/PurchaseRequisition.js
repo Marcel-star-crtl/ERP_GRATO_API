@@ -76,7 +76,8 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
   },
   justificationOfPurchase: {
     type: String,
-    required: true,
+    // ✅ UPDATED: Now optional - will be provided by assigned buyer
+    required: false,
     minlength: 20
   },
   justificationOfPreferredSupplier: String,
@@ -181,8 +182,12 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
       'delivered',
       'justification_pending_supervisor',
       'justification_pending_finance',
+      'justification_pending_supply_chain',
+      'justification_pending_head',
       'justification_rejected',
-      'completed'
+      'justification_approved',
+      'completed',
+      'pending_clarification'
     ],
     default: 'pending_supervisor'
   },
@@ -217,12 +222,26 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
     },
     status: {
       type: String,
-      enum: ['pending', 'approved', 'rejected'],
+      enum: ['pending', 'approved', 'rejected', 'needs_clarification', 'clarification_provided'],
       default: 'pending'
     },
     comments: {
       type: String,
       default: ''
+    },
+    clarificationRequest: {
+      requestedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      requesterName: String,
+      requesterRole: String,
+      message: String,
+      requestedAt: Date
+    },
+    clarificationResponse: {
+      message: String,
+      respondedAt: Date
     },
     actionDate: Date,
     actionTime: String,
@@ -501,7 +520,14 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
     },
     status: {
       type: String,
-      enum: ['pending_supervisor', 'pending_finance', 'approved', 'rejected'],
+      enum: [
+        'pending_supervisor',
+        'pending_finance',
+        'pending_supply_chain',
+        'pending_head',
+        'approved',
+        'rejected'
+      ],
       default: 'pending_supervisor'
     },
     supervisorReview: {
@@ -527,8 +553,113 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
         ref: 'User'
       },
       reviewedDate: Date
+    },
+    supplyChainReview: {
+      decision: {
+        type: String,
+        enum: ['approved', 'rejected']
+      },
+      comments: String,
+      reviewedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      reviewedDate: Date
+    },
+    headReview: {
+      decision: {
+        type: String,
+        enum: ['approved', 'rejected']
+      },
+      comments: String,
+      reviewedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      reviewedDate: Date
     }
   },
+
+  // ✅ NEW: Clarification Requests - tracks requests for more information
+  clarificationRequests: [{
+    requestedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    requesterName: String,
+    requesterRole: String,
+    requesterLevel: Number,
+    requestedTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    recipientName: String,
+    recipientRole: String,
+    recipientLevel: Number,
+    message: String,
+    requestedAt: {
+      type: Date,
+      default: Date.now
+    },
+    response: String,
+    respondedAt: Date,
+    status: {
+      type: String,
+      enum: ['pending', 'responded'],
+      default: 'pending'
+    }
+  }],
+
+  // ✅ NEW: Rejection History - preserves all rejection details for audit trail
+  rejectionHistory: [{
+    rejectedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    rejectorName: String,
+    rejectorRole: String,
+    rejectionDate: {
+      type: Date,
+      required: true,
+      default: Date.now
+    },
+    rejectionReason: String,
+    approvalLevel: String,
+    previousStatus: String,
+    approvalChainSnapshot: [{
+      level: Number,
+      approver: {
+        name: String,
+        email: String,
+        role: String
+      },
+      status: String,
+      comments: String,
+      actionDate: Date
+    }],
+    resubmitted: {
+      type: Boolean,
+      default: false
+    },
+    resubmittedDate: Date,
+    resubmissionNotes: String
+  }],
+
+  // ✅ NEW: Tracks if this is a resubmission
+  isResubmission: {
+    type: Boolean,
+    default: false
+  },
+
+  resubmissionCount: {
+    type: Number,
+    default: 0
+  },
+
+  lastResubmittedDate: Date,
 
   createdAt: {
     type: Date,

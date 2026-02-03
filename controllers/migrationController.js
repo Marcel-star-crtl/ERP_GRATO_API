@@ -108,20 +108,28 @@ const findOrCreateUser = async (userName, migrationUserId) => {
 
 exports.migrateAvailableStock = async (req, res) => {
   try {
-    const { data } = req.body;
+    const { data, mode = 'update' } = req.body; // mode: 'update' or 'create-new'
     const results = {
       imported: 0,
       updated: 0,
       failed: 0,
       errors: [],
-      created: []
+      warnings: [],
+      created: [],
+      updated_items: [],
+      duplicateCodesInUpload: [],
+      mode
     };
+
+    // Track codes we've seen to detect duplicates within this upload
+    const seenCodes = {};
+    const duplicateCodeMap = {}; // Track for create-new mode
 
     for (let i = 0; i < data.length; i++) {
       const row = data[i];
       
       try {
-        const materialCode = row['Material Code']?.toString().trim();
+        let materialCode = row['Material Code']?.toString().trim();
         
         if (!materialCode) {
           results.errors.push(`Row ${i + 2}: Missing Material Code`);
@@ -129,8 +137,34 @@ exports.migrateAvailableStock = async (req, res) => {
           continue;
         }
 
-        // Check if item exists (NO SESSION)
-        let item = await Item.findOne({ code: materialCode });
+        // Check if code appears multiple times in THIS upload
+        if (seenCodes[materialCode]) {
+          seenCodes[materialCode].count++;
+          seenCodes[materialCode].rows.push(i + 2);
+          results.warnings.push(`Row ${i + 2}: Duplicate code "${materialCode}" found in upload (first seen at row ${seenCodes[materialCode].rows[0]}). ${mode === 'create-new' ? 'Will create with suffix.' : 'Last occurrence will overwrite.'}`);
+          
+          // In create-new mode, append suffix to make codes unique
+          if (mode === 'create-new') {
+            materialCode = `${materialCode}-V${seenCodes[materialCode].count}`;
+          }
+          
+          if (!duplicateCodeMap[row['Material Code']]) {
+            duplicateCodeMap[row['Material Code']] = [];
+          }
+          duplicateCodeMap[row['Material Code']].push(i + 2);
+        } else {
+          seenCodes[materialCode] = {
+            count: 1,
+            rows: [i + 2]
+          };
+        }
+
+        // Check if item exists in database (use original code for lookup in update mode)
+        const lookupCode = mode === 'create-new' && seenCodes[row['Material Code']?.toString().trim()]?.count > 1 
+          ? null 
+          : row['Material Code']?.toString().trim();
+        
+        let item = lookupCode ? await Item.findOne({ code: lookupCode }) : null;
         
         const rawUOM = row['UOM']?.toString().trim() || 'Each';
         const normalizedUOM = normalizeUOM(rawUOM);
@@ -142,7 +176,7 @@ exports.migrateAvailableStock = async (req, res) => {
         };
 
         const itemData = {
-          code: materialCode,
+          code: materialCode, // Use potentially modified code
           description: row['Material Name']?.toString().trim() || 'Unknown',
           category: row['CATEGORY']?.toString().trim() || 'General',
           unitOfMeasure: normalizedUOM,
@@ -158,18 +192,33 @@ exports.migrateAvailableStock = async (req, res) => {
           createdBy: req.user.userId
         };
 
-        if (item) {
-          Object.assign(item, itemData);
-          await item.save();
-          results.updated++;
-        } else {
+        // In create-new mode, skip update and always create
+        if (mode === 'create-new' || !item) {
           item = new Item(itemData);
           await item.save();
           results.imported++;
           results.created.push({
             code: materialCode,
             description: itemData.description,
-            uom: normalizedUOM
+            uom: normalizedUOM,
+            stockQuantity: itemData.stockQuantity,
+            row: i + 2
+          });
+        } else {
+          const oldValues = {
+            code: item.code,
+            description: item.description,
+            stockQuantity: item.stockQuantity
+          };
+          Object.assign(item, itemData);
+          await item.save();
+          results.updated++;
+          results.updated_items.push({
+            code: materialCode,
+            description: itemData.description,
+            oldStock: oldValues.stockQuantity,
+            newStock: itemData.stockQuantity,
+            row: i + 2
           });
         }
 
@@ -180,9 +229,10 @@ exports.migrateAvailableStock = async (req, res) => {
       }
     }
     
+    const modeLabel = mode === 'create-new' ? '(CREATE-NEW MODE - duplicates with suffix)' : '(UPDATE MODE)';
     res.json({
       success: true,
-      message: `Migration completed: ${results.imported} created, ${results.updated} updated, ${results.failed} failed`,
+      message: `Migration completed ${modeLabel}: ${results.imported} created, ${results.updated} updated, ${results.failed} failed. ⚠️ ${results.warnings.length} warnings.`,
       data: results
     });
 

@@ -72,6 +72,7 @@ const quotationRoutes = require('./routes/quotationRoutes');
 const debitNoteRoutes = require('./routes/debitNoteRoutes');
 const projectPlanRoutes = require('./routes/projectPlanRoutes');
 const salaryPaymentRoutes = require('./routes/salaryPaymentRoutes');
+const customerRoutes = require('./routes/customerRoutes');
 
 // Critical check for projectRoutes
 if (!projectRoutes) {
@@ -281,6 +282,11 @@ if (invoiceRoutes) {
 if (supplierRoutes) {
   app.use('/api/suppliers', supplierRoutes);
   console.log('✅ Mounted: /api/suppliers');
+}
+
+if (customerRoutes) {
+  app.use('/api/customers', customerRoutes);
+  console.log('✅ Mounted: /api/customers');
 }
 
 if (purchaseRequisitionRoutes) {

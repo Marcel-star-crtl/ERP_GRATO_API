@@ -18,6 +18,8 @@ const STORAGE_CATEGORIES = {
   SUPPLIER_INVOICES: 'supplier-invoices',
   EMPLOYEE_INVOICES: 'employee-invoices',
   SUPPLIER_DOCUMENTS: 'supplier-documents',
+  SUPPLIER_ONBOARDING: 'supplier-onboarding',
+  CUSTOMER_ONBOARDING: 'customer-onboarding',
   PURCHASE_REQUISITIONS: 'purchase-requisitions',
   CONTRACTS: 'contracts',
   SIGNED_DOCUMENTS: 'signed-documents',
@@ -57,6 +59,10 @@ const initializeStorageDirectories = async () => {
     
     // Supplier Documents
     path.join(BASE_UPLOAD_DIR, STORAGE_CATEGORIES.SUPPLIER_DOCUMENTS),
+    
+    // Onboarding
+    path.join(BASE_UPLOAD_DIR, STORAGE_CATEGORIES.SUPPLIER_ONBOARDING),
+    path.join(BASE_UPLOAD_DIR, STORAGE_CATEGORIES.CUSTOMER_ONBOARDING),
     
     // Contracts
     path.join(BASE_UPLOAD_DIR, STORAGE_CATEGORIES.CONTRACTS),
