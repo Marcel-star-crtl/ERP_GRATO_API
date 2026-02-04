@@ -287,14 +287,15 @@ const createPurchaseOrder = async (req, res) => {
 
 
 
-    // Validate dates
+    // Validate dates (allow same-day delivery)
     const deliveryDate = new Date(expectedDeliveryDate);
-    const today = new Date();
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
 
-    if (deliveryDate <= today) {
+    if (deliveryDate < todayStart) {
       return res.status(400).json({
         success: false,
-        message: 'Expected delivery date must be in the future'
+        message: 'Expected delivery date cannot be in the past'
       });
     }
 

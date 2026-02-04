@@ -115,8 +115,8 @@ const CashRequestSchema = new mongoose.Schema({
   
   businessJustification: {
     type: String,
-    required: true,
-    minlength: 20
+    required: false,
+    default: ''
   },
   
   urgency: {

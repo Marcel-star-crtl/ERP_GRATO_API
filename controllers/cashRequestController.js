@@ -2133,7 +2133,6 @@ const createRequest = async (req, res) => {
       requestType,
       amountRequested,
       purpose,
-      businessJustification,
       urgency,
       requiredDate,
       projectCode,
