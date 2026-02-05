@@ -85,19 +85,28 @@ class PDFService {
       yPos = 50;
     }
 
-    // Payment Terms
-    this.drawPaymentTerms(doc, yPos, poData);
-    yPos += 60;
+    // Payment Terms (signature should follow immediately after)
+    const termsResult = this.drawPaymentTerms(doc, yPos, poData);
+    yPos = termsResult.yPos;
 
     // Check if we need a new page for signature
-    if (yPos > 680) {
+    const signatureSpace = 80;
+    const pageHeight = doc.page.height;
+    const footerBlockHeight = 60;
+    const footerY = pageHeight - this.pageMargins.bottom - footerBlockHeight;
+    const contentBottomLimit = footerY - 10;
+
+    if (yPos + signatureSpace > contentBottomLimit) {
       doc.addPage();
       currentPage++;
       yPos = 50;
     }
 
-    // Signature Section
+    // Signature Section (immediately after payment terms)
     this.drawSignatureSection(doc, yPos, poData);
+
+    // Special Instructions (rendered after signatures)
+    yPos = this.drawSpecialInstructions(doc, yPos + signatureSpace, poData);
 
     // ✅ FIXED: Draw footer on all pages with correct indexing
     const range = doc.bufferedPageRange();
@@ -459,9 +468,7 @@ class PDFService {
   }
 
   drawSignatureSection(doc, yPos, poData) {
-    yPos += 20;
-    
-    const signatureY = yPos + 20;
+    const signatureY = yPos + 40;
     const lineWidth = 120;
     const lineSpacing = 160;
     
@@ -469,8 +476,8 @@ class PDFService {
     for (let i = 0; i < 3; i++) {
       const xPos = 40 + (i * lineSpacing);
       
-      doc.moveTo(xPos, signatureY + 30)
-         .lineTo(xPos + lineWidth, signatureY + 30)
+      doc.moveTo(xPos, signatureY + 24)
+        .lineTo(xPos + lineWidth, signatureY + 24)
          .strokeColor('#000000')
          .lineWidth(0.5)
          .stroke();
@@ -478,26 +485,71 @@ class PDFService {
   }
 
   drawPaymentTerms(doc, yPos, poData) {
+    let currentY = yPos;
+    let heightUsed = 0;
+    
+    // PAYMENT TERMS HEADING
     doc.fontSize(9)
        .font(this.boldFont)
        .fillColor('#000000')
-       .text('Payment Terms:', 40, yPos);
+       .text('Payment Terms:', 40, currentY);
+
+    currentY += 18;
+    heightUsed += 18;
+
+    // PAYMENT TERMS TEXT
+    doc.font(this.defaultFont)
+       .fontSize(8)
+       .text(this.safeString(poData.paymentTerms, 'Net 30 days'), 40, currentY);
+
+    currentY += 12;
+    heightUsed += 12;
+
+    return {
+      yPos: currentY,
+      heightUsed: heightUsed
+    };
+  }
+
+  drawSpecialInstructions(doc, yPos, poData) {
+    if (!poData.specialInstructions) return yPos;
+
+    let currentY = yPos;
+    const pageHeight = doc.page.height;
+    const footerBlockHeight = 60;
+    const footerY = pageHeight - this.pageMargins.bottom - footerBlockHeight;
+    const contentBottomLimit = footerY - 10;
+
+    const decodedInstructions = this.decodeHTMLEntities(poData.specialInstructions);
+    const textOptions = {
+      width: 500,
+      lineGap: 4,
+      align: 'left'
+    };
+
+    const textHeight = doc.heightOfString(decodedInstructions, textOptions);
+    const headingHeight = 18;
+    const spacingHeight = 8;
+    const totalHeight = headingHeight + textHeight + spacingHeight;
+
+    if (currentY + totalHeight > contentBottomLimit) {
+      doc.addPage();
+      currentY = 50;
+    }
+
+    doc.font(this.boldFont)
+       .fontSize(9)
+       .text('Special Instructions:', 40, currentY);
+
+    currentY += headingHeight;
 
     doc.font(this.defaultFont)
        .fontSize(8)
-       .text(this.safeString(poData.paymentTerms, 'Net 30 days'), 40, yPos + 15);
+       .text(decodedInstructions, 40, currentY, textOptions);
 
-    if (poData.specialInstructions) {
-      doc.font(this.boldFont)
-         .fontSize(9)
-         .text('Special Instructions:', 40, yPos + 35);
+    currentY += textHeight + spacingHeight;
 
-      doc.font(this.defaultFont)
-         .fontSize(8)
-         .text(this.safeString(poData.specialInstructions, ''), 40, yPos + 50, {
-           width: 500
-         });
-    }
+    return currentY;
   }
 
 
@@ -561,57 +613,6 @@ class PDFService {
     });
     
     doc.restore(); // Restore state after drawing footer
-  }
-
-
-  generateExactPOContent(doc, poData) {
-    let yPos = 50;
-    let currentPage = 1;
-
-    // Header with logo and company info
-    this.drawHeader(doc, yPos, poData);
-    yPos += 90;
-
-    // Two-column section: Shipping address (left) and Supplier (right)
-    this.drawAddressSection(doc, yPos, poData);
-    yPos += 90; 
-
-    // Purchase Order Title Bar
-    this.drawPOTitleBar(doc, yPos, poData);
-    yPos += 50;
-
-    // Items Table - This handles pagination internally
-    const tableResult = this.drawItemsTable(doc, yPos, poData, currentPage);
-    yPos = tableResult.yPos;
-    currentPage = tableResult.currentPage;
-
-    // Check if we need a new page for remaining content
-    if (yPos > 650) {
-      doc.addPage();
-      currentPage++;
-      yPos = 50;
-    }
-
-    // Payment Terms
-    this.drawPaymentTerms(doc, yPos, poData);
-    yPos += 60;
-
-    // Check if we need a new page for signature
-    if (yPos > 680) {
-      doc.addPage();
-      currentPage++;
-      yPos = 50;
-    }
-
-    // Signature Section
-    this.drawSignatureSection(doc, yPos, poData);
-
-    // Footer on each page
-    const range = doc.bufferedPageRange();
-    for (let i = 0; i < range.count; i++) {
-      doc.switchToPage(i);
-      this.drawFooter(doc, poData, i + 1, range.count);
-    }
   }
 
   drawHeader(doc, yPos, poData) {
@@ -3248,6 +3249,27 @@ drawBuyerAcknowledgmentSignature(doc, yPos, data) {
       return defaultValue || '0';
     }
     return str;
+  }
+
+  decodeHTMLEntities(text) {
+    if (!text) return '';
+    const htmlEntities = {
+      '&amp;': '&',
+      '&lt;': '<',
+      '&gt;': '>',
+      '&quot;': '"',
+      '&apos;': "'",
+      '&#39;': "'",
+      '&nbsp;': ' ',
+      '&ndash;': '–',
+      '&mdash;': '—'
+    };
+    
+    let decoded = String(text);
+    Object.entries(htmlEntities).forEach(([entity, char]) => {
+      decoded = decoded.replace(new RegExp(entity, 'g'), char);
+    });
+    return decoded;
   }
 
   formatDateExact(date) {

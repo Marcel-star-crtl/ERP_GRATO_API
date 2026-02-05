@@ -4542,7 +4542,6 @@ const createReimbursementRequest = async (req, res) => {
       requestType,
       amountRequested,
       purpose,
-      businessJustification,
       urgency,
       requiredDate,
       itemizedBreakdown
@@ -4681,7 +4680,6 @@ const createReimbursementRequest = async (req, res) => {
       requestType,
       amountRequested: amount,
       purpose: purpose.trim(),
-      businessJustification: businessJustification.trim(),
       urgency,
       requiredDate: new Date(requiredDate),
       status: 'pending_supervisor',
