@@ -49,14 +49,16 @@ const approvalStepSchema = new mongoose.Schema({
 const invoiceSchema = new mongoose.Schema({
   poNumber: {
     type: String,
-    required: [true, 'PO number is required'],
+    required: false,
     uppercase: true,
     trim: true,
     validate: {
       validator: function(v) {
-        return /^PO-\w{2}\d{10}-\d+$/.test(v);
+        if (!v) return true;
+        // Allow both supplier PO format (PO-XX0000000000-X) and customer PO format (PO-YYYY-NNN)
+        return /^PO-\w{2}\d{10}-\d+$/.test(v) || /^PO-\d{4}-\d{3}$/.test(v);
       },
-      message: 'PO number format should be: PO-XX0000000000-X (e.g., PO-NG010000000-1)'
+      message: 'PO number format should be: PO-XX0000000000-X (supplier) or PO-YYYY-NNN (customer)'
     }
   },
   
@@ -69,7 +71,7 @@ const invoiceSchema = new mongoose.Schema({
   employee: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: false // Made optional for finance-prepared customer invoices
   },
 
   // Employee details (cached for historical records)
@@ -78,6 +80,20 @@ const invoiceSchema = new mongoose.Schema({
     email: String,
     department: String,
     position: String
+  },
+  
+  // Finance user who created/prepared the invoice (for customer invoices)
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  
+  // Created by details (cached for historical records)
+  createdByDetails: {
+    name: String,
+    email: String,
+    department: String,
+    role: String
   },
   
   uploadedDate: {
@@ -111,11 +127,99 @@ const invoiceSchema = new mongoose.Schema({
     bytes: Number,
     originalName: String
   },
+
+  // References for finance-prepared invoices
+  customer: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Customer'
+  },
+  customerDetails: {
+    name: String,
+    email: String,
+    phone: String
+  },
+  customerPOId: {
+    type: mongoose.Schema.Types.ObjectId
+  },
+  poReference: {
+    type: String,
+    trim: true
+  },
+
+  // Supplier PO linkage (legacy/supplier invoices)
+  poId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'PurchaseOrder'
+  },
+  supplier: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Supplier'
+  },
+  supplierDetails: {
+    name: String,
+    email: String,
+    taxId: String
+  },
+
+  // Core invoice data
+  invoiceDate: Date,
+  dueDate: Date,
+  totalAmount: Number,
+  taxAmount: Number,
+  netAmount: Number,
+  description: {
+    type: String,
+    trim: true
+  },
+  paymentTerms: {
+    type: String,
+    trim: true
+  },
+  status: {
+    type: String,
+    enum: ['draft', 'pending_approval', 'approved', 'rejected', 'paid', 'assigned'],
+    default: 'draft'
+  },
+
+  items: [
+    {
+      description: String,
+      quantity: Number,
+      unitPrice: Number,
+      taxRate: Number
+    }
+  ],
+
+  paymentTermsInvoiced: [
+    {
+      termIndex: Number,
+      description: String,
+      percentage: Number
+    }
+  ],
+
+  paymentTermsBreakdown: [
+    {
+      description: String,
+      percentage: Number,
+      amount: Number,
+      timeframe: String,
+      customTimeframe: String
+    }
+  ],
   
   // Overall approval status
   approvalStatus: {
     type: String,
-    enum: ['pending_finance_assignment', 'pending_department_approval', 'approved', 'rejected', 'processed'],
+    enum: [
+      'pending_finance_assignment', 
+      'pending_department_approval', 
+      'pending_finance_review',
+      'pending_approval',
+      'approved', 
+      'rejected', 
+      'processed'
+    ],
     default: 'pending_finance_assignment'
   },
 
@@ -187,18 +291,17 @@ const invoiceSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Compound index to prevent duplicate PO/Invoice combinations per employee
+// Index for querying invoices by PO number
 invoiceSchema.index({ 
   poNumber: 1, 
-  invoiceNumber: 1, 
-  employee: 1 
+  invoiceNumber: 1
 }, { 
-  unique: true,
-  name: 'unique_po_invoice_employee'
+  name: 'idx_po_invoice'
 });
 
 // Indexes for efficient queries
 invoiceSchema.index({ employee: 1, uploadedDate: -1 });
+invoiceSchema.index({ createdBy: 1, createdAt: -1 }); // For finance-prepared invoices
 invoiceSchema.index({ approvalStatus: 1, uploadedDate: -1 });
 invoiceSchema.index({ assignedDepartment: 1, approvalStatus: 1 });
 invoiceSchema.index({ poNumber: 1 });

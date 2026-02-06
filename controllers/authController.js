@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const QuarterlyKPI = require('../models/QuarterlyKPI');
 const HierarchyService = require('../services/hierarchyService');
 const WorkflowService = require('../services/workflowService');
 
@@ -11,6 +12,14 @@ const WorkflowService = require('../services/workflowService');
 // ==========================================
 // AUTHENTICATION
 // ==========================================
+
+const getCurrentQuarterInfo = () => {
+    const now = new Date();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+    const quarter = `Q${Math.ceil(month / 3)}-${year}`;
+    return { quarter, year };
+};
 
 exports.login = async (req, res) => {
     try {
@@ -65,6 +74,20 @@ exports.login = async (req, res) => {
 
         console.log('✅ Login successful:', user.email);
 
+        let kpiStatus = null;
+        if (user.role !== 'supplier') {
+            const { quarter, year } = getCurrentQuarterInfo();
+            const kpi = await QuarterlyKPI.findOne({ employee: user._id, quarter, year }).select('approvalStatus submittedAt');
+            kpiStatus = {
+                quarter,
+                year,
+                hasKpi: !!kpi,
+                isSubmitted: kpi ? kpi.approvalStatus !== 'draft' : false,
+                approvalStatus: kpi?.approvalStatus || null,
+                submittedAt: kpi?.submittedAt || null
+            };
+        }
+
         res.status(200).json({
             success: true,
             token,
@@ -77,6 +100,11 @@ exports.login = async (req, res) => {
                 position: user.position,
                 hierarchyLevel: user.hierarchyLevel,
                 approvalCapacities: user.approvalCapacities,
+                kpiStatus,
+                signature: user.signature?.url ? {
+                    url: user.signature.url,
+                    uploadedAt: user.signature.uploadedAt
+                } : null,
                 supervisor: user.supervisor ? {
                     id: user.supervisor._id,
                     name: user.supervisor.fullName,

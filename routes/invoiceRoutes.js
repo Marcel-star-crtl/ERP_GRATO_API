@@ -234,6 +234,14 @@ router.get(
   financeInvoiceController.getFinancePreparedInvoices
 );
 
+// Download finance-prepared invoice PDF
+router.get(
+  '/finance/prepared/:invoiceId/pdf',
+  authMiddleware,
+  requireRoles('finance', 'admin'),
+  financeInvoiceController.downloadFinanceInvoicePDF
+);
+
 /**
  * @route   POST /api/invoices/finance/prepare
  * @desc    Create/prepare invoice from PO (Finance only)

@@ -118,6 +118,374 @@ class PDFService {
     }
   }
 
+  // ============================================
+  // INVOICE PDF
+  // ============================================
+  async generateInvoicePDF(invoiceData, outputPath) {
+    return new Promise((resolve, reject) => {
+      try {
+        console.log('=== STARTING INVOICE PDF GENERATION ===');
+        console.log('Invoice Data received:', JSON.stringify(invoiceData, null, 2));
+
+        const doc = new PDFDocument({
+          size: 'A4',
+          margins: this.pageMargins,
+          bufferPages: true,
+          info: {
+            Title: `Invoice - ${invoiceData.invoiceNumber}`,
+            Author: 'GRATO ENGINEERING GLOBAL LTD',
+            Subject: 'Invoice',
+            Creator: 'Invoice System'
+          }
+        });
+
+        if (outputPath) {
+          doc.pipe(fs.createWriteStream(outputPath));
+        }
+
+        const chunks = [];
+        doc.on('data', chunk => chunks.push(chunk));
+        doc.on('end', () => {
+          const pdfBuffer = Buffer.concat(chunks);
+          console.log('=== INVOICE PDF GENERATION COMPLETED ===');
+          resolve({
+            success: true,
+            buffer: pdfBuffer,
+            filename: `INV_${invoiceData.invoiceNumber}_${Date.now()}.pdf`
+          });
+        });
+
+        this.generateInvoiceContent(doc, invoiceData);
+        doc.end();
+      } catch (error) {
+        console.error('Invoice PDF generation error:', error);
+        reject({ success: false, error: error.message });
+      }
+    });
+  }
+
+  generateInvoiceContent(doc, data) {
+    let yPos = 50;
+    let currentPage = 1;
+
+    // Header
+    this.drawHeader(doc, yPos, data);
+    yPos += 90;
+
+    // Address Section (Bill To / Company)
+    this.drawInvoiceAddressSection(doc, yPos, data);
+    yPos += 90;
+
+    // Invoice Title Bar
+    this.drawInvoiceTitleBar(doc, yPos, data);
+    yPos += 50;
+
+    // Items Table
+    const tableResult = this.drawInvoiceItemsTable(doc, yPos, data, currentPage);
+    yPos = tableResult.yPos;
+    currentPage = tableResult.currentPage;
+
+    // Page break before terms/breakdown if needed
+    if (yPos > 650) {
+      doc.addPage();
+      currentPage++;
+      yPos = 50;
+    }
+
+    // Payment Terms
+    yPos = this.drawInvoicePaymentTerms(doc, yPos, data);
+
+    // Payment Breakdown (if any)
+    yPos = this.drawInvoicePaymentBreakdown(doc, yPos, data);
+
+    // Footer on all pages
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i++) {
+      doc.switchToPage(i);
+      this.drawFooter(doc, data, i + 1, range.count);
+    }
+  }
+
+  drawInvoiceAddressSection(doc, yPos, data) {
+    // LEFT: Bill To (Customer)
+    const customer = data.customerDetails || {};
+    doc.fontSize(9)
+      .font(this.boldFont)
+      .fillColor('#000000')
+      .text('Bill To', 40, yPos);
+
+    doc.font(this.defaultFont)
+      .fontSize(9)
+      .text(this.safeString(customer.name, 'Customer Name'), 40, yPos + 15)
+      .text(this.safeString(customer.address, 'Address'), 40, yPos + 28)
+      .text(this.safeString(customer.email, 'Email'), 40, yPos + 41);
+
+    if (customer.phone) {
+      doc.text(`${customer.phone}`, 40, yPos + 54);
+    }
+
+    // RIGHT: Company info (GRATO)
+    doc.fontSize(9)
+      .font(this.boldFont)
+      .text('Issued By', 320, yPos);
+
+    doc.font(this.defaultFont)
+      .fontSize(9)
+      .text('GRATO ENGINEERING GLOBAL LTD', 320, yPos + 15)
+      .text('Bonaberi, Douala', 320, yPos + 28)
+      .text('Cameroon', 320, yPos + 41)
+      .text('682952153', 320, yPos + 54);
+  }
+
+  drawInvoiceTitleBar(doc, yPos, data) {
+    doc.fillColor('#C5504B')
+      .fontSize(14)
+      .font(this.boldFont)
+      .text(`Invoice #${this.safeString(data.invoiceNumber, 'INV-000001')}`, 40, yPos);
+
+    const detailsY = yPos + 25;
+
+    doc.fillColor('#888888')
+      .fontSize(8)
+      .font(this.defaultFont)
+      .text('Invoice Date:', 40, detailsY);
+    doc.fillColor('#000000')
+      .fontSize(9)
+      .text(this.formatDateExact(data.invoiceDate), 40, detailsY + 12);
+
+    doc.fillColor('#888888')
+      .fontSize(8)
+      .text('Due Date:', 220, detailsY);
+    doc.fillColor('#000000')
+      .fontSize(9)
+      .text(this.formatDateExact(data.dueDate), 220, detailsY + 12);
+
+    doc.fillColor('#888888')
+      .fontSize(8)
+      .text('PO Reference:', 400, detailsY);
+    doc.fillColor('#000000')
+      .fontSize(9)
+      .text(this.safeString(data.poReference || data.poNumber, 'N/A'), 400, detailsY + 12);
+  }
+
+  drawInvoiceItemsTable(doc, yPos, data, currentPage) {
+    const tableWidth = 515;
+    const colX = {
+      desc: 40,
+      qty: 280,
+      unitPrice: 325,
+      tax: 400,
+      amount: 470
+    };
+
+    let currentY = yPos;
+    const pageBottomLimit = 720;
+
+    const drawTableHeader = (y) => {
+      doc.fillColor('#F5F5F5')
+        .rect(40, y, tableWidth, 20)
+        .fill();
+
+      doc.strokeColor('#CCCCCC')
+        .lineWidth(0.5)
+        .rect(40, y, tableWidth, 20)
+        .stroke();
+
+      doc.fillColor('#000000')
+        .fontSize(9)
+        .font(this.boldFont);
+
+      doc.text('Description', colX.desc + 5, y + 6);
+      doc.text('Qty', colX.qty, y + 6);
+      doc.text('Unit Price', colX.unitPrice, y + 6);
+      doc.text('Tax %', colX.tax, y + 6);
+      doc.text('Amount', colX.amount, y + 6);
+
+      [colX.qty, colX.unitPrice, colX.tax, colX.amount].forEach(x => {
+        doc.moveTo(x, y).lineTo(x, y + 20).stroke();
+      });
+
+      return y + 20;
+    };
+
+    currentY = drawTableHeader(currentY);
+
+    let subtotal = 0;
+    let taxTotal = 0;
+    let total = 0;
+
+    const items = Array.isArray(data.items) ? data.items : [];
+
+    items.forEach((item) => {
+      const quantity = this.safeNumber(item.quantity, 0);
+      const unitPrice = this.safeNumber(item.unitPrice, 0);
+      const taxRate = this.safeNumber(item.taxRate, 0);
+      const lineSubtotal = quantity * unitPrice;
+      const lineTax = lineSubtotal * (taxRate / 100);
+      const lineTotal = lineSubtotal + lineTax;
+
+      subtotal += lineSubtotal;
+      taxTotal += lineTax;
+      total += lineTotal;
+
+      const description = this.safeString(item.description, 'No description');
+      const descWidth = 230;
+      doc.fontSize(8).font(this.defaultFont);
+      const descHeight = doc.heightOfString(description, { width: descWidth, lineGap: 1 });
+      const rowHeight = Math.max(25, descHeight + 12);
+
+      if (currentY + rowHeight > pageBottomLimit) {
+        doc.addPage();
+        currentPage++;
+        currentY = 50;
+        currentY = drawTableHeader(currentY);
+      }
+
+      doc.strokeColor('#CCCCCC')
+        .rect(40, currentY, tableWidth, rowHeight)
+        .stroke();
+
+      doc.fillColor('#000000')
+        .fontSize(8)
+        .font(this.defaultFont);
+
+      doc.text(description, colX.desc + 5, currentY + 6, {
+        width: descWidth,
+        align: 'left',
+        lineGap: 1
+      });
+
+      const textY = currentY + (rowHeight / 2) - 4;
+      doc.text(quantity.toFixed(2), colX.qty, textY);
+      doc.text(this.formatCurrency(unitPrice), colX.unitPrice, textY);
+      doc.text(`${taxRate.toFixed(2)}%`, colX.tax, textY);
+      doc.text(`${this.formatCurrency(lineTotal)} FCFA`, colX.amount, textY);
+
+      [colX.qty, colX.unitPrice, colX.tax, colX.amount].forEach(x => {
+        doc.moveTo(x, currentY).lineTo(x, currentY + rowHeight).stroke();
+      });
+
+      currentY += rowHeight;
+    });
+
+    if (items.length === 0) {
+      doc.fillColor('#F9F9F9')
+        .rect(40, currentY, tableWidth, 22)
+        .fill();
+
+      doc.strokeColor('#CCCCCC')
+        .rect(40, currentY, tableWidth, 22)
+        .stroke();
+
+      doc.fillColor('#666666')
+        .text('No items found', colX.desc + 5, currentY + 6);
+
+      currentY += 22;
+    }
+
+    if (currentY + 90 > pageBottomLimit) {
+      doc.addPage();
+      currentPage++;
+      currentY = 50;
+    }
+
+    const summaryTotals = {
+      subtotal: data.netAmount ?? subtotal,
+      taxTotal: data.taxAmount ?? taxTotal,
+      total: data.totalAmount ?? total
+    };
+
+    this.drawInvoiceSummary(doc, currentY, summaryTotals);
+    currentY += 80;
+
+    return { yPos: currentY, currentPage };
+  }
+
+  drawInvoiceSummary(doc, yPos, totals) {
+    const summaryX = 380;
+    const summaryWidth = 175;
+    const labelX = summaryX + 10;
+
+    doc.strokeColor('#CCCCCC')
+      .lineWidth(0.5)
+      .rect(summaryX, yPos, summaryWidth, 60)
+      .stroke();
+
+    doc.fontSize(9)
+      .font(this.defaultFont)
+      .fillColor('#000000');
+
+    doc.text('Untaxed Amount', labelX, yPos + 8);
+    doc.text(`${this.formatCurrency(totals.subtotal)} FCFA`, labelX, yPos + 8, {
+      width: summaryWidth - 20,
+      align: 'right'
+    });
+
+    doc.text('Tax Amount', labelX, yPos + 24);
+    doc.text(`${this.formatCurrency(totals.taxTotal)} FCFA`, labelX, yPos + 24, {
+      width: summaryWidth - 20,
+      align: 'right'
+    });
+
+    doc.fillColor('#E8E8E8')
+      .rect(summaryX, yPos + 40, summaryWidth, 20)
+      .fill();
+
+    doc.strokeColor('#CCCCCC')
+      .rect(summaryX, yPos + 40, summaryWidth, 20)
+      .stroke();
+
+    doc.fillColor('#000000')
+      .font(this.boldFont)
+      .text('Total', labelX, yPos + 46);
+    doc.text(`${this.formatCurrency(totals.total)} FCFA`, labelX, yPos + 46, {
+      width: summaryWidth - 20,
+      align: 'right'
+    });
+  }
+
+  drawInvoicePaymentTerms(doc, yPos, data) {
+    let currentY = yPos;
+    doc.fontSize(9)
+      .font(this.boldFont)
+      .fillColor('#000000')
+      .text('Payment Terms:', 40, currentY);
+
+    currentY += 16;
+
+    doc.font(this.defaultFont)
+      .fontSize(8)
+      .text(this.safeString(data.paymentTerms, 'Net 30 days'), 40, currentY);
+
+    return currentY + 14;
+  }
+
+  drawInvoicePaymentBreakdown(doc, yPos, data) {
+    const breakdown = Array.isArray(data.paymentTermsBreakdown) ? data.paymentTermsBreakdown : [];
+    if (breakdown.length === 0) return yPos;
+
+    let currentY = yPos + 8;
+
+    doc.fontSize(9)
+      .font(this.boldFont)
+      .fillColor('#000000')
+      .text('Payment Breakdown:', 40, currentY);
+
+    currentY += 14;
+
+    breakdown.forEach(term => {
+      const timeframe = term.customTimeframe || term.timeframe || '';
+      const line = `${term.description || 'Term'} - ${this.safeNumber(term.percentage, 0)}% (${this.formatCurrency(term.amount)} FCFA)`;
+      doc.fontSize(8)
+        .font(this.defaultFont)
+        .fillColor('#000000')
+        .text(timeframe ? `${line} | ${timeframe}` : line, 40, currentY, { width: 500 });
+      currentY += 12;
+    });
+
+    return currentY + 6;
+  }
+
   drawHeader(doc, yPos, poData) {
     // Company Logo (left side)
     try {

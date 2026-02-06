@@ -2,6 +2,8 @@ const Invoice = require('../models/Invoice');
 const PurchaseOrder = require('../models/PurchaseOrder');
 const User = require('../models/User');
 const Supplier = require('../models/Supplier');
+const Customer = require('../models/Customer');
+const pdfService = require('../services/pdfService');
 const { sendEmail } = require('../services/emailService');
 const { cloudinary } = require('../config/cloudinary');
 const fs = require('fs').promises;
@@ -21,29 +23,41 @@ exports.prepareInvoiceFromPO = async (req, res) => {
       poNumber,
       invoiceNumber,
       supplierId,
+      customerId,
+      customerPOId,
+      poReference,
       invoiceDate,
       dueDate,
       totalAmount,
       taxAmount = 0,
       description,
       paymentTerms = 'net-30',
-      status = 'draft'
+      status = 'draft',
+      items = [],
+      paymentTermsBreakdown = [],
+      paymentTermsInvoiced = []
     } = req.body;
 
     // Validate required fields
-    if (!poNumber || !invoiceNumber) {
+    if (!invoiceNumber) {
       return res.status(400).json({
         success: false,
-        message: 'PO number and invoice number are required'
+        message: 'Invoice number is required'
       });
     }
 
     // Check if invoice already exists
-    const existingInvoice = await Invoice.findOne({
-      poNumber: poNumber.toUpperCase(),
+    const normalizedPoNumber = poNumber && poNumber !== 'N/A' ? poNumber.toUpperCase() : undefined;
+    const existingQuery = {
       invoiceNumber: invoiceNumber.trim(),
       createdBy: req.user.userId
-    });
+    };
+
+    if (normalizedPoNumber) {
+      existingQuery.poNumber = normalizedPoNumber;
+    }
+
+    const existingInvoice = await Invoice.findOne(existingQuery);
 
     if (existingInvoice) {
       return res.status(400).json({
@@ -65,6 +79,12 @@ exports.prepareInvoiceFromPO = async (req, res) => {
     let supplier = null;
     if (supplierId) {
       supplier = await Supplier.findById(supplierId);
+    }
+
+    // Get Customer details (for finance-prepared customer invoices)
+    let customer = null;
+    if (customerId) {
+      customer = await Customer.findById(customerId);
     }
 
     // Get PO details for reference (if poId provided)
@@ -111,9 +131,18 @@ exports.prepareInvoiceFromPO = async (req, res) => {
 
     // Create invoice record
     const invoiceData = {
-      poNumber: poNumber.toUpperCase(),
+      poNumber: normalizedPoNumber,
       invoiceNumber: invoiceNumber.trim(),
       poId: poId,
+      customer: customerId,
+      customerDetails: customer ? {
+        name: customer.companyName || customer.tradingName || customer.name,
+        email: customer.primaryEmail || customer.email,
+        phone: customer.primaryPhone || customer.phone
+      } : undefined,
+      customerPOId: customerPOId,
+      poReference: poReference,
+      employee: req.user.userId, // Set employee to the finance user creating the invoice
       supplier: supplierId,
       supplierDetails: supplier ? {
         name: supplier.name,
@@ -128,6 +157,9 @@ exports.prepareInvoiceFromPO = async (req, res) => {
       description,
       paymentTerms,
       status: status, // 'draft' or 'pending_approval'
+      items,
+      paymentTermsBreakdown,
+      paymentTermsInvoiced,
       invoiceFile: invoiceFileData,
       createdBy: req.user.userId,
       createdByDetails: {
@@ -209,6 +241,10 @@ exports.getFinancePreparedInvoices = async (req, res) => {
   try {
     const { status } = req.query;
     
+    console.log('=== FETCHING FINANCE PREPARED INVOICES ===');
+    console.log('User ID:', req.user.userId);
+    console.log('Status filter:', status);
+    
     let query = {
       createdBy: req.user.userId,
       // Only show invoices created by Finance (not uploaded by employees)
@@ -219,9 +255,22 @@ exports.getFinancePreparedInvoices = async (req, res) => {
       query.status = status;
     }
 
+    console.log('Query:', JSON.stringify(query, null, 2));
+
     const invoices = await Invoice.find(query)
-      .populate('supplier', 'name email')
+      .populate('employee', 'fullName email')
       .sort({ createdAt: -1 });
+
+    console.log(`Found ${invoices.length} invoices`);
+    if (invoices.length > 0) {
+      console.log('First invoice:', {
+        id: invoices[0]._id,
+        invoiceNumber: invoices[0].invoiceNumber,
+        createdBy: invoices[0].createdBy,
+        status: invoices[0].status,
+        createdByRole: invoices[0].createdByDetails?.role
+      });
+    }
 
     res.json({
       success: true,
@@ -233,6 +282,62 @@ exports.getFinancePreparedInvoices = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch invoices'
+    });
+  }
+};
+
+/**
+ * Download finance-prepared invoice as PDF
+ */
+exports.downloadFinanceInvoicePDF = async (req, res) => {
+  try {
+    const { invoiceId } = req.params;
+
+    const invoice = await Invoice.findById(invoiceId)
+      .populate('customer', 'companyName tradingName primaryEmail primaryPhone')
+      .populate('employee', 'fullName email');
+
+    if (!invoice) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invoice not found'
+      });
+    }
+
+    const customer = invoice.customer || {};
+    const pdfData = {
+      invoiceNumber: invoice.invoiceNumber,
+      poNumber: invoice.poNumber,
+      poReference: invoice.poReference,
+      invoiceDate: invoice.invoiceDate,
+      dueDate: invoice.dueDate,
+      totalAmount: invoice.totalAmount,
+      taxAmount: invoice.taxAmount,
+      netAmount: invoice.netAmount,
+      description: invoice.description,
+      paymentTerms: invoice.paymentTerms,
+      items: invoice.items,
+      paymentTermsBreakdown: invoice.paymentTermsBreakdown,
+      customerDetails: invoice.customerDetails || {
+        name: customer.companyName || customer.tradingName,
+        email: customer.primaryEmail,
+        phone: customer.primaryPhone
+      }
+    };
+
+    const pdfResult = await pdfService.generateInvoicePDF(pdfData);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=Invoice_${invoice.invoiceNumber}.pdf`
+    );
+    res.end(pdfResult.buffer);
+  } catch (error) {
+    console.error('Invoice PDF download error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate invoice PDF'
     });
   }
 };

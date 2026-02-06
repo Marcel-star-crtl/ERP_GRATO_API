@@ -5,6 +5,7 @@ const { sendEmail } = require('../services/emailService');
 const authController = require('../controllers/authController');
 const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware');
 const User = require('../models/User');
+const QuarterlyKPI = require('../models/QuarterlyKPI');
 
 
 router.post('/login', authController.login);
@@ -25,6 +26,23 @@ router.get('/me', authMiddleware, async (req, res) => {
             });
         }
 
+        let kpiStatus = null;
+        if (user.role !== 'supplier') {
+            const now = new Date();
+            const month = now.getMonth() + 1;
+            const year = now.getFullYear();
+            const quarter = `Q${Math.ceil(month / 3)}-${year}`;
+            const kpi = await QuarterlyKPI.findOne({ employee: user._id, quarter, year }).select('approvalStatus submittedAt');
+            kpiStatus = {
+                quarter,
+                year,
+                hasKpi: !!kpi,
+                isSubmitted: kpi ? kpi.approvalStatus !== 'draft' : false,
+                approvalStatus: kpi?.approvalStatus || null,
+                submittedAt: kpi?.submittedAt || null
+            };
+        }
+
         res.json({
             success: true,
             user: {
@@ -36,6 +54,11 @@ router.get('/me', authMiddleware, async (req, res) => {
                 position: user.position,
                 hierarchyLevel: user.hierarchyLevel,
                 approvalCapacities: user.approvalCapacities,
+                kpiStatus,
+                signature: user.signature?.url ? {
+                    url: user.signature.url,
+                    uploadedAt: user.signature.uploadedAt
+                } : null,
                 supervisor: user.supervisor,
                 departmentHead: user.departmentHead,
                 permissions: user.permissions
