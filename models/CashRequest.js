@@ -110,7 +110,7 @@ const CashRequestSchema = new mongoose.Schema({
   purpose: {
     type: String,
     required: true,
-    minlength: 10
+    // minlength: 10
   },
   
   businessJustification: {

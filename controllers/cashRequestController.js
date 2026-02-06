@@ -2311,7 +2311,7 @@ const createRequest = async (req, res) => {
       requestType,
       amountRequested: parseFloat(amountRequested),
       purpose,
-      businessJustification,
+      // businessJustification,
       urgency,
       requiredDate: new Date(requiredDate),
       projectCode,
