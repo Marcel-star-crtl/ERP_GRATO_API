@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const Project = require('../models/Project');
 const { findPersonByEmail } = require('./departmentStructure');
 
 /**
@@ -13,6 +14,22 @@ const buildApprovalChain = async (assigneeUserId, creatorUserId, projectId = nul
   
   const assignee = await User.findById(assigneeUserId);
   const creator = await User.findById(creatorUserId);
+  let finalApprover = creator;
+
+  if (projectId) {
+    const project = await Project.findById(projectId).select('createdBy projectManager');
+    if (project?.createdBy) {
+      const projectCreator = await User.findById(project.createdBy);
+      if (projectCreator) {
+        finalApprover = projectCreator;
+      }
+    } else if (project?.projectManager) {
+      const projectManager = await User.findById(project.projectManager);
+      if (projectManager) {
+        finalApprover = projectManager;
+      }
+    }
+  }
   
   if (!assignee) {
     throw new Error('Assignee not found');
@@ -46,21 +63,21 @@ const buildApprovalChain = async (assigneeUserId, creatorUserId, projectId = nul
     const supervisorsSupervisor = getImmediateSupervisor(immediateSupervisor.email);
     
     if (supervisorsSupervisor) {
-      // Check if supervisor's supervisor is same as creator
-      const isSameAsCreator = creator && supervisorsSupervisor.email === creator.email;
+      // Check if supervisor's supervisor is same as final approver
+      const isSameAsCreator = finalApprover && supervisorsSupervisor.email === finalApprover.email;
       
       if (isSameAsCreator) {
         console.log('L2: Skipped (same as creator)');
         chain.push({
           level: 2,
           approver: {
-            userId: creator._id,
+            userId: finalApprover._id,
             name: supervisorsSupervisor.name,
             email: supervisorsSupervisor.email,
             role: 'supervisor_supervisor'
           },
           status: 'skipped',
-          comments: 'Same as project creator - skipped to Level 3',
+          comments: 'Same as final approver - skipped to Level 3',
           reviewedAt: null
         });
       } else {
@@ -127,32 +144,32 @@ const buildApprovalChain = async (assigneeUserId, creatorUserId, projectId = nul
   }
   
   // LEVEL 3: Project Creator / Task Creator
-  if (creator) {
+  if (finalApprover) {
     // Check if creator is same as L1 or L2
-    const isSameAsL1 = chain[0] && chain[0].approver.email === creator.email;
-    const isSameAsL2 = chain[1] && chain[1].approver.email === creator.email;
+    const isSameAsL1 = chain[0] && chain[0].approver.email === finalApprover.email;
+    const isSameAsL2 = chain[1] && chain[1].approver.email === finalApprover.email;
     
     if (isSameAsL1 || isSameAsL2) {
       console.log('L3: Skipped (same as L1 or L2)');
       chain.push({
         level: 3,
         approver: {
-          userId: creator._id,
-          name: creator.fullName,
-          email: creator.email,
+          userId: finalApprover._id,
+          name: finalApprover.fullName,
+          email: finalApprover.email,
           role: 'project_creator'
         },
         status: 'skipped',
-        comments: 'Creator is also supervisor - approval consolidated',
+        comments: 'Final approver is also supervisor - approval consolidated',
         reviewedAt: null
       });
     } else {
       chain.push({
         level: 3,
         approver: {
-          userId: creator._id,
-          name: creator.fullName,
-          email: creator.email,
+          userId: finalApprover._id,
+          name: finalApprover.fullName,
+          email: finalApprover.email,
           role: 'project_creator'
         },
         status: 'pending',
@@ -160,7 +177,7 @@ const buildApprovalChain = async (assigneeUserId, creatorUserId, projectId = nul
         reviewedAt: null
       });
       
-      console.log(`L3: ${creator.fullName} (${creator.email})`);
+      console.log(`L3: ${finalApprover.fullName} (${finalApprover.email})`);
     }
   } else {
     console.log('L3: No creator found');

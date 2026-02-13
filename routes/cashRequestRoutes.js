@@ -1597,6 +1597,13 @@ router.get(
   cashRequestController.getDisbursementHistory
 );
 
+// Acknowledge receipt of disbursement
+router.post(
+  '/:requestId/disbursements/:disbursementId/acknowledge',
+  authMiddleware,
+  cashRequestController.acknowledgeCashDisbursement
+);
+
 // Edit routes
 router.put(
   '/:requestId/edit',

@@ -2511,6 +2511,46 @@ drawPettyCashPurpose(doc, yPos, data) {
   return yPos;
 }
 
+// ✅ NEW: Get acknowledgment info from latest acknowledged disbursement
+getAcknowledgmentInfo(data) {
+  const disbursements = Array.isArray(data?.disbursements) ? data.disbursements : [];
+  const acknowledged = disbursements.filter(d => d?.acknowledged);
+
+  if (acknowledged.length === 0) return null;
+
+  const latest = acknowledged.sort((a, b) => {
+    const aDate = new Date(a.acknowledgmentDate || a.date || 0).getTime();
+    const bDate = new Date(b.acknowledgmentDate || b.date || 0).getTime();
+    return bDate - aDate;
+  })[0];
+
+  const acknowledgedBy = latest?.acknowledgedBy;
+  let name = '';
+
+  if (acknowledgedBy) {
+    if (typeof acknowledgedBy === 'string') {
+      name = acknowledgedBy;
+    } else {
+      name = acknowledgedBy.fullName || acknowledgedBy.name || acknowledgedBy.email || '';
+    }
+  }
+
+  const fallbackName = data?.employee?.fullName || data?.employee?.name || '';
+  const isObjectIdLike = typeof name === 'string' && /^[0-9a-fA-F]{24}$/.test(name);
+
+  const signatureData = acknowledgedBy?.signature || data?.employee?.signature || null;
+  const signatureLocalPath = signatureData?.localPath || null;
+  const signatureUrl = signatureData?.url || null;
+
+  return {
+    name: name && !isObjectIdLike ? name : fallbackName,
+    date: latest?.acknowledgmentDate || latest?.date || null,
+    notes: latest?.acknowledgmentNotes || '',
+    signatureLocalPath,
+    signatureUrl
+  };
+}
+
 // ✅ NEW: Requester Acknowledgment Signature (for Cash Requests without items)
 drawRequesterAcknowledgmentSignature(doc, yPos, data) {
   yPos += 20;
@@ -2530,6 +2570,11 @@ drawRequesterAcknowledgmentSignature(doc, yPos, data) {
 
   yPos += 15;
 
+  const acknowledgment = this.getAcknowledgmentInfo(data);
+  const ackName = acknowledgment?.name || '';
+  const ackDate = acknowledgment?.date ? this.formatDateExact(acknowledgment.date) : '';
+  const signaturePath = acknowledgment?.signatureLocalPath;
+
   // Instruction text
   doc.fontSize(8)
      .font(this.defaultFont)
@@ -2544,9 +2589,38 @@ drawRequesterAcknowledgmentSignature(doc, yPos, data) {
 
   yPos += 30;
 
-  // Centered requester signature
+    // Acknowledgment details
+    doc.fontSize(8)
+      .font(this.boldFont)
+      .fillColor('#000000')
+      .text('Acknowledged By:', 50, yPos - 6);
+
+    doc.font(this.defaultFont)
+      .fillColor(ackName ? '#000000' : '#999999')
+      .text(ackName || 'Not yet acknowledged', 150, yPos - 6);
+
+    doc.font(this.boldFont)
+      .fillColor('#000000')
+      .text('Date:', 360, yPos - 6);
+
+    doc.font(this.defaultFont)
+      .fillColor(ackDate ? '#000000' : '#999999')
+      .text(ackDate || 'N/A', 400, yPos - 6);
+
+    // Centered requester signature
   const centerX = 180;
   const lineWidth = 200;
+    const signatureName = ackName || '_______________________';
+    const signatureDate = ackDate || '_______________________';
+
+    // Render signature image if available
+    if (signaturePath && fs.existsSync(signaturePath)) {
+      try {
+        doc.image(signaturePath, centerX + 10, yPos - 16, { width: 160, height: 40, fit: [160, 40] });
+      } catch (error) {
+        console.error('Signature image render error:', error.message);
+      }
+    }
 
   // Requester Acknowledgment
   doc.moveTo(centerX, yPos)
@@ -2560,12 +2634,12 @@ drawRequesterAcknowledgmentSignature(doc, yPos, data) {
      .fillColor('#000000')
      .text('Requester Signature', centerX, yPos + 5);
 
-  doc.fontSize(7)
+    doc.fontSize(7)
      .font(this.defaultFont)
      .fillColor('#666666')
-     .text('Name: _______________________', centerX, yPos + 18);
+      .text(`Name: ${signatureName}`, centerX, yPos + 18);
 
-  doc.text('Date: ________________________', centerX, yPos + 30);
+    doc.text(`Date: ${signatureDate}`, centerX, yPos + 30);
 }
 
 // ✅ NEW: Single Buyer Acknowledgment Signature Section
@@ -2587,6 +2661,11 @@ drawBuyerAcknowledgmentSignature(doc, yPos, data) {
 
   yPos += 15;
 
+  const acknowledgment = this.getAcknowledgmentInfo(data);
+  const ackName = acknowledgment?.name || '';
+  const ackDate = acknowledgment?.date ? this.formatDateExact(acknowledgment.date) : '';
+  const signaturePath = acknowledgment?.signatureLocalPath;
+
   // Instruction text
   doc.fontSize(8)
      .font(this.defaultFont)
@@ -2601,9 +2680,38 @@ drawBuyerAcknowledgmentSignature(doc, yPos, data) {
 
   yPos += 30;
 
-  // Centered buyer signature
+    // Acknowledgment details
+    doc.fontSize(8)
+      .font(this.boldFont)
+      .fillColor('#000000')
+      .text('Acknowledged By:', 50, yPos - 6);
+
+    doc.font(this.defaultFont)
+      .fillColor(ackName ? '#000000' : '#999999')
+      .text(ackName || 'Not yet acknowledged', 150, yPos - 6);
+
+    doc.font(this.boldFont)
+      .fillColor('#000000')
+      .text('Date:', 360, yPos - 6);
+
+    doc.font(this.defaultFont)
+      .fillColor(ackDate ? '#000000' : '#999999')
+      .text(ackDate || 'N/A', 400, yPos - 6);
+
+    // Centered buyer signature
   const centerX = 180;
   const lineWidth = 200;
+    const signatureName = ackName || '_______________________';
+    const signatureDate = ackDate || '_______________________';
+
+    // Render signature image if available
+    if (signaturePath && fs.existsSync(signaturePath)) {
+      try {
+        doc.image(signaturePath, centerX + 10, yPos - 16, { width: 160, height: 40, fit: [160, 40] });
+      } catch (error) {
+        console.error('Signature image render error:', error.message);
+      }
+    }
 
   // Buyer Acknowledgment
   doc.moveTo(centerX, yPos)
@@ -2617,12 +2725,12 @@ drawBuyerAcknowledgmentSignature(doc, yPos, data) {
      .fillColor('#000000')
      .text('Buyer Signature', centerX, yPos + 5);
 
-  doc.fontSize(7)
+    doc.fontSize(7)
      .font(this.defaultFont)
      .fillColor('#666666')
-     .text('Name: _______________________', centerX, yPos + 18);
+      .text(`Name: ${signatureName}`, centerX, yPos + 18);
 
-  doc.text('Date: ________________________', centerX, yPos + 30);
+    doc.text(`Date: ${signatureDate}`, centerX, yPos + 30);
 }
 
 

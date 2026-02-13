@@ -669,11 +669,14 @@ exports.createEmployee = async (req, res) => {
     const {
       fullName,
       email,
+      personalEmail,
+      phoneNumber,
       department,
       position,
       role = 'employee',
       departmentRole = 'staff',
-      employmentDetails
+      employmentDetails,
+      personalDetails
     } = req.body;
 
     const existingUser = await User.findOne({ email });
@@ -696,11 +699,14 @@ exports.createEmployee = async (req, res) => {
     const employee = await User.create({
       fullName,
       email,
+      personalEmail,
+      phoneNumber,
       password: tempPassword,
       department,
       position,
       role,
       departmentRole,
+      personalDetails,
       employmentDetails: {
         ...employmentDetails,
         employmentStatus: employmentDetails?.employmentStatus || 'Probation'
@@ -754,7 +760,8 @@ exports.updateEmployee = async (req, res) => {
       position,
       role,
       departmentRole,
-      employmentDetails
+      employmentDetails,
+      personalDetails
     } = req.body;
 
     const employee = await User.findById(req.params.id);
@@ -767,16 +774,58 @@ exports.updateEmployee = async (req, res) => {
     }
 
     if (fullName) employee.fullName = fullName;
+    if (req.body.personalEmail !== undefined) employee.personalEmail = req.body.personalEmail;
+    if (req.body.phoneNumber !== undefined) employee.phoneNumber = req.body.phoneNumber;
     if (department) employee.department = department;
     if (position) employee.position = position;
     if (role) employee.role = role;
     if (departmentRole) employee.departmentRole = departmentRole;
 
-    if (employmentDetails) {
-      employee.employmentDetails = {
-        ...employee.employmentDetails,
-        ...employmentDetails
+    if (personalDetails) {
+      if (!employee.personalDetails) {
+        employee.personalDetails = {};
+      }
+
+      const existingPersonalDetails = employee.personalDetails.toObject
+        ? employee.personalDetails.toObject()
+        : employee.personalDetails;
+
+      employee.personalDetails = {
+        ...existingPersonalDetails,
+        ...personalDetails
       };
+
+      employee.markModified('personalDetails');
+    }
+
+    if (employmentDetails) {
+      if (!employee.employmentDetails) {
+        employee.employmentDetails = {};
+      }
+
+      const existingEmploymentDetails = employee.employmentDetails.toObject
+        ? employee.employmentDetails.toObject()
+        : employee.employmentDetails;
+
+      employee.employmentDetails = {
+        ...existingEmploymentDetails,
+        ...employmentDetails,
+        salary: {
+          ...(existingEmploymentDetails.salary || {}),
+          ...(employmentDetails.salary || {})
+        },
+        bankDetails: {
+          ...(existingEmploymentDetails.bankDetails || {}),
+          ...(employmentDetails.bankDetails || {})
+        },
+        governmentIds: {
+          ...(existingEmploymentDetails.governmentIds || {}),
+          ...(employmentDetails.governmentIds || {})
+        },
+        documents: existingEmploymentDetails.documents || employee.employmentDetails.documents
+      };
+
+      employee.markModified('employmentDetails');
     }
 
     await employee.save();
@@ -802,7 +851,7 @@ exports.updateEmployeeStatus = async (req, res) => {
   try {
     const { status } = req.body;
 
-    const validStatuses = ['Active', 'Inactive', 'On Leave', 'Suspended', 'Notice Period', 'Probation', 'Terminated'];
+    const validStatuses = ['Probation', 'Ongoing', 'On Leave', 'Suspended', 'Notice Period', 'Termination', 'End of Contract'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,

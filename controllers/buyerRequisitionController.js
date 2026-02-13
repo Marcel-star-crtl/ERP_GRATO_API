@@ -2605,7 +2605,9 @@ const getPettyCashFormDetails = async (req, res) => {
     
     const requisition = await PurchaseRequisition.findById(formId)
       .populate('employee', 'fullName email department phone')
-      .populate('supplyChainReview.assignedBuyer', 'fullName email');
+      .populate('supplyChainReview.assignedBuyer', 'fullName email')
+      .populate('disbursements.disbursedBy', 'fullName email')
+      .populate('disbursements.acknowledgedBy', 'fullName email signature');
     
     if (!requisition) {
       return res.status(404).json({
@@ -2733,6 +2735,26 @@ const downloadPettyCashFormPDF = async (req, res) => {
     const pdfService = require('../services/pdfService');
     
     // Prepare data with items included
+    const mappedDisbursements = Array.isArray(requisition.disbursements) && requisition.disbursements.length > 0
+      ? requisition.disbursements.map((disbursement, index) => ({
+          disbursementNumber: disbursement.disbursementNumber || index + 1,
+          date: disbursement.date,
+          amount: disbursement.amount,
+          notes: disbursement.notes,
+          disbursedBy: disbursement.disbursedBy,
+          acknowledged: disbursement.acknowledged || false,
+          acknowledgedBy: disbursement.acknowledgedBy,
+          acknowledgmentDate: disbursement.acknowledgmentDate,
+          acknowledgmentNotes: disbursement.acknowledgmentNotes
+        }))
+      : (requisition.pettyCashForm.disbursementDate ? [{
+          disbursementNumber: 1,
+          date: requisition.pettyCashForm.disbursementDate,
+          amount: requisition.pettyCashForm.amount || requisition.budgetXAF,
+          notes: 'Initial petty cash disbursement',
+          acknowledged: false
+        }] : []);
+
     const pdfData = {
       // IDs
       _id: requisition._id,
@@ -2784,12 +2806,7 @@ const downloadPettyCashFormPDF = async (req, res) => {
       } : null,
       
       // Disbursements array
-      disbursements: requisition.pettyCashForm.disbursementDate ? [{
-        disbursementNumber: 1,
-        date: requisition.pettyCashForm.disbursementDate,
-        amount: requisition.pettyCashForm.amount || requisition.budgetXAF,
-        notes: 'Initial petty cash disbursement'
-      }] : [],
+      disbursements: mappedDisbursements,
       
       // Approval chain
       approvalChain: requisition.approvalChain.map(step => ({

@@ -82,7 +82,9 @@ const getPettyCashFormDetails = async (req, res) => {
       .populate('employee', 'fullName email department phone')
       .populate('supplyChainReview.assignedBuyer', 'fullName email')
       .populate('approvalChain.decidedBy', 'fullName email role')
-      .populate('financeVerification.verifiedBy', 'fullName email');
+      .populate('financeVerification.verifiedBy', 'fullName email')
+      .populate('disbursements.disbursedBy', 'fullName email')
+      .populate('disbursements.acknowledgedBy', 'fullName email signature');
     
     if (!requisition) {
       return res.status(404).json({
@@ -211,6 +213,20 @@ const downloadPettyCashFormPDF = async (req, res) => {
     }
     
     // Prepare data for PDF generation
+    const mappedDisbursements = Array.isArray(requisition.disbursements) && requisition.disbursements.length > 0
+      ? requisition.disbursements.map((disbursement, index) => ({
+          disbursementNumber: disbursement.disbursementNumber || index + 1,
+          date: disbursement.date,
+          amount: disbursement.amount,
+          notes: disbursement.notes,
+          disbursedBy: disbursement.disbursedBy,
+          acknowledged: disbursement.acknowledged || false,
+          acknowledgedBy: disbursement.acknowledgedBy,
+          acknowledgmentDate: disbursement.acknowledgmentDate,
+          acknowledgmentNotes: disbursement.acknowledgmentNotes
+        }))
+      : [];
+
     const pdfData = {
       _id: requisition._id,
       displayId: requisition.pettyCashForm.formNumber,
@@ -262,6 +278,7 @@ const downloadPettyCashFormPDF = async (req, res) => {
         amount: requisition.financeVerification.assignedBudget || requisition.budgetXAF,
         date: requisition.pettyCashForm.generatedDate
       },
+      disbursements: mappedDisbursements,
       requestType: 'petty-cash',
       paymentMethod: 'cash'
     };

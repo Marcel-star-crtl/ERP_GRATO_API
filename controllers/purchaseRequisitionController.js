@@ -27,7 +27,9 @@ const generatePettyCashFormPDF = async (req, res) => {
       .populate('employee', 'fullName email department position') // ✅ Also populate employee
       .populate('project', 'name code')
       .populate('approvalChain.decidedBy', 'fullName email')
-      .populate('items.productId', 'name description');
+      .populate('items.productId', 'name description')
+      .populate('disbursements.disbursedBy', 'fullName email')
+      .populate('disbursements.acknowledgedBy', 'fullName email signature');
 
     if (!requisition) {
       return res.status(404).json({

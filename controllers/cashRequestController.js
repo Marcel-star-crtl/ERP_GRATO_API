@@ -4059,7 +4059,8 @@ const generateCashRequestPDF = async (req, res) => {
       .populate('approvalChain.decidedBy', 'fullName email')
       .populate('projectId', 'name code')
       .populate('budgetAllocation.budgetCodeId', 'code name budget remaining')
-      .populate('disbursements.disbursedBy', 'fullName email');  // ✅ FIXED: was disbursementDetails
+      .populate('disbursements.disbursedBy', 'fullName email')
+      .populate('disbursements.acknowledgedBy', 'fullName email signature');  // ✅ Include acknowledgment signer + signature
 
     if (!request) {
       return res.status(404).json({
@@ -5750,6 +5751,82 @@ const exportCashRequests = async (req, res) => {
   }
 };
 
+// Acknowledge receipt of cash disbursement
+const acknowledgeCashDisbursement = async (req, res) => {
+  try {
+    const { requestId, disbursementId } = req.params;
+    const { acknowledgmentNotes } = req.body;
+
+    console.log('=== ACKNOWLEDGE CASH DISBURSEMENT ===');
+    console.log('Request ID:', requestId);
+    console.log('Disbursement ID:', disbursementId);
+    console.log('User:', req.user.userId);
+
+    const request = await CashRequest.findById(requestId)
+      .populate('employee', 'fullName email');
+
+    if (!request) {
+      return res.status(404).json({
+        success: false,
+        message: 'Cash request not found'
+      });
+    }
+
+    // Only requester can acknowledge
+    const requesterId = request.employee?._id
+      ? request.employee._id.toString()
+      : request.employee?.toString?.();
+    const currentUserId = (req.user.userId || req.user.id || req.user._id)?.toString();
+
+    if (!requesterId || !currentUserId || requesterId !== currentUserId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the requester can acknowledge receipt'
+      });
+    }
+
+    const disbursement = request.disbursements.id(disbursementId);
+    if (!disbursement) {
+      return res.status(404).json({
+        success: false,
+        message: 'Disbursement not found'
+      });
+    }
+
+    if (disbursement.acknowledged) {
+      return res.status(400).json({
+        success: false,
+        message: 'This disbursement has already been acknowledged'
+      });
+    }
+
+    disbursement.acknowledged = true;
+    disbursement.acknowledgedBy = req.user.userId;
+    disbursement.acknowledgmentDate = new Date();
+    disbursement.acknowledgmentNotes = acknowledgmentNotes || '';
+
+    await request.save();
+
+    console.log('✅ Disbursement acknowledged');
+
+    return res.json({
+      success: true,
+      message: 'Cash receipt acknowledged successfully',
+      data: {
+        requestId: request._id,
+        disbursement
+      }
+    });
+  } catch (error) {
+    console.error('Acknowledge cash disbursement error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to acknowledge cash receipt',
+      error: error.message
+    });
+  }
+};
+
 
 module.exports = {
   createRequest,
@@ -5786,7 +5863,8 @@ module.exports = {
   processDisbursement,
   getDisbursementHistory,
   getPendingDisbursements,
-  exportCashRequests
+  exportCashRequests,
+  acknowledgeCashDisbursement
 };
 
 

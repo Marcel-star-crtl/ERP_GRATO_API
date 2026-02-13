@@ -2,12 +2,16 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
 const documentSchema = new mongoose.Schema({
-  name: String,
-  url: String,
-  publicId: String,
-  size: Number,
-  mimetype: String,
-  uploadedAt: { type: Date, default: Date.now }
+    name: String,
+    url: String,
+    publicId: String,
+    filename: String,
+    filePath: String,
+    relativePath: String,
+    size: Number,
+    mimetype: String,
+    uploadedAt: { type: Date, default: Date.now },
+    uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 });
 
 const UserSchema = new mongoose.Schema({
@@ -23,6 +27,21 @@ const UserSchema = new mongoose.Schema({
             },
             message: props => `${props.value} is not a valid email address!`
         }
+    },
+    personalEmail: {
+        type: String,
+        trim: true,
+        lowercase: true,
+        validate: {
+            validator: function(v) {
+                return !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+            },
+            message: props => `${props.value} is not a valid email address!`
+        }
+    },
+    phoneNumber: {
+        type: String,
+        trim: true
     },
     password: {
         type: String,
@@ -71,6 +90,73 @@ const UserSchema = new mongoose.Schema({
             return this.role !== 'supplier';
         }
         // e.g., "IT Staff", "HR & Admin Head", "Technical Director"
+    },
+
+    // PERSONAL DETAILS (ID INFORMATION)
+    personalDetails: {
+        dateOfBirth: Date,
+        placeOfBirth: String,
+        sex: {
+            type: String,
+            enum: ['M', 'F']
+        },
+        height: Number,
+        nationality: String,
+        idNumber: String,
+        idIssueDate: Date,
+        idExpiryDate: Date,
+        idAuthority: String,
+        idAddress: String,
+        fatherName: String,
+        motherName: String
+    },
+
+    // HR EMPLOYMENT DETAILS
+    employmentDetails: {
+        employeeId: String,
+        employmentStatus: {
+            type: String,
+            enum: ['Probation', 'Ongoing', 'On Leave', 'Suspended', 'Notice Period', 'Termination', 'End of Contract'],
+            default: 'Probation'
+        },
+        startDate: Date,
+        probationEndDate: Date,
+        contractEndDate: Date,
+        contractType: String,
+        salary: {
+            amount: Number,
+            currency: { type: String, default: 'XAF' },
+            paymentFrequency: String
+        },
+        bankDetails: {
+            bankName: String,
+            accountName: String
+        },
+        governmentIds: {
+            cnpsNumber: String,
+            taxPayerNumber: String,
+            nationalIdNumber: String
+        },
+        emergencyContacts: [{
+            name: String,
+            relationship: String,
+            phone: String,
+            email: String,
+            isPrimary: { type: Boolean, default: false }
+        }],
+        hrNotes: String,
+        documents: {
+            nationalId: documentSchema,
+            birthCertificate: documentSchema,
+            bankAttestation: documentSchema,
+            locationPlan: documentSchema,
+            medicalCertificate: documentSchema,
+            criminalRecord: documentSchema,
+            references: [documentSchema],
+            academicDiplomas: [documentSchema],
+            workCertificates: [documentSchema],
+            employmentContract: documentSchema
+        }
     },
     
     // PRIMARY HIERARCHY REFERENCE

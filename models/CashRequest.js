@@ -67,6 +67,21 @@ const CashRequestSchema = new mongoose.Schema({
     disbursementNumber: {
       type: Number, 
       required: true
+    },
+    acknowledged: {
+      type: Boolean,
+      default: false
+    },
+    acknowledgedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    acknowledgmentDate: {
+      type: Date
+    },
+    acknowledgmentNotes: {
+      type: String,
+      default: ''
     }
   }],
 

@@ -1,4 +1,5 @@
 const ActionItem = require('../models/ActionItem');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Project = require('../models/Project');
 const QuarterlyKPI = require('../models/QuarterlyKPI');
@@ -526,6 +527,7 @@ const createPersonalTask = async (req, res) => {
     }
 
     const user = await User.findById(req.user.userId);
+    const userObjectId = new mongoose.Types.ObjectId(req.user.userId);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -1353,6 +1355,7 @@ const getActionItems = async (req, res) => {
   try {
     const { status, priority, projectId, assignedTo, view, page = 1, limit = 50 } = req.query;
     const user = await User.findById(req.user.userId);
+    const userObjectId = new mongoose.Types.ObjectId(req.user.userId);
 
     console.log('=== GET ACTION ITEMS ===');
     console.log(`User: ${user.fullName} (${user.role})`);
@@ -1405,54 +1408,57 @@ const getActionItems = async (req, res) => {
       filter.projectId = null;
       
     } else if (view === 'my-approvals') {
-      // ✅ CRITICAL FIX: Show ONLY tasks where I'm the supervisor AND they need MY approval
+      // ✅ CRITICAL FIX: Show ONLY tasks that need MY approval
+      // Includes creation approvals (supervisor) and completion approvals (L1/L2/L3)
       // Do NOT show tasks where I'm an assignee
-      
+
+      const completionStatuses = [
+        'Pending Completion Approval',
+        'Pending L1 Grading',
+        'Pending L2 Review',
+        'Pending L3 Final Approval'
+      ];
+
       if (['admin', 'supply_chain'].includes(user.role)) {
         // Admins see all pending approvals across the system
-        filter.$or = [
-          {
-            'supervisor.email': user.email,
-            status: { $in: ['Pending Approval', 'Pending Completion Approval', 'Pending L1 Grading', 'Pending L2 Review', 'Pending L3 Final Approval'] }
-          },
-          {
-            status: { $in: ['Pending Approval', 'Pending Completion Approval', 'Pending L1 Grading', 'Pending L2 Review', 'Pending L3 Final Approval'] }
-          }
-        ];
-      } else if (isSupervisorOf > 0) {
-        // ✅ FIX: Show ONLY tasks where:
-        // 1. I'm the supervisor (supervisor.email matches mine)
-        // 2. The task needs approval (specific statuses)
-        // 3. I am NOT one of the assignees (exclude my own submissions)
-        
+        filter.status = { $in: ['Pending Approval', ...completionStatuses] };
+      } else {
         filter.$and = [
           {
-            'supervisor.email': user.email
-          },
-          {
-            status: { 
-              $in: [
-                'Pending Approval',              // Creation approval needed
-                'Pending Completion Approval',   // Completion approval needed
-                'Pending L1 Grading',           // Level 1 grading needed
-                'Pending L2 Review',            // Level 2 review needed
-                'Pending L3 Final Approval'     // Level 3 approval needed
-              ] 
-            }
-          },
-          {
-            // ✅ CRITICAL: Exclude tasks where I'm an assignee
+            // ✅ Exclude tasks where I'm an assignee
             'assignedTo.user': { $ne: req.user.userId }
+          },
+          {
+            $or: [
+              // Creation approvals (supervisor of task)
+              {
+                status: 'Pending Approval',
+                'supervisor.email': user.email
+              },
+              // Completion approvals (L1/L2/L3 based on approval chain)
+              {
+                status: { $in: completionStatuses },
+                assignedTo: {
+                  $elemMatch: {
+                    completionApprovalChain: {
+                      $elemMatch: {
+                        status: 'pending',
+                        $or: [
+                          { 'approver.email': user.email },
+                          { 'approver.userId': userObjectId }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            ]
           }
         ];
-      } else {
-        // ✅ FIX: Not a supervisor - show NO tasks in this view
-        // Return empty result instead of showing own tasks
-        filter._id = { $exists: false }; // This will match nothing
       }
-      
+
       console.log('My Approvals Filter:', JSON.stringify(filter, null, 2));
-      
+
     } else {
       // Default view - show own tasks
       filter['assignedTo.user'] = req.user.userId;
@@ -2631,11 +2637,17 @@ const getActionItem = async (req, res) => {
     // Get user details
     const user = await User.findById(req.user.userId);
     
+    console.log('\n=== GET ACTION ITEM AUTHORIZATION ===');
+    console.log('User:', user.fullName, user.email, user.role);
+    console.log('Task ID:', id);
+    console.log('Task Status:', actionItem.status);
+    
     // Define roles with full access
     const authorizedRoles = ['admin', 'supply_chain', 'supervisor', 'manager', 'hr', 'it', 'hse', 'technical'];
     
     // Check if user has an authorized role (full access)
     if (authorizedRoles.includes(user.role)) {
+      console.log('✅ Access granted: Authorized role');
       return res.json({
         success: true,
         data: actionItem
@@ -2653,13 +2665,50 @@ const getActionItem = async (req, res) => {
     // Check if user is the supervisor
     const isSupervisor = actionItem.supervisor && actionItem.supervisor.email === user.email;
     
+    // Check if user is an approver in the completion approval chain
+    const isApprover = actionItem.assignedTo.some(assignee => 
+      assignee.completionApprovalChain && assignee.completionApprovalChain.some(chain => 
+        chain.status === 'pending' && chain.approver && (
+          chain.approver.email === user.email || 
+          (chain.approver.userId && chain.approver.userId.equals && chain.approver.userId.equals(req.user.userId))
+        )
+      )
+    );
+    
+    console.log('Authorization checks:');
+    console.log('- isAssignedUser:', isAssignedUser);
+    console.log('- isCreator:', isCreator);
+    console.log('- isSupervisor:', isSupervisor);
+    console.log('- isApprover:', isApprover);
+    console.log('- user.role:', user.role);
+    
+    // Debug approval chain structure
+    if (!isApprover) {
+      console.log('Approval chain debug:');
+      actionItem.assignedTo.forEach((assignee, idx) => {
+        console.log(`  Assignee ${idx}:`, assignee.user?._id);
+        if (assignee.completionApprovalChain) {
+          assignee.completionApprovalChain.forEach((chain, chainIdx) => {
+            console.log(`    Chain ${chainIdx}:`, {
+              status: chain.status,
+              approverEmail: chain.approver?.email,
+              approverUserId: chain.approver?.userId,
+              level: chain.level
+            });
+          });
+        }
+      });
+    }
+    
     // For supervisors, check department match
     if (user.role === 'supervisor') {
       const departmentMatch = actionItem.assignedTo.some(assignee => 
         assignee.user && assignee.user.department === user.department
       );
+      console.log('- departmentMatch:', departmentMatch);
       
-      if (isAssignedUser || isCreator || isSupervisor || departmentMatch) {
+      if (isAssignedUser || isCreator || isSupervisor || departmentMatch || isApprover) {
+        console.log('✅ Access granted: Supervisor with match');
         return res.json({
           success: true,
           data: actionItem
@@ -2667,8 +2716,9 @@ const getActionItem = async (req, res) => {
       }
     }
     
-    // For regular users, check if assigned or creator
-    if (isAssignedUser || isCreator) {
+    // For regular users, check if assigned, creator, or approver
+    if (isAssignedUser || isCreator || isApprover) {
+      console.log('✅ Access granted: User match');
       return res.json({
         success: true,
         data: actionItem
@@ -2676,6 +2726,7 @@ const getActionItem = async (req, res) => {
     }
     
     // If none of the conditions are met, deny access
+    console.log('❌ Access denied: No matching criteria');
     return res.status(403).json({
       success: false,
       message: 'Access denied'
