@@ -3,7 +3,6 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware');
-const upload = require('../middlewares/uploadMiddleware');
 const supplyChainPOController = require('../controllers/supplyChainPOController');
 
 // All routes require supply_chain role
@@ -19,10 +18,9 @@ router.get('/stats', supplyChainPOController.getSupplyChainPOStats);
 // Download PO for signing
 router.get('/:poId/download-for-signing', supplyChainPOController.downloadPOForSigning);
 
-// Assign PO with signed document
+// Assign PO with auto-signed document
 router.post(
   '/:poId/assign-department',
-  upload.fields([{ name: 'signedDocument', maxCount: 1 }]),
   supplyChainPOController.assignPOToDepartment
 );
 

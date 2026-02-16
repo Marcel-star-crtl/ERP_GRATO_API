@@ -3,7 +3,6 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware, requireRoles } = require('../middlewares/authMiddleware');
-const upload = require('../middlewares/uploadMiddleware');
 const supervisorPOController = require('../controllers/supervisorPOController');
 
 // All routes require supervisor or higher roles
@@ -19,7 +18,6 @@ router.get('/:poId/download-for-signing', supervisorPOController.downloadPOForSi
 // Process approval with signed document
 router.post(
   '/:poId/approve',
-  upload.fields([{ name: 'signedDocument', maxCount: 1 }]),
   supervisorPOController.processPOApproval
 );
 

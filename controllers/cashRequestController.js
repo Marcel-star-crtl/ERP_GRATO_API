@@ -4056,7 +4056,7 @@ const generateCashRequestPDF = async (req, res) => {
 
     const request = await CashRequest.findById(requestId)
       .populate('employee', 'fullName email department position')
-      .populate('approvalChain.decidedBy', 'fullName email')
+      .populate('approvalChain.decidedBy', 'fullName email signature')
       .populate('projectId', 'name code')
       .populate('budgetAllocation.budgetCodeId', 'code name budget remaining')
       .populate('disbursements.disbursedBy', 'fullName email')

@@ -1,13 +1,14 @@
 // controllers/supplyChainPOController.js
 
 const PurchaseOrder = require('../models/PurchaseOrder');
+const User = require('../models/User');
 const { sendEmail } = require('../services/emailService');
+const pdfService = require('../services/pdfService');
+const { buildPurchaseOrderPdfData } = require('../services/purchaseOrderPdfData');
 const { 
   saveFile, 
-  deleteFile, 
   STORAGE_CATEGORIES 
 } = require('../utils/localFileStorage');
-const fs = require('fs').promises;
 
 /**
  * Get POs pending Supply Chain assignment
@@ -120,11 +121,11 @@ exports.downloadPOForSigning = async (req, res) => {
 };
 
 /**
- * Assign PO with signed document (Supply Chain)
+ * Assign PO with auto-signed document (Supply Chain)
  */
 exports.assignPOToDepartment = async (req, res) => {
   try {
-    console.log('=== SUPPLY CHAIN ASSIGNING PO WITH SIGNED DOCUMENT ===');
+    console.log('=== SUPPLY CHAIN ASSIGNING PO WITH AUTO SIGNATURE ===');
     const { poId } = req.params;
     const { department, comments } = req.body;
     
@@ -132,13 +133,6 @@ exports.assignPOToDepartment = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Department is required'
-      });
-    }
-    
-    if (!req.files || !req.files.signedDocument || req.files.signedDocument.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Signed document is required'
       });
     }
     
@@ -160,34 +154,47 @@ exports.assignPOToDepartment = async (req, res) => {
       });
     }
     
-    // Upload signed document
-    const signedDocFile = req.files.signedDocument[0];
-    let signedDocData = null;
-    
-    try {
-      const customFilename = `PO-${po.poNumber}-SC-signed-${Date.now()}${require('path').extname(signedDocFile.originalname)}`;
-      
-      const result = await saveFile(
-        signedDocFile,
-        STORAGE_CATEGORIES.SIGNED_DOCUMENTS,
-        'supply-chain',
-        customFilename
-      );
+    const supplyChainUser = await User.findById(req.user.userId).select('fullName signature email');
+    const reviewDate = new Date();
 
-      await fs.unlink(signedDocFile.path).catch(err => 
-        console.warn('Failed to delete temp file:', err.message)
-      );
+    const signatureBlocks = [
+      {
+        label: 'Supply Chain',
+        signaturePath: supplyChainUser?.signature?.localPath || null,
+        signedAt: reviewDate
+      },
+      { label: 'Department Head' },
+      { label: 'Head of Business' },
+      { label: 'Finance' }
+    ];
 
-      signedDocData = result;
-      console.log('✓ Signed document saved');
-    } catch (error) {
-      await fs.unlink(signedDocFile.path).catch(() => {});
-      throw new Error(`Failed to save signed document: ${error.message}`);
+    const pdfData = {
+      ...buildPurchaseOrderPdfData(po),
+      signatures: signatureBlocks
+    };
+
+    const pdfResult = await pdfService.generatePurchaseOrderPDF(pdfData);
+    if (!pdfResult.success) {
+      throw new Error(pdfResult.error || 'Failed to generate signed document');
     }
+
+    const signedDocData = await saveFile(
+      {
+        buffer: pdfResult.buffer,
+        originalname: `PO-${po.poNumber}-SC-signed.pdf`,
+        mimetype: 'application/pdf',
+        size: pdfResult.buffer.length
+      },
+      STORAGE_CATEGORIES.SIGNED_DOCUMENTS,
+      'supply-chain',
+      `PO-${po.poNumber}-SC-signed-${Date.now()}.pdf`
+    );
     
     // Assign PO
     po.assignBySupplyChain(department, req.user.userId, comments);
     po.supplyChainReview.signedDocument = signedDocData;
+    po.supplyChainReview.reviewDate = reviewDate;
+    po.supplyChainReview.reviewTime = reviewDate.toTimeString().split(' ')[0];
     await po.save();
     
     // Notify first approver
@@ -210,13 +217,9 @@ exports.assignPOToDepartment = async (req, res) => {
                 <p><strong>Department:</strong> ${po.assignedDepartment}</p>
               </div>
               
-              <div style="background-color: #ffe7ba; padding: 15px; border-radius: 5px;">
-                <p><strong>Document Signing Required:</strong></p>
-                <ol>
-                  <li>Download PO (already signed by Supply Chain)</li>
-                  <li>Sign manually</li>
-                  <li>Upload signed document when approving</li>
-                </ol>
+              <div style="background-color: #e6f7ff; padding: 15px; border-radius: 5px;">
+                <p><strong>Document Signature:</strong></p>
+                <p>Supply Chain has signed this PO. Your approval will automatically add your signature.</p>
               </div>
               
               <p style="text-align: center; margin: 20px 0;">
@@ -237,7 +240,7 @@ exports.assignPOToDepartment = async (req, res) => {
     
     res.json({
       success: true,
-      message: 'PO assigned successfully with signed document',
+      message: 'PO assigned successfully with auto-signed document',
       data: {
         ...po.toObject(),
         currentApprover: po.getCurrentApprover(),

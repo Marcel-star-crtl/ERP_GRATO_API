@@ -7,7 +7,8 @@ const pdfService = require('../services/pdfService');
 const archiver = require('archiver');
 const PurchaseRequisition = require('../models/PurchaseRequisition');
 const RFQ = require('../models/RFQ');
-const { uploadFile } = require('../config/cloudinary');
+const { saveFile, STORAGE_CATEGORIES } = require('../utils/localFileStorage');
+const { buildPurchaseOrderPdfData } = require('../services/purchaseOrderPdfData');
 const { sendEmail } = require('../services/emailService');
 
 const getSuppliers = async (req, res) => {
@@ -212,18 +213,27 @@ const createPurchaseOrder = async (req, res) => {
       });
     }
 
-    // Validate supplier exists in Supplier model (only for registered suppliers)
+    // Validate supplier exists (only for registered suppliers)
     let supplier = null;
+    let supplierUser = null;
     if (!supplierDetails.isExternal) {
       supplier = await Supplier.findById(supplierDetails.id);
       if (!supplier) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid supplier selected - supplier not found in database'
-        });
-      }
+        supplierUser = await User.findOne({ _id: supplierDetails.id, role: 'supplier' });
+        if (!supplierUser) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid supplier selected - supplier not found in database'
+          });
+        }
 
-      if (supplier.status !== 'approved') {
+        if (supplierUser.supplierStatus?.accountStatus !== 'approved' || !supplierUser.isActive) {
+          return res.status(400).json({
+            success: false,
+            message: 'Selected supplier is not approved for orders'
+          });
+        }
+      } else if (supplier.status !== 'approved') {
         return res.status(400).json({
           success: false,
           message: 'Selected supplier is not approved for orders'
@@ -305,10 +315,40 @@ const createPurchaseOrder = async (req, res) => {
     const count = await PurchaseOrder.countDocuments();
     const poNumber = `PO-${year}-${String(count + 1).padStart(6, '0')}`;
 
+    const supplierSnapshot = supplier ? {
+      name: supplier.name,
+      email: supplier.email,
+      phone: supplier.phone,
+      address: typeof supplier.address === 'object'
+        ? `${supplier.address.street || ''}, ${supplier.address.city || ''}, ${supplier.address.state || ''}`.trim()
+        : supplier.address || '',
+      businessType: supplier.businessType,
+      registrationNumber: supplier.registrationNumber,
+      taxId: supplier.taxId
+    } : supplierUser ? {
+      name: supplierUser.supplierDetails?.companyName || supplierUser.fullName || supplierDetails.name,
+      email: supplierUser.email || supplierDetails.email,
+      phone: supplierUser.phoneNumber || supplierUser.supplierDetails?.phoneNumber || supplierDetails.phone || '',
+      address: supplierUser.supplierDetails?.address
+        ? `${supplierUser.supplierDetails.address.street || ''}, ${supplierUser.supplierDetails.address.city || ''}, ${supplierUser.supplierDetails.address.state || ''}`.trim()
+        : (supplierDetails.address || ''),
+      businessType: supplierUser.supplierDetails?.businessType || supplierDetails.businessType,
+      registrationNumber: supplierUser.supplierDetails?.businessRegistrationNumber || null,
+      taxId: supplierUser.supplierDetails?.taxIdNumber || null
+    } : {
+      name: supplierDetails.name,
+      email: supplierDetails.email,
+      phone: supplierDetails.phone || '',
+      address: supplierDetails.address || '',
+      businessType: supplierDetails.businessType || 'External Supplier',
+      registrationNumber: null,
+      taxId: null
+    };
+
     // Create purchase order with proper supplier reference
     const purchaseOrder = new PurchaseOrder({
       poNumber,
-      supplierId: supplier?._id || null, // Use Supplier model ID for registered suppliers, null for external
+      supplierId: supplier?._id || null, // Use Supplier model ID when available
       buyerId: req.user.userId,
 
       // // Order details
@@ -348,24 +388,8 @@ const createPurchaseOrder = async (req, res) => {
         timestamp: new Date()
       }],
 
-      // Supplier details (snapshot from Supplier model or external supplier details)
-      supplierDetails: supplier ? {
-        name: supplier.name,
-        email: supplier.email,
-        phone: supplier.phone,
-        address: typeof supplier.address === 'object' 
-          ? `${supplier.address.street || ''}, ${supplier.address.city || ''}, ${supplier.address.state || ''}`.trim()
-          : supplier.address || '',
-        businessType: supplier.businessType,
-        registrationNumber: supplier.registrationNumber
-      } : {
-        name: supplierDetails.name,
-        email: supplierDetails.email,
-        phone: supplierDetails.phone || '',
-        address: supplierDetails.address || '',
-        businessType: 'External Supplier',
-        registrationNumber: null
-      },
+      // Supplier details snapshot
+      supplierDetails: supplierSnapshot,
 
       createdBy: req.user.userId
     });
@@ -1179,6 +1203,78 @@ const cancelPurchaseOrder = async (req, res) => {
   }
 };
 
+const canAccessPurchaseOrderPdf = (purchaseOrder, reqUser) => {
+  if (!purchaseOrder || !reqUser) {
+    return false;
+  }
+
+  if (purchaseOrder.buyerId?.toString() === reqUser.userId) {
+    return true;
+  }
+
+  if (['admin', 'supply_chain'].includes(reqUser.role)) {
+    return true;
+  }
+
+  const approverEmail = reqUser.email?.toLowerCase();
+  if (approverEmail) {
+    const isApprover = purchaseOrder.approvalChain?.some(step =>
+      step?.approver?.email?.toLowerCase() === approverEmail
+    );
+    if (isApprover) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const buildPurchaseOrderSignatureBlocks = async (purchaseOrder) => {
+  const signatureBlocks = [
+    { label: 'Supply Chain' },
+    { label: 'Department Head' },
+    { label: 'Head of Business' },
+    { label: 'Finance' }
+  ];
+
+  if (!purchaseOrder) {
+    return signatureBlocks;
+  }
+
+  if (purchaseOrder.supplyChainReview?.reviewedBy) {
+    const supplyChainUser = await User.findById(purchaseOrder.supplyChainReview.reviewedBy)
+      .select('signature');
+    signatureBlocks[0].signaturePath = supplyChainUser?.signature?.localPath || null;
+    signatureBlocks[0].signedAt = purchaseOrder.supplyChainReview.reviewDate || null;
+  }
+
+  const approvedSteps = (purchaseOrder.approvalChain || [])
+    .filter(step => step?.status === 'approved');
+
+  const approverEmails = approvedSteps
+    .map(step => step?.approver?.email)
+    .filter(Boolean);
+
+  if (approverEmails.length) {
+    const approverUsers = await User.find({ email: { $in: approverEmails } })
+      .select('email signature');
+    const approverByEmail = new Map(approverUsers.map(user => [user.email, user]));
+
+    approvedSteps.forEach(step => {
+      const blockIndex = step.level;
+      if (!signatureBlocks[blockIndex]) {
+        return;
+      }
+
+      const approverUser = approverByEmail.get(step?.approver?.email);
+      signatureBlocks[blockIndex].signaturePath = approverUser?.signature?.localPath || null;
+      signatureBlocks[blockIndex].signedAt = step.actionDate || step.updatedAt || null;
+    });
+  }
+
+  return signatureBlocks;
+};
+
 // Download purchase order as PDF
 const downloadPurchaseOrderPDF = async (req, res) => {
   try {
@@ -1200,16 +1296,11 @@ const downloadPurchaseOrderPDF = async (req, res) => {
       });
     }
 
-    // Verify buyer owns this purchase order
-    if (purchaseOrder.buyerId.toString() !== req.user.userId) {
-      const user = await User.findById(req.user.userId);
-      // Allow supply chain and admin users to download
-      if (!['admin', 'supply_chain'].includes(user.role)) {
-        return res.status(403).json({
-          success: false,
-          message: 'Unauthorized access to purchase order'
-        });
-      }
+    if (!canAccessPurchaseOrderPdf(purchaseOrder, req.user)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized access to purchase order'
+      });
     }
 
     // Helper function to safely convert to number
@@ -1359,6 +1450,8 @@ const downloadPurchaseOrderPDF = async (req, res) => {
       }];
     }
 
+    pdfData.signatures = await buildPurchaseOrderSignatureBlocks(purchaseOrder);
+
     // Generate PDF
     const pdfResult = await pdfService.generatePurchaseOrderPDF(pdfData);
 
@@ -1415,15 +1508,11 @@ const previewPurchaseOrderPDF = async (req, res) => {
       });
     }
 
-    // Authorization check
-    if (purchaseOrder.buyerId.toString() !== req.user.userId) {
-      const user = await User.findById(req.user.userId);
-      if (!['admin', 'supply_chain'].includes(user.role)) {
-        return res.status(403).json({
-          success: false,
-          message: 'Unauthorized access to purchase order'
-        });
-      }
+    if (!canAccessPurchaseOrderPdf(purchaseOrder, req.user)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized access to purchase order'
+      });
     }
 
     // Prepare data (same as download function)
@@ -1460,6 +1549,8 @@ const previewPurchaseOrderPDF = async (req, res) => {
       specialInstructions: purchaseOrder.specialInstructions,
       notes: purchaseOrder.notes
     };
+
+    pdfData.signatures = await buildPurchaseOrderSignatureBlocks(purchaseOrder);
 
     // Generate PDF
     const pdfResult = await pdfService.generatePurchaseOrderPDF(pdfData);
@@ -1510,15 +1601,11 @@ const emailPurchaseOrderPDF = async (req, res) => {
       });
     }
 
-    // Authorization check
-    if (purchaseOrder.buyerId.toString() !== req.user.userId) {
-      const user = await User.findById(req.user.userId);
-      if (!['admin', 'supply_chain'].includes(user.role)) {
-        return res.status(403).json({
-          success: false,
-          message: 'Unauthorized access to purchase order'
-        });
-      }
+    if (!canAccessPurchaseOrderPdf(purchaseOrder, req.user)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized access to purchase order'
+      });
     }
 
     // Prepare PDF data
@@ -1547,6 +1634,8 @@ const emailPurchaseOrderPDF = async (req, res) => {
       })),
       specialInstructions: purchaseOrder.specialInstructions
     };
+
+    pdfData.signatures = await buildPurchaseOrderSignatureBlocks(purchaseOrder);
 
     // Generate PDF
     const pdfResult = await pdfService.generatePurchaseOrderPDF(pdfData);
@@ -2003,21 +2092,11 @@ const assignPOToDepartment = async (req, res) => {
   try {
     const { poId } = req.params;
     const { department, comments } = req.body;
-    const signedDocument = req.file;
 
     console.log('Assignment request:', {
       poId,
-      department,
-      hasFile: !!signedDocument,
-      fileName: signedDocument?.originalname
+      department
     });
-
-    if (!signedDocument) {
-      return res.status(400).json({
-        success: false,
-        message: 'Signed document is required'
-      });
-    }
 
     if (!department) {
       return res.status(400).json({
@@ -2043,19 +2122,44 @@ const assignPOToDepartment = async (req, res) => {
       });
     }
 
-    // Upload signed document
-    let signedDocUrl = null;
-    try {
-      const uploadResult = await uploadFile(signedDocument.path, 'purchase-orders/signed');
-      signedDocUrl = uploadResult.secure_url;
-      console.log('Document uploaded:', signedDocUrl);
-    } catch (uploadError) {
-      console.error('Upload error:', uploadError);
+    const supplyChainUser = await User.findById(req.user.userId).select('fullName signature email');
+    const reviewDate = new Date();
+
+    const signatureBlocks = [
+      {
+        label: 'Supply Chain',
+        signaturePath: supplyChainUser?.signature?.localPath || null,
+        signedAt: reviewDate
+      },
+      { label: 'Department Head' },
+      { label: 'Head of Business' },
+      { label: 'Finance' }
+    ];
+
+    const pdfData = {
+      ...buildPurchaseOrderPdfData(purchaseOrder),
+      signatures: signatureBlocks
+    };
+
+    const pdfResult = await pdfService.generatePurchaseOrderPDF(pdfData);
+    if (!pdfResult.success) {
       return res.status(500).json({
         success: false,
-        message: 'Failed to upload signed document'
+        message: pdfResult.error || 'Failed to generate signed document'
       });
     }
+
+    const signedDocData = await saveFile(
+      {
+        buffer: pdfResult.buffer,
+        originalname: `PO-${purchaseOrder.poNumber}-SC-signed.pdf`,
+        mimetype: 'application/pdf',
+        size: pdfResult.buffer.length
+      },
+      STORAGE_CATEGORIES.SIGNED_DOCUMENTS,
+      'supply-chain',
+      `PO-${purchaseOrder.poNumber}-SC-signed-${Date.now()}.pdf`
+    );
 
     // Get department head info
     const { getPOApprovalChain } = require('../config/poApprovalChain');
@@ -2080,14 +2184,15 @@ const assignPOToDepartment = async (req, res) => {
     // Supply Chain review (auto-approved by assignment)
     purchaseOrder.supplyChainReview = {
       reviewedBy: req.user.userId,
-      reviewDate: new Date(),
-      reviewTime: new Date().toTimeString().split(' ')[0],
+      reviewDate: reviewDate,
+      reviewTime: reviewDate.toTimeString().split(' ')[0],
       action: 'assigned',
       comments: comments || `Assigned to ${department} department`,
       signedDocument: {
-        url: signedDocUrl,
-        originalName: signedDocument.originalname,
-        uploadedAt: new Date()
+        url: signedDocData.url,
+        localPath: signedDocData.localPath,
+        originalName: signedDocData.originalName,
+        uploadedAt: signedDocData.uploadedAt
       }
     };
 
@@ -2141,13 +2246,9 @@ const assignPOToDepartment = async (req, res) => {
                 </table>
               </div>
               
-              <div style="background-color: #ffe7ba; padding: 15px; border-radius: 5px; margin: 15px 0;">
-                <p><strong>⚠️ Document Signing Required:</strong></p>
-                <ol style="margin: 10px 0; padding-left: 20px;">
-                  <li>Download the PO document</li>
-                  <li>Sign manually (print or digital signature)</li>
-                  <li>Upload the signed document when approving</li>
-                </ol>
+              <div style="background-color: #e6f7ff; padding: 15px; border-radius: 5px; margin: 15px 0;">
+                <p><strong>Document Signature:</strong></p>
+                <p>Supply Chain has signed this PO. Your approval will automatically add your signature.</p>
               </div>
               
               <div style="text-align: center; margin: 30px 0;">

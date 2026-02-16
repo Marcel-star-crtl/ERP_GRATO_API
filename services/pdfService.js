@@ -90,7 +90,7 @@ class PDFService {
     yPos = termsResult.yPos;
 
     // Check if we need a new page for signature
-    const signatureSpace = 80;
+    const signatureSpace = this.getPOSignatureSectionHeight(poData);
     const pageHeight = doc.page.height;
     const footerBlockHeight = 60;
     const footerY = pageHeight - this.pageMargins.bottom - footerBlockHeight;
@@ -836,20 +836,75 @@ class PDFService {
   }
 
   drawSignatureSection(doc, yPos, poData) {
-    const signatureY = yPos + 40;
-    const lineWidth = 120;
-    const lineSpacing = 160;
-    
-    // Three signature lines
-    for (let i = 0; i < 3; i++) {
-      const xPos = 40 + (i * lineSpacing);
-      
-      doc.moveTo(xPos, signatureY + 24)
-        .lineTo(xPos + lineWidth, signatureY + 24)
-         .strokeColor('#000000')
-         .lineWidth(0.5)
-         .stroke();
-    }
+    const defaultSignatures = [
+      { label: 'Supply Chain' },
+      { label: 'Department Head' },
+      { label: 'Head of Business' },
+      { label: 'Finance' }
+    ];
+    const signatures = Array.isArray(poData?.signatures) && poData.signatures.length
+      ? poData.signatures
+      : defaultSignatures;
+
+    const columnCount = 2;
+    const blockWidth = 240;
+    const columnGap = 35;
+    const rowHeight = 60;
+    const baseY = yPos + 10;
+
+    signatures.forEach((signature, index) => {
+      const row = Math.floor(index / columnCount);
+      const col = index % columnCount;
+      const xPos = 40 + col * (blockWidth + columnGap);
+      const lineY = baseY + row * rowHeight + 24;
+
+      doc.moveTo(xPos, lineY)
+        .lineTo(xPos + blockWidth, lineY)
+        .strokeColor('#000000')
+        .lineWidth(0.5)
+        .stroke();
+
+      if (signature?.signaturePath && fs.existsSync(signature.signaturePath)) {
+        try {
+          doc.image(signature.signaturePath, xPos + 8, lineY - 26, {
+            width: 140,
+            height: 30,
+            fit: [140, 30]
+          });
+        } catch (error) {
+          console.error('Signature image render error:', error.message);
+        }
+      }
+
+      const signedAtText = signature?.signedAt
+        ? this.formatDateExact(signature.signedAt)
+        : '';
+
+      if (signedAtText) {
+        doc.fontSize(7)
+          .font(this.defaultFont)
+          .fillColor('#000000')
+          .text(signedAtText, xPos + blockWidth - 80, lineY - 16, {
+            width: 80,
+            align: 'right'
+          });
+      }
+
+      doc.fontSize(7)
+        .font(this.boldFont)
+        .fillColor('#000000')
+        .text(signature?.label || 'Signature', xPos, lineY + 6);
+    });
+  }
+
+  getPOSignatureSectionHeight(poData) {
+    const signatureCount = Array.isArray(poData?.signatures) && poData.signatures.length
+      ? poData.signatures.length
+      : 4;
+    const rows = Math.ceil(signatureCount / 2);
+    const rowHeight = 60;
+    const padding = 20;
+    return padding + rows * rowHeight;
   }
 
   drawPaymentTerms(doc, yPos, poData) {
@@ -2199,16 +2254,16 @@ async generatePettyCashFormPDF(formData, outputPath) {
   this.drawCashRequestTitleBar(doc, yPos, data);
   yPos += 60;
 
-  // Employee and Request Details (Basic Info Only)
-  yPos = this.drawCashRequestBasicDetails(doc, yPos, data);
-
-  // Check page break before items table
-  if (yPos > 650) {
-    addPageAndReset('before items table');
-  }
-
-  // ✅ FIXED: Items Table - ONLY if items exist (Petty Cash)
   if (isPettyCash) {
+    // Employee and Request Details (Basic Info Only)
+    yPos = this.drawCashRequestBasicDetails(doc, yPos, data);
+
+    // Check page break before items table
+    if (yPos > 650) {
+      addPageAndReset('before items table');
+    }
+
+    // ✅ FIXED: Items Table - ONLY if items exist (Petty Cash)
     const tableResult = this.drawPettyCashItemsTable(doc, yPos, data, currentPage);
     yPos = tableResult.yPos;
     currentPage = tableResult.currentPage;
@@ -2217,46 +2272,77 @@ async generatePettyCashFormPDF(formData, outputPath) {
     if (yPos > 650) {
       addPageAndReset('before purpose');
     }
-  }
 
-  // Purpose and Justification
-  yPos = this.drawPettyCashPurpose(doc, yPos, data);
+    // Purpose and Justification
+    yPos = this.drawPettyCashPurpose(doc, yPos, data);
 
-  // Check page break before approval chain
-  if (yPos > 600) {
-    addPageAndReset('before approval chain');
-  }
-
-  // Approval Chain Timeline
-  yPos = this.drawApprovalChainTimeline(doc, yPos, data);
-
-  // ✅ NEW: Disbursement History (if multiple disbursements exist)
-  if (data.disbursements && data.disbursements.length > 0) {
-    // Check page break before disbursement history
+    // Check page break before approval chain
     if (yPos > 600) {
-      addPageAndReset('before disbursement history');
+      addPageAndReset('before approval chain');
     }
-    
-    yPos = this.drawDisbursementHistory(doc, yPos, data);
-  }
 
-  // Check page break before financial summary
-  if (yPos > 650) {
-    addPageAndReset('before financial summary');
-  }
+    // Approval Chain Timeline
+    yPos = this.drawApprovalChainTimeline(doc, yPos, data);
 
-  // Financial Summary
-  yPos = this.drawCashRequestFinancialSummary(doc, yPos, data);
+    // ✅ NEW: Disbursement History (if multiple disbursements exist)
+    if (data.disbursements && data.disbursements.length > 0) {
+      // Check page break before disbursement history
+      if (yPos > 600) {
+        addPageAndReset('before disbursement history');
+      }
+      
+      yPos = this.drawDisbursementHistory(doc, yPos, data);
+    }
 
-  // Check page break before signature
-  if (yPos > 680) {
-    addPageAndReset('before signature');
-  }
+    // Check page break before financial summary
+    if (yPos > 650) {
+      addPageAndReset('before financial summary');
+    }
 
-  // ✅ UPDATED: Conditional Signature Section
-  if (isPettyCash) {
+    // Financial Summary
+    yPos = this.drawCashRequestFinancialSummary(doc, yPos, data);
+
+    // Check page break before signature
+    if (yPos > 680) {
+      addPageAndReset('before signature');
+    }
+
+    // ✅ UPDATED: Buyer Acknowledgment Signature
     this.drawBuyerAcknowledgmentSignature(doc, yPos, data);
   } else {
+    // Cash Request layout
+    yPos = this.drawCashRequestRequesterDetails(doc, yPos, data);
+
+    if (yPos > 650) {
+      addPageAndReset('before purpose');
+    }
+
+    yPos = this.drawCashRequestPurpose(doc, yPos, data);
+
+    if (yPos > 650) {
+      addPageAndReset('before itemized breakdown');
+    }
+
+    const itemizedResult = this.drawCashRequestItemizedBreakdown(doc, yPos, data, currentPage);
+    yPos = itemizedResult.yPos;
+    currentPage = itemizedResult.currentPage;
+
+    if (yPos > 650) {
+      addPageAndReset('before approver signatures');
+    }
+
+    yPos = this.drawApproverSignatures(doc, yPos, data);
+
+    if (yPos > 650) {
+      addPageAndReset('before total disbursed');
+    }
+
+    yPos = this.drawTotalDisbursedSummary(doc, yPos, data);
+
+    if (yPos > 680) {
+      addPageAndReset('before requester signature');
+    }
+
     this.drawRequesterAcknowledgmentSignature(doc, yPos, data);
   }
 
@@ -2589,34 +2675,15 @@ drawRequesterAcknowledgmentSignature(doc, yPos, data) {
 
   yPos += 30;
 
-    // Acknowledgment details
-    doc.fontSize(8)
-      .font(this.boldFont)
-      .fillColor('#000000')
-      .text('Acknowledged By:', 50, yPos - 6);
-
-    doc.font(this.defaultFont)
-      .fillColor(ackName ? '#000000' : '#999999')
-      .text(ackName || 'Not yet acknowledged', 150, yPos - 6);
-
-    doc.font(this.boldFont)
-      .fillColor('#000000')
-      .text('Date:', 360, yPos - 6);
-
-    doc.font(this.defaultFont)
-      .fillColor(ackDate ? '#000000' : '#999999')
-      .text(ackDate || 'N/A', 400, yPos - 6);
-
     // Centered requester signature
   const centerX = 180;
   const lineWidth = 200;
-    const signatureName = ackName || '_______________________';
     const signatureDate = ackDate || '_______________________';
 
     // Render signature image if available
     if (signaturePath && fs.existsSync(signaturePath)) {
       try {
-        doc.image(signaturePath, centerX + 10, yPos - 16, { width: 160, height: 40, fit: [160, 40] });
+        doc.image(signaturePath, centerX + 10, yPos - 28, { width: 160, height: 36, fit: [160, 36] });
       } catch (error) {
         console.error('Signature image render error:', error.message);
       }
@@ -2634,12 +2701,10 @@ drawRequesterAcknowledgmentSignature(doc, yPos, data) {
      .fillColor('#000000')
      .text('Requester Signature', centerX, yPos + 5);
 
-    doc.fontSize(7)
-     .font(this.defaultFont)
-     .fillColor('#666666')
-      .text(`Name: ${signatureName}`, centerX, yPos + 18);
-
-    doc.text(`Date: ${signatureDate}`, centerX, yPos + 30);
+                doc.fontSize(7)
+                  .font(this.defaultFont)
+                  .fillColor('#000000')
+                  .text(signatureDate, centerX + 90, yPos - 16);
 }
 
 // ✅ NEW: Single Buyer Acknowledgment Signature Section
@@ -2680,34 +2745,15 @@ drawBuyerAcknowledgmentSignature(doc, yPos, data) {
 
   yPos += 30;
 
-    // Acknowledgment details
-    doc.fontSize(8)
-      .font(this.boldFont)
-      .fillColor('#000000')
-      .text('Acknowledged By:', 50, yPos - 6);
-
-    doc.font(this.defaultFont)
-      .fillColor(ackName ? '#000000' : '#999999')
-      .text(ackName || 'Not yet acknowledged', 150, yPos - 6);
-
-    doc.font(this.boldFont)
-      .fillColor('#000000')
-      .text('Date:', 360, yPos - 6);
-
-    doc.font(this.defaultFont)
-      .fillColor(ackDate ? '#000000' : '#999999')
-      .text(ackDate || 'N/A', 400, yPos - 6);
-
     // Centered buyer signature
   const centerX = 180;
   const lineWidth = 200;
-    const signatureName = ackName || '_______________________';
     const signatureDate = ackDate || '_______________________';
 
     // Render signature image if available
     if (signaturePath && fs.existsSync(signaturePath)) {
       try {
-        doc.image(signaturePath, centerX + 10, yPos - 16, { width: 160, height: 40, fit: [160, 40] });
+        doc.image(signaturePath, centerX + 10, yPos - 28, { width: 160, height: 36, fit: [160, 36] });
       } catch (error) {
         console.error('Signature image render error:', error.message);
       }
@@ -2725,13 +2771,256 @@ drawBuyerAcknowledgmentSignature(doc, yPos, data) {
      .fillColor('#000000')
      .text('Buyer Signature', centerX, yPos + 5);
 
-    doc.fontSize(7)
-     .font(this.defaultFont)
-     .fillColor('#666666')
-      .text(`Name: ${signatureName}`, centerX, yPos + 18);
-
-    doc.text(`Date: ${signatureDate}`, centerX, yPos + 30);
+                doc.fontSize(7)
+                  .font(this.defaultFont)
+                  .fillColor('#000000')
+                  .text(signatureDate, centerX + 90, yPos - 16);
 }
+
+  // ✅ NEW: Requester Details (Cash Request)
+  drawCashRequestRequesterDetails(doc, yPos, data) {
+    yPos += 10;
+
+    const boxHeight = 40;
+    doc.rect(40, yPos, 515, boxHeight)
+      .strokeColor('#CCCCCC')
+      .lineWidth(0.5)
+      .stroke();
+
+    yPos += 12;
+
+    doc.fontSize(9)
+      .font(this.boldFont)
+      .fillColor('#000000')
+      .text(`Requester: ${this.safeString(data.employee?.fullName, 'N/A')}`, 50, yPos + 6);
+
+    return yPos + boxHeight + 10;
+  }
+
+  // ✅ NEW: Purpose (Cash Request only)
+  drawCashRequestPurpose(doc, yPos, data) {
+    yPos += 5;
+
+    doc.fontSize(11)
+      .font(this.boldFont)
+      .fillColor('#000000')
+      .text('Purpose', 40, yPos);
+
+    yPos += 15;
+
+    const purposeText = this.safeString(data.purpose || data.title, 'N/A');
+    doc.fontSize(9)
+      .font(this.defaultFont)
+      .fillColor('#333333')
+      .text(purposeText, 40, yPos, {
+        width: 515,
+        height: 70,
+        align: 'justify',
+        lineGap: 3,
+        ellipsis: true
+      });
+
+    const purposeHeight = doc.heightOfString(purposeText, { width: 515 });
+    yPos += Math.min(purposeHeight, 70) + 15;
+
+    return yPos;
+  }
+
+  // ✅ NEW: Itemized Breakdown (Cash Request)
+  drawCashRequestItemizedBreakdown(doc, yPos, data, currentPage) {
+    yPos += 5;
+
+    doc.fontSize(11)
+      .font(this.boldFont)
+      .fillColor('#000000')
+      .text('Itemized Breakdown', 40, yPos);
+
+    yPos += 20;
+
+    const items = Array.isArray(data.itemizedBreakdown) ? data.itemizedBreakdown : [];
+
+    // Table header
+    doc.rect(40, yPos, 515, 18)
+      .fillAndStroke('#F5F5F5', '#CCCCCC');
+
+    doc.fontSize(8)
+      .font(this.boldFont)
+      .fillColor('#000000')
+      .text('#', 50, yPos + 5)
+      .text('Description', 80, yPos + 5)
+      .text('Category', 280, yPos + 5)
+      .text('Amount', 470, yPos + 5);
+
+    yPos += 18;
+
+    if (items.length === 0) {
+      doc.rect(40, yPos, 515, 20)
+        .stroke('#CCCCCC');
+
+      doc.fontSize(8)
+        .font(this.defaultFont)
+        .fillColor('#666666')
+        .text('No itemized breakdown provided', 50, yPos + 6);
+
+      yPos += 30;
+      return { yPos, currentPage };
+    }
+
+    items.forEach((item, index) => {
+      if (yPos > 720) {
+        doc.addPage();
+        currentPage++;
+        yPos = 50;
+
+        doc.fontSize(11)
+          .font(this.boldFont)
+          .fillColor('#000000')
+          .text('Itemized Breakdown (continued)', 40, yPos);
+        yPos += 20;
+
+        doc.rect(40, yPos, 515, 18)
+          .fillAndStroke('#F5F5F5', '#CCCCCC');
+
+        doc.fontSize(8)
+          .font(this.boldFont)
+          .fillColor('#000000')
+          .text('#', 50, yPos + 5)
+          .text('Description', 80, yPos + 5)
+          .text('Category', 280, yPos + 5)
+          .text('Amount', 470, yPos + 5);
+
+        yPos += 18;
+      }
+
+      if (index % 2 === 0) {
+        doc.rect(40, yPos, 515, 20)
+          .fillAndStroke('#FAFAFA', '#CCCCCC');
+      } else {
+        doc.rect(40, yPos, 515, 20)
+          .stroke('#CCCCCC');
+      }
+
+      doc.fontSize(8)
+        .font(this.defaultFont)
+        .fillColor('#000000')
+        .text(`${index + 1}`, 50, yPos + 6)
+        .text(this.safeString(item.description, 'N/A').substring(0, 40), 80, yPos + 6)
+        .text(this.safeString(item.category, 'N/A').substring(0, 20), 280, yPos + 6)
+        .text(`XAF ${this.formatCurrency(item.amount || 0)}`, 450, yPos + 6, { width: 90, align: 'right' });
+
+      yPos += 20;
+    });
+
+    yPos += 10;
+    return { yPos, currentPage };
+  }
+
+  // ✅ NEW: Approver Signatures (HOD, Head of Business, Finance)
+  drawApproverSignatures(doc, yPos, data) {
+    yPos += 5;
+
+    doc.fontSize(11)
+      .font(this.boldFont)
+      .fillColor('#000000')
+      .text('Approver Signatures', 40, yPos);
+
+    yPos += 25;
+
+    const steps = Array.isArray(data.approvalChain) ? data.approvalChain : [];
+
+    const findStep = (predicate) => steps.find(predicate);
+
+    const hodStep = findStep(step => {
+      const role = (step.approver?.role || '').toLowerCase();
+      return role.includes('head of department') || role.includes('department head') || role === 'hod';
+    });
+
+    const hobStep = findStep(step => {
+      const role = (step.approver?.role || '').toLowerCase();
+      const email = (step.approver?.email || '').toLowerCase();
+      return role.includes('head of business') || email === 'kelvin.eyong@gratoglobal.com';
+    });
+
+    const financeStep = findStep(step => {
+      const role = (step.approver?.role || '').toLowerCase();
+      return role.includes('finance');
+    });
+
+    const signatureBlocks = [
+      { label: 'HOD', step: hodStep },
+      { label: 'Head of Business', step: hobStep },
+      { label: 'Finance', step: financeStep }
+    ];
+
+    const startX = 40;
+    const colWidth = 170;
+    const lineWidth = 140;
+    const lineY = yPos + 30;
+
+    signatureBlocks.forEach((block, index) => {
+      const x = startX + (index * colWidth);
+      const signaturePath = block.step?.decidedBy?.signature?.localPath;
+      const signatureDate = block.step?.actionDate ? this.formatDateExact(block.step.actionDate) : '';
+
+      // Signature image
+      if (signaturePath && fs.existsSync(signaturePath)) {
+        try {
+          doc.image(signaturePath, x + 10, lineY - 24, { width: 110, height: 36, fit: [110, 36] });
+        } catch (error) {
+          console.error('Approver signature render error:', error.message);
+        }
+      }
+
+      // Signature line
+      doc.moveTo(x + 10, lineY)
+        .lineTo(x + 10 + lineWidth, lineY)
+        .strokeColor('#000000')
+        .lineWidth(0.5)
+        .stroke();
+
+      // Date inline with signature
+      if (signatureDate) {
+        doc.fontSize(7)
+          .font(this.defaultFont)
+          .fillColor('#000000')
+          .text(signatureDate, x + 85, lineY - 14);
+      }
+
+      // Label under line
+      doc.fontSize(8)
+        .font(this.boldFont)
+        .fillColor('#000000')
+        .text(block.label, x + 10, lineY + 6);
+    });
+
+    return lineY + 30;
+  }
+
+  // ✅ NEW: Total Disbursed Summary (Cash Request)
+  drawTotalDisbursedSummary(doc, yPos, data) {
+    yPos += 5;
+
+    doc.fontSize(11)
+      .font(this.boldFont)
+      .fillColor('#000000')
+      .text('Total Disbursed', 40, yPos);
+
+    yPos += 18;
+
+    const boxHeight = 30;
+    doc.rect(40, yPos, 515, boxHeight)
+      .fillAndStroke('#F5F5F5', '#CCCCCC');
+
+    doc.fontSize(9)
+      .font(this.boldFont)
+      .fillColor('#1890ff')
+      .text(`XAF ${this.formatCurrency(data.totalDisbursed || 0)}`, 40, yPos + 8, {
+        width: 515,
+        align: 'center'
+      });
+
+    return yPos + boxHeight + 10;
+  }
 
 
   // ✅ NEW: Basic Details (Employee Info Only)
