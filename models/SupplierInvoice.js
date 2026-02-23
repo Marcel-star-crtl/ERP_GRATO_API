@@ -331,6 +331,23 @@ const supplierInvoiceSchema = new mongoose.Schema({
     escalationCount: Number,
     supplyChainProcessingTime: Number,
     submissionToAssignmentTime: Number
+  },
+
+  accountingAudit: {
+    isPosted: {
+      type: Boolean,
+      default: false
+    },
+    postedAt: Date,
+    entryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'JournalEntry'
+    },
+    entryNumber: String,
+    sourceType: {
+      type: String,
+      default: 'supplier_invoice'
+    }
   }
 }, {
   timestamps: true,

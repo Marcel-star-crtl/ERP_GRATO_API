@@ -3996,24 +3996,29 @@ const getFinanceRequisitions = async (req, res) => {
       const financeEmail = user.email.toLowerCase();
       console.log('Finance user:', financeEmail);
 
-      // ONLY show requisitions that are pending THIS user's finance action
-      const query = {
+        // Show all requisitions relevant to finance, including those already acted on
+        const query = {
           $or: [
-              // Requisitions pending finance verification (initial status)
-              { status: 'pending_finance_verification' },
-            // Justification pending finance review
+            { status: 'pending_finance_verification' },
             { status: 'justification_pending_finance' },
-              // OR requisitions where this user has a pending approval step
-              {
-                  'approvalChain': {
-                      $elemMatch: {
-                          'approver.email': financeEmail,
-                          'status': 'pending'
-                      }
-                  }
+            {
+              'approvalChain': {
+                $elemMatch: {
+                  'approver.email': financeEmail,
+                  'approver.role': { $regex: /finance/i },
+                  'status': 'pending'
+                }
               }
+            },
+            {
+              'financeVerification.verifiedBy': req.user.userId
+            },
+            {
+              status: { $in: ['approved', 'partially_disbursed', 'fully_disbursed'] },
+              'financeVerification.verifiedBy': req.user.userId
+            }
           ]
-      };
+        };
 
       console.log('Finance query:', JSON.stringify(query, null, 2));
 

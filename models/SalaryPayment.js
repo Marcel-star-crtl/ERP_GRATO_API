@@ -71,6 +71,23 @@ const SalaryPaymentSchema = new mongoose.Schema({
   processedAt: {
     type: Date,
     default: Date.now
+  },
+
+  accountingAudit: {
+    isPosted: {
+      type: Boolean,
+      default: false
+    },
+    postedAt: Date,
+    entryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'JournalEntry'
+    },
+    entryNumber: String,
+    sourceType: {
+      type: String,
+      default: 'salary_payment'
+    }
   }
 }, {
   timestamps: true

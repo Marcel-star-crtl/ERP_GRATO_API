@@ -510,6 +510,23 @@ const CashRequestSchema = new mongoose.Schema({
     default: null
   },
 
+  accountingAudit: {
+    isPosted: {
+      type: Boolean,
+      default: false
+    },
+    postedAt: Date,
+    entryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'JournalEntry'
+    },
+    entryNumber: String,
+    sourceType: {
+      type: String,
+      default: 'cash_request_disbursement'
+    }
+  },
+
   createdAt: {
     type: Date,
     default: Date.now

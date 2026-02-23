@@ -284,6 +284,23 @@ const invoiceSchema = new mongoose.Schema({
       type: String,
       default: 'web'
     }
+  },
+
+  accountingAudit: {
+    isPosted: {
+      type: Boolean,
+      default: false
+    },
+    postedAt: Date,
+    entryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'JournalEntry'
+    },
+    entryNumber: String,
+    sourceType: {
+      type: String,
+      default: 'customer_invoice'
+    }
   }
 }, {
   timestamps: true,

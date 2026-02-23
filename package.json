@@ -44,6 +44,10 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
+    "backfill:accounting-audit": "node scripts/backfillAccountingAudit.js",
+    "seed:accounting-bootstrap": "node scripts/seedAccountingBootstraps.js",
+    "accounting:rollover-period": "node scripts/rolloverAccountingPeriod.js",
+    "accounting:rollover-period:dry": "node scripts/rolloverAccountingPeriod.js --dry-run",
     "test": "echo \"Error: no test specified\" && exit 1"
   }
 }

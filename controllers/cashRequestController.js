@@ -14,6 +14,17 @@ const fs = require('fs');
 const fsSync = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
+const accountingService = require('../services/accountingService');
+
+const safePostCashDisbursementEntry = async (requestId, userId, context = '') => {
+  try {
+    await accountingService.ensureDefaultChart();
+    await accountingService.postCashRequestDisbursement(requestId, userId);
+    console.log(`✅ Accounting posted for cash disbursement${context ? ` (${context})` : ''}`);
+  } catch (error) {
+    console.error(`⚠️ Accounting auto-post skipped for cash disbursement${context ? ` (${context})` : ''}:`, error.message);
+  }
+};
 
 
 // Helper: Export as CSV
@@ -830,6 +841,10 @@ const processFinanceDecision = async (req, res) => {
 
       await request.save();
       console.log('✅ Request saved successfully');
+
+      if (disbursementAmount) {
+        await safePostCashDisbursementEntry(request._id, req.user.userId, 'finance approval immediate disbursement');
+      }
 
       // ============================================
       // SEND NOTIFICATIONS
@@ -5498,6 +5513,8 @@ const processDisbursement = async (req, res) => {
     }
 
     await request.save();
+
+    await safePostCashDisbursementEntry(request._id, req.user.userId, `disbursement #${disbursementNumber}`);
 
     console.log(`\n✅ Disbursement #${disbursementNumber} processed`);
     console.log(`   Amount: XAF ${disbursementAmount.toLocaleString()}`);

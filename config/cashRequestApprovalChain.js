@@ -86,10 +86,10 @@ const getCashRequestApprovalChain = (employeeEmail, requestType) => {
   // STEP 3: Build Approval Chain
   console.log(`\n--- STEP 3: Building ${isMissionRequest ? '6' : '5'}-Level Approval Chain ---`);
   
+
   let processedChain = [];
   let currentLevel = 1;
   const seenEmails = new Set();
-  
   // Extract and save HOB if in base chain
   const ceoEmailLower = HEAD_OF_BUSINESS.email.toLowerCase();
   const baseChainWithoutCEO = baseApprovalChain.filter(step => {
@@ -106,14 +106,11 @@ const getCashRequestApprovalChain = (employeeEmail, requestType) => {
   baseChainWithoutCEO.forEach((step) => {
     const approver = step.approver || {};
     const emailLower = String(approver.email || '').trim().toLowerCase();
-    
     if (seenEmails.has(emailLower)) {
       console.log(`  ⚠️  Skipping duplicate: ${approver.name} (${emailLower})`);
       return;
     }
-    
     seenEmails.add(emailLower);
-    
     processedChain.push({
       level: currentLevel,
       approver: {
@@ -129,20 +126,22 @@ const getCashRequestApprovalChain = (employeeEmail, requestType) => {
       actionTime: null,
       decidedBy: null
     });
-    
     console.log(`  ✓ [${currentLevel - 1}] L${currentLevel}: ${processedChain[processedChain.length - 1].approver.name} (${processedChain[processedChain.length - 1].approver.role})`);
     currentLevel++;
   });
 
-  // ✅ CONDITIONAL: Add HR Head (ONLY for missions requests)
-  console.log(`\n  Checking HR Inclusion:`);
+  // Insert HR after Dept Head for mission requests
   if (isMissionRequest) {
+    // Find Dept Head (should be level 2)
     const hrEmailLower = HR_HEAD.email.toLowerCase();
-    if (!seenEmails.has(hrEmailLower)) {
-      seenEmails.add(hrEmailLower);
-      
-      processedChain.push({
-        level: currentLevel,
+    // Only add if not already present
+    const alreadyHasHR = processedChain.some(
+      step => String(step.approver?.email || '').trim().toLowerCase() === hrEmailLower
+    );
+    if (!alreadyHasHR) {
+      // Insert HR at level 3 (after Dept Head)
+      const hrStep = {
+        level: 3,
         approver: {
           name: HR_HEAD.name,
           email: HR_HEAD.email,
@@ -155,24 +154,30 @@ const getCashRequestApprovalChain = (employeeEmail, requestType) => {
         actionDate: null,
         actionTime: null,
         decidedBy: null
-      });
-      console.log(`  ✅ [${currentLevel - 1}] L${currentLevel}: ${HR_HEAD.name} (${HR_HEAD.role}) ← HR INSERTED (Missions Request)`);
-      currentLevel++;
+      };
+      // Insert at index 2 (after Dept Head)
+      processedChain.splice(2, 0, hrStep);
+      seenEmails.add(hrEmailLower);
+      console.log(`  ✅ Inserted HR Head at level 3 (after Dept Head)`);
+      // Re-number levels
+      processedChain.forEach((step, idx) => step.level = idx + 1);
+      currentLevel = processedChain.length + 1;
     } else {
-      console.log(`  ⚠️  Skipping HR (already in chain): ${HR_HEAD.name}`);
+      console.log(`  ⚠️  HR already in chain, skipping insert`);
     }
   } else {
     console.log(`  ⏭️  Skipping HR Head (Request type: "${requestType}" is not missions)`);
   }
 
-  // Add Finance Officer
+  // Add Finance Officer (after HR if present, else after Dept Head)
   console.log(`\n  Adding Finance Officer:`);
   const financeEmailLower = FINANCE_OFFICER.email.toLowerCase();
-  if (!seenEmails.has(financeEmailLower)) {
-    seenEmails.add(financeEmailLower);
-    
+  const alreadyHasFinance = processedChain.some(
+    step => String(step.approver?.email || '').trim().toLowerCase() === financeEmailLower
+  );
+  if (!alreadyHasFinance) {
     processedChain.push({
-      level: currentLevel,
+      level: processedChain.length + 1,
       approver: {
         name: FINANCE_OFFICER.name,
         email: FINANCE_OFFICER.email,
@@ -186,19 +191,17 @@ const getCashRequestApprovalChain = (employeeEmail, requestType) => {
       actionTime: null,
       decidedBy: null
     });
-    console.log(`  ✓ [${currentLevel - 1}] L${currentLevel}: ${FINANCE_OFFICER.name} (${FINANCE_OFFICER.role})`);
-    currentLevel++;
+    seenEmails.add(financeEmailLower);
+    console.log(`  ✓ Added Finance Officer at level ${processedChain.length}`);
   } else {
     console.log(`  ⚠️  Skipping Finance (already in chain): ${FINANCE_OFFICER.name}`);
   }
 
   // ALWAYS ADD CEO AS FINAL APPROVER
   console.log(`\n  Adding Final Approver (CEO):`);
-  if (!seenEmails.has(ceoEmailLower)) {
-    seenEmails.add(ceoEmailLower);
-    
+  if (!processedChain.some(step => String(step.approver?.email || '').trim().toLowerCase() === ceoEmailLower)) {
     processedChain.push({
-      level: currentLevel,
+      level: processedChain.length + 1,
       approver: {
         name: HEAD_OF_BUSINESS.name,
         email: HEAD_OF_BUSINESS.email,
@@ -212,11 +215,12 @@ const getCashRequestApprovalChain = (employeeEmail, requestType) => {
       actionTime: null,
       decidedBy: null
     });
-    console.log(`  ✓ [${currentLevel - 1}] L${currentLevel}: ${HEAD_OF_BUSINESS.name} (${HEAD_OF_BUSINESS.role}) ← FINAL APPROVER`);
+    seenEmails.add(ceoEmailLower);
+    console.log(`  ✓ Added Head of Business at level ${processedChain.length}`);
   } else {
     // Force add if somehow already in chain
     processedChain.push({
-      level: currentLevel,
+      level: processedChain.length + 1,
       approver: {
         name: HEAD_OF_BUSINESS.name,
         email: HEAD_OF_BUSINESS.email,
@@ -230,7 +234,7 @@ const getCashRequestApprovalChain = (employeeEmail, requestType) => {
       actionTime: null,
       decidedBy: null
     });
-    console.log(`  ⚠️  [${currentLevel - 1}] L${currentLevel}: ${HEAD_OF_BUSINESS.name} (${HEAD_OF_BUSINESS.role}) ← FINAL APPROVER (FORCED)`);
+    console.log(`  ⚠️  Forced Head of Business as final approver`);
   }
 
   // STEP 4: Validate final chain

@@ -67,6 +67,7 @@ const enhancedUserRoutes = loadRoute('./routes/enhancedUserRoutes', 'enhancedUse
 const enhancedBehavioralRoutes = loadRoute('./routes/enhancedBehavioralEvaluationRoutes', 'enhancedBehavioralRoutes');
 const scheduledReportRoutes = loadRoute('./routes/scheduledReportRoutes', 'scheduledReportRoutes');
 const migrationRoutes = loadRoute('./routes/migrationRoutes', 'migrationRoutes');
+const accountingRoutes = loadRoute('./routes/accountingRoutes', 'accountingRoutes');
 const headApprovalRoutes = require('./routes/headApproval');
 const quotationRoutes = require('./routes/quotationRoutes');
 const debitNoteRoutes = require('./routes/debitNoteRoutes');
@@ -420,6 +421,11 @@ if (migrationRoutes) {
 if (scheduledReportRoutes) {
   app.use('/api/scheduled-reports', scheduledReportRoutes);
   console.log('✅ Mounted: /api/scheduled-reports');
+}
+
+if (accountingRoutes) {
+  app.use('/api/accounting', accountingRoutes);
+  console.log('✅ Mounted: /api/accounting');
 }
 
 if (budgetTransferRoutes) {

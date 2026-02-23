@@ -8,6 +8,17 @@ const {
   STORAGE_CATEGORIES 
 } = require('../utils/localFileStorage');
 const fs = require('fs').promises;
+const accountingService = require('../services/accountingService');
+
+const safePostSupplierInvoiceEntry = async (invoiceId, userId, context = '') => {
+  try {
+    await accountingService.ensureDefaultChart();
+    await accountingService.postSupplierInvoice(invoiceId, userId);
+    console.log(`✅ Accounting posted for supplier invoice${context ? ` (${context})` : ''}`);
+  } catch (error) {
+    console.error(`⚠️ Accounting auto-post skipped for supplier invoice${context ? ` (${context})` : ''}:`, error.message);
+  }
+};
 
 /**
  * Submit supplier invoice - LOCAL STORAGE VERSION
@@ -396,6 +407,10 @@ exports.assignSupplierInvoiceBySupplyChain = async (req, res) => {
     invoice.supplyChainReview.signedDocument = signedDocData;
     
     await invoice.save();
+
+    if (decision === 'approved' && invoice.approvalStatus === 'approved') {
+      await safePostSupplierInvoiceEntry(invoice._id, req.user.userId, 'final approval');
+    }
     
     console.log(`Invoice assigned. First approver: ${invoice.getCurrentApprover()?.approver.name}`);
     
@@ -556,6 +571,8 @@ exports.rejectSupplierInvoiceBySupplyChain = async (req, res) => {
     // Use model method to reject
     invoice.rejectBySupplyChain(req.user.userId, rejectionReason);
     await invoice.save();
+
+    await safePostSupplierInvoiceEntry(invoice._id, req.user.userId, 'payment processing');
     
     // Notify supplier of rejection
     await sendEmail({

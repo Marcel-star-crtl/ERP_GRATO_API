@@ -3,6 +3,7 @@ const User = require('../models/User');
 const { sendEmail } = require('../services/emailService');
 const { cloudinary } = require('../config/cloudinary');
 const fs = require('fs').promises;
+const accountingService = require('../services/accountingService');
 
 // Upload invoice with files - FIXED
 exports.uploadInvoice = async (req, res) => {
@@ -465,6 +466,16 @@ exports.processInvoiceDecision = async (req, res) => {
     invoice.reviewDate = new Date();
 
     await invoice.save();
+
+    if (decision === 'approved') {
+      try {
+        await accountingService.ensureDefaultChart();
+        await accountingService.postCustomerInvoice(invoice._id, req.user.userId);
+        console.log('✅ Accounting posted for customer invoice (legacy approval flow)');
+      } catch (accountingError) {
+        console.error('⚠️ Accounting auto-post skipped for customer invoice (legacy approval flow):', accountingError.message);
+      }
+    }
 
     // Send notification to employee
     const notification = sendEmail({

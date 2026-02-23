@@ -8,7 +8,7 @@ const {
 } = require('../utils/localFileStorage');
 const crypto = require('crypto');
 const path = require('path');
-const fs = require('fs').promises;
+const fs = require('fs');
 
 
 // Helper function

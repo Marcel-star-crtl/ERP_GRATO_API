@@ -5,6 +5,17 @@ const { getInvoiceApprovalChain } = require('../config/invoiceApprovalChain');
 const WorkflowService = require('../services/workflowService');
 const path = require('path');  
 const fs = require('fs').promises; 
+const accountingService = require('../services/accountingService');
+
+const safePostCustomerInvoiceEntry = async (invoiceId, userId, context = '') => {
+  try {
+    await accountingService.ensureDefaultChart();
+    await accountingService.postCustomerInvoice(invoiceId, userId);
+    console.log(`✅ Accounting posted for customer invoice${context ? ` (${context})` : ''}`);
+  } catch (error) {
+    console.error(`⚠️ Accounting auto-post skipped for customer invoice${context ? ` (${context})` : ''}:`, error.message);
+  }
+};
 
 
 // Helper function for status display
@@ -506,6 +517,10 @@ exports.processApprovalStep = async (req, res) => {
 
     await invoice.save();
 
+    if (decision === 'approved' && invoice.approvalStatus === 'approved') {
+      await safePostCustomerInvoiceEntry(invoice._id, req.user.userId, 'final approval');
+    }
+
     // Send notification to employee
     const statusText = decision === 'approved' ? 'approved' : 'rejected';
     await sendEmail({
@@ -690,6 +705,8 @@ exports.assignInvoiceToDepartment = async (req, res) => {
     }
     
     await invoice.save();
+
+    await safePostCustomerInvoiceEntry(invoice._id, req.user.userId, 'marked processed');
     
     console.log('Invoice assigned successfully. First approver:', invoice.getCurrentApprover()?.approver.name);
     

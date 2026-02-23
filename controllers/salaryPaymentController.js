@@ -3,6 +3,7 @@ const BudgetCode = require('../models/BudgetCode');
 const { saveFile, STORAGE_CATEGORIES } = require('../utils/localFileStorage'); // ✅ Use local storage
 const fs = require('fs');
 const path = require('path');
+const accountingService = require('../services/accountingService');
 
 const createSalaryPayment = async (req, res) => {
   try {
@@ -87,6 +88,14 @@ const createSalaryPayment = async (req, res) => {
         payment.budgetCode,
         { $inc: { used: payment.amount } }
       );
+    }
+
+    try {
+      await accountingService.ensureDefaultChart();
+      await accountingService.postSalaryPayment(salaryPayment._id, req.user.userId);
+      console.log('✅ Accounting posted for salary payment');
+    } catch (accountingError) {
+      console.error('⚠️ Accounting auto-post skipped for salary payment:', accountingError.message);
     }
     
     const populated = await SalaryPayment.findById(salaryPayment._id)
