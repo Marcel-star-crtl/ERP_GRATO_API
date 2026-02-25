@@ -662,8 +662,8 @@ class PDFService {
     // Determine tax rate
     let taxRate = 0;
     if (poData.taxApplicable) {
-      taxRate = 0.1925; // 19.25%
-      console.log('Tax is applicable, using 19.25%');
+      taxRate = typeof poData.taxRate === 'number' ? poData.taxRate : 0.1925;
+      console.log(`Tax is applicable, using ${taxRate * 100}%`);
     }
     
     let grandTotal = 0;
@@ -732,7 +732,7 @@ class PDFService {
       doc.text(quantity.toFixed(2), colX.qty, textY);
       doc.text(this.formatCurrency(unitPrice), colX.unitPrice, textY);
       doc.text(discount > 0 ? `${discount.toFixed(2)}%` : '0.00%', colX.disc, textY);
-      doc.text(taxRate > 0 ? '19.25% G' : '0%', colX.taxes, textY);
+      doc.text(taxRate > 0 ? `${(taxRate * 100).toFixed(2)}% G` : '0%', colX.taxes, textY);
       doc.text(`${this.formatCurrency(itemTotal)} FCFA`, colX.amount, textY);
 
       // Vertical lines for row
@@ -810,7 +810,7 @@ class PDFService {
     });
 
     // VAT line
-    doc.text('VAT 19.25%', labelX, yPos + 28);
+    doc.text(`VAT ${(taxRate * 100).toFixed(2)}%`, labelX, yPos + 28);
     doc.text(`${this.formatCurrency(vatAmount)} FCFA`, labelX, yPos + 28, {
       width: summaryWidth - 20,
       align: 'right'
