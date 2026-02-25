@@ -774,9 +774,11 @@ const getRequisitionDetails = async (req, res) => {
       items: requisition.items.map(item => ({
         id: item._id,
         description: item.description,
+        customDescription: item.customDescription || '',
         quantity: item.quantity,
         measuringUnit: item.measuringUnit,
         estimatedPrice: item.estimatedPrice,
+        customUnitPrice: typeof item.customUnitPrice === 'number' ? item.customUnitPrice : undefined,
         category: item.category,
         specifications: item.specifications
       })),

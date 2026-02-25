@@ -109,6 +109,10 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
       type: String,
       required: true
     },
+    customDescription: {
+      type: String,
+      default: ''
+    },
     category: {
       type: String,
       required: true
@@ -124,6 +128,11 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
       required: true
     },
     estimatedPrice: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    customUnitPrice: {
       type: Number,
       default: 0,
       min: 0

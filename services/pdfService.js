@@ -836,76 +836,99 @@ class PDFService {
   }
 
   drawSignatureSection(doc, yPos, poData) {
-    const defaultSignatures = [
-      { label: 'Supply Chain' },
-      { label: 'Department Head' },
-      { label: 'Head of Business' },
-      { label: 'Finance' }
-    ];
-    const signatures = Array.isArray(poData?.signatures) && poData.signatures.length
-      ? poData.signatures
-      : defaultSignatures;
+  const defaultSignatures = [
+    { label: 'Supply Chain' },
+    { label: 'Finance' },
+    { label: 'Head of Business' }
+  ];
 
-    const columnCount = 2;
-    const blockWidth = 240;
-    const columnGap = 35;
-    const rowHeight = 60;
-    const baseY = yPos + 10;
+  const allowedLabels = ['supply chain', 'finance', 'head of business'];
 
-    signatures.forEach((signature, index) => {
-      const row = Math.floor(index / columnCount);
-      const col = index % columnCount;
-      const xPos = 40 + col * (blockWidth + columnGap);
-      const lineY = baseY + row * rowHeight + 24;
+  const rawSignatures = Array.isArray(poData?.signatures) && poData.signatures.length
+    ? poData.signatures
+    : defaultSignatures;
 
-      doc.moveTo(xPos, lineY)
-        .lineTo(xPos + blockWidth, lineY)
-        .strokeColor('#000000')
-        .lineWidth(0.5)
-        .stroke();
+  const filtered = rawSignatures.filter(sig =>
+    allowedLabels.includes((sig?.label || '').toLowerCase())
+  );
 
-      if (signature?.signaturePath && fs.existsSync(signature.signaturePath)) {
-        try {
-          doc.image(signature.signaturePath, xPos + 8, lineY - 26, {
-            width: 140,
-            height: 30,
-            fit: [140, 30]
-          });
-        } catch (error) {
-          console.error('Signature image render error:', error.message);
-        }
+  // Sort in the correct order: Supply Chain, Finance, Head of Business
+  const order = ['supply chain', 'finance', 'head of business'];
+  const signatures = (filtered.length > 0 ? filtered : defaultSignatures).sort((a, b) =>
+    order.indexOf((a?.label || '').toLowerCase()) - order.indexOf((b?.label || '').toLowerCase())
+  );
+
+  // 3 columns for 3 signatures
+  const columnCount = 3;
+  const blockWidth = 160;
+  const columnGap = 17;
+  const rowHeight = 60;
+  const baseY = yPos + 10;
+
+  signatures.forEach((signature, index) => {
+    const row = Math.floor(index / columnCount);
+    const col = index % columnCount;
+    const xPos = 40 + col * (blockWidth + columnGap);
+    const lineY = baseY + row * rowHeight + 24;
+
+    doc.moveTo(xPos, lineY)
+      .lineTo(xPos + blockWidth, lineY)
+      .strokeColor('#000000')
+      .lineWidth(0.5)
+      .stroke();
+
+    if (signature?.signaturePath && fs.existsSync(signature.signaturePath)) {
+      try {
+        doc.image(signature.signaturePath, xPos + 8, lineY - 26, {
+          width: 120,
+          fit: [120, 30]
+        });
+      } catch (error) {
+        console.error('Signature image render error:', error.message);
       }
+    }
 
-      const signedAtText = signature?.signedAt
-        ? this.formatDateExact(signature.signedAt)
-        : '';
+    const signedAtText = signature?.signedAt
+      ? this.formatDateExact(signature.signedAt)
+      : '';
 
-      if (signedAtText) {
-        doc.fontSize(7)
-          .font(this.defaultFont)
-          .fillColor('#000000')
-          .text(signedAtText, xPos + blockWidth - 80, lineY - 16, {
-            width: 80,
-            align: 'right'
-          });
-      }
-
+    if (signedAtText) {
       doc.fontSize(7)
-        .font(this.boldFont)
+        .font(this.defaultFont)
         .fillColor('#000000')
-        .text(signature?.label || 'Signature', xPos, lineY + 6);
-    });
-  }
+        .text(signedAtText, xPos + blockWidth - 80, lineY - 16, {
+          width: 80,
+          align: 'right'
+        });
+    }
+
+    doc.fontSize(7)
+      .font(this.boldFont)
+      .fillColor('#000000')
+      .text(signature?.label || 'Signature', xPos, lineY + 6);
+  });
+}
 
   getPOSignatureSectionHeight(poData) {
-    const signatureCount = Array.isArray(poData?.signatures) && poData.signatures.length
-      ? poData.signatures.length
-      : 4;
-    const rows = Math.ceil(signatureCount / 2);
-    const rowHeight = 60;
-    const padding = 20;
-    return padding + rows * rowHeight;
-  }
+  const defaultSignatures = [
+    { label: 'Supply Chain' },
+    { label: 'Finance' },
+    { label: 'Head of Business' }
+  ];
+  const allowedLabels = ['supply chain', 'finance', 'head of business'];
+  const rawSignatures = Array.isArray(poData?.signatures) && poData.signatures.length
+    ? poData.signatures
+    : defaultSignatures;
+  const filtered = rawSignatures.filter(sig =>
+    allowedLabels.includes((sig?.label || '').toLowerCase())
+  );
+  const signatureCount = filtered.length > 0 ? filtered.length : defaultSignatures.length;
+  const columnCount = 3;
+  const rows = Math.ceil(signatureCount / columnCount);
+  const rowHeight = 60;
+  const padding = 20;
+  return padding + rows * rowHeight;
+}
 
   drawPaymentTerms(doc, yPos, poData) {
     let currentY = yPos;
@@ -2947,7 +2970,6 @@ drawBuyerAcknowledgmentSignature(doc, yPos, data) {
     });
 
     const signatureBlocks = [
-      { label: 'HOD', step: hodStep },
       { label: 'Head of Business', step: hobStep },
       { label: 'Finance', step: financeStep }
     ];

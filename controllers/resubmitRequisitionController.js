@@ -155,11 +155,13 @@ const resubmitRequisition = async (req, res) => {
         itemId: item.itemId,
         code: item.code,
         description: item.description,
+        customDescription: item.customDescription || '',
         category: item.category,
         subcategory: item.subcategory,
         quantity: parseInt(item.quantity) || 1,
         measuringUnit: item.measuringUnit,
         estimatedPrice: parseFloat(item.estimatedPrice) || 0,
+        customUnitPrice: typeof item.customUnitPrice === 'number' ? item.customUnitPrice : 0,
         projectName: item.projectName || ''
       }));
       
