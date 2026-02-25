@@ -141,7 +141,7 @@ router.get('/purchase-orders/supply-chain/pending',
 // Get pending POs for Supervisor review
 router.get('/purchase-orders/supervisor/pending', 
   authMiddleware, 
-  requireRoles('supervisor', 'admin', 'hr', 'technical', 'finance'),
+  requireRoles('supervisor', 'admin', 'hr', 'technical', 'finance', 'it', 'employee'),
   async (req, res) => {
     try {
       // Force no cache

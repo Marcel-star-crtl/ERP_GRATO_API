@@ -11,6 +11,19 @@ const DEPARTMENT_STRUCTURE = {
   //   positions: {}
   // },
 
+  'IT': {
+    name: 'IT',
+    head: {
+      email: 'marcel.ngong@gratoglobal.com',
+      name: 'Mr. Marcel Ngong',
+      position: 'IT Manager',
+      reportsTo: null,
+      hierarchyLevel: 4
+    },
+    positions: {
+      // Add IT-specific positions here if needed
+    }
+  },
   'Technical': {
     name: 'Technical',
     head: {

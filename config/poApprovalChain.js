@@ -19,6 +19,7 @@ const getPOApprovalChain = (department) => {
     'HR & Admin': 'HR & Admin',
     'HR/Admin': 'HR & Admin',
     'Technical': 'Technical',
+    'IT': 'IT',
     'Business Development': 'Business Development & Supply Chain',
     'Business Dev': 'Business Development & Supply Chain',
     'Supply Chain': 'Business Development & Supply Chain',
@@ -34,15 +35,25 @@ const getPOApprovalChain = (department) => {
   }
   
   // Level 1: Department Head
-  chain.push({
-    level: 1,
-    approver: deptData.head.name,
-    email: deptData.head.email,
-    role: 'Department Head',
-    department: mappedDepartment
-  });
-  
-  console.log(`✓ Level 1: ${deptData.head.name} (Department Head) - ${deptData.head.email}`);
+  if (mappedDepartment === 'IT') {
+    chain.push({
+      level: 1,
+      approver: 'Mr. Marcel Ngong',
+      email: 'marcel.ngong@gratoglobal.com',
+      role: 'Department Head',
+      department: 'IT'
+    });
+    console.log('✓ Level 1: Mr. Marcel Ngong (Department Head) - marcel.ngong@gratoglobal.com');
+  } else {
+    chain.push({
+      level: 1,
+      approver: deptData.head.name,
+      email: deptData.head.email,
+      role: 'Department Head',
+      department: mappedDepartment
+    });
+    console.log(`✓ Level 1: ${deptData.head.name} (Department Head) - ${deptData.head.email}`);
+  }
   
   // Level 2: Head of Business (President) - Mr. E.T Kelvin
   const businessDept = DEPARTMENT_STRUCTURE['Business Development & Supply Chain'];
