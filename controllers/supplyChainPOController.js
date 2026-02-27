@@ -160,7 +160,7 @@ exports.assignPOToDepartment = async (req, res) => {
     const signatureBlocks = [
       {
         label: 'Supply Chain',
-        signaturePath: supplyChainUser?.signature?.localPath || null,
+        signatureUrl: supplyChainUser?.signature?.url || null,
         signedAt: reviewDate
       },
       { label: 'Department Head' },

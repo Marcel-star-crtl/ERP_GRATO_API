@@ -885,7 +885,7 @@ class PDFService {
       .stroke();
 
     // Draw signature image with white background, preserve aspect ratio, and center
-    if (signature?.signaturePath && fs.existsSync(signature.signaturePath)) {
+    if (signature?.signatureUrl) {
       try {
         const imgWidth = 62; // Increased by 2px
         const imgX = xPos + (blockWidth - imgWidth) / 2;
@@ -894,8 +894,8 @@ class PDFService {
         doc.save();
         doc.rect(imgX, imgY, imgWidth, 28).fill('#FFFFFF');
         doc.restore();
-        // Draw image, only set width
-        doc.image(signature.signaturePath, imgX, imgY, { width: imgWidth });
+        // Draw image from public URL, only set width
+        doc.image(signature.signatureUrl, imgX, imgY, { width: imgWidth });
       } catch (error) {
         console.error('Signature image render error:', error.message);
       }
