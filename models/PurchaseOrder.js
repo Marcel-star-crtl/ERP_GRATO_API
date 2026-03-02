@@ -232,11 +232,29 @@ const PurchaseOrderSchema = new mongoose.Schema({
     default: 'created'
   },
 
+  // // Activities Log
+  // activities: [{
+  //   type: {
+  //     type: String,
+  //     enum: ['created', 'sent', 'acknowledged', 'updated', 'shipped', 'delivered', 'cancelled'],
+  //     required: true
+  //   },
+  //   description: {
+  //     type: String,
+  //     required: true
+  //   },
+  //   timestamp: {
+  //     type: Date,
+  //     default: Date.now
+  //   },
+  //   user: String
+  // }],
+
   // Activities Log
   activities: [{
     type: {
       type: String,
-      enum: ['created', 'sent', 'acknowledged', 'updated', 'shipped', 'delivered', 'cancelled'],
+      enum: ['created', 'sent', 'acknowledged', 'updated', 'shipped', 'delivered', 'cancelled', 'approved', 'rejected'],
       required: true
     },
     description: {
