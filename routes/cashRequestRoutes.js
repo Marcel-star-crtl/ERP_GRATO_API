@@ -889,7 +889,7 @@
 //     }
     
 //     // Find the document in the justification
-//     const doc = request.justification?.documents?.find(d => d.name === filename);
+//     const doc = request.justification?.documents?.find(d => d.publicId === filename || d.name === filename);
     
 //     if (!doc) {
 //       return res.status(404).json({

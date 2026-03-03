@@ -1,73 +1,57 @@
-require('dotenv').config(); // reads from your existing .env file
 const mongoose = require('mongoose');
+const PurchaseOrder = require('../models/PurchaseOrder');
 
-const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI || process.env.DATABASE_URL;
+const MONGO_URI = "mongodb+srv://gratoportal_db_user:OmGZbNiqffLJraHz@cluster0.uw3xeqa.mongodb.net/" ;
 
-if (!MONGO_URI) {
-  console.error('❌ No MongoDB URI found. Check your .env file for MONGODB_URI, MONGO_URI, or DATABASE_URL');
-  process.exit(1);
-}
+const PO_ID = '69a5cb75d478ad239f417556'; // PO-2026-000034
+const APPROVER_EMAIL = 'marcel.ngong@gratoglobal.com';
+const APPROVER_NAME = 'Mr. Marcel Ngong';
+const USER_ID = '691abf4dc7430e81c1984697'; // Marcel userId
 
-async function approvePO() {
+async function signPO() {
   await mongoose.connect(MONGO_URI);
-  console.log('✅ Connected to MongoDB');
 
-  const db = mongoose.connection.db;
+  const po = await PurchaseOrder.findById(PO_ID);
 
-  const poId = new mongoose.Types.ObjectId('69a59ed918d73f51d14bdab9');
-  const approverId = new mongoose.Types.ObjectId('691abf59c7430e81c19846ab');
-  const now = new Date();
-
-  // Use updateOne ONLY — never insert
-  const result = await db.collection('purchaseorders').updateOne(
-    {
-      _id: poId,
-      'approvalChain.0.status': 'pending' // safety check
-    },
-    {
-      $set: {
-        // Approve level 1
-        'approvalChain.0.status': 'approved',
-        'approvalChain.0.approvedBy': approverId,
-        'approvalChain.0.approvedAt': now,
-        'approvalChain.0.updatedAt': now,
-
-        // Activate level 2 (Mr. E.T Kelvin)
-        'approvalChain.1.activatedDate': now,
-        'approvalChain.1.updatedAt': now,
-
-        // Advance the PO
-        currentApprovalLevel: 2,
-        status: 'pending_department_approval',
-        progress: 50,
-        updatedAt: now,
-        lastModifiedDate: now,
-      },
-      $push: {
-        activities: {
-          _id: new mongoose.Types.ObjectId(),
-          type: 'approved',
-          description: 'Purchase order approved by Department Head (IT)',
-          timestamp: now,
-          user: 'Mr. Marcel Ngong',
-        }
-      }
-    }
-  );
-
-  if (result.modifiedCount === 1) {
-    console.log('✅ PO-2026-000033 approved successfully by Marcel Ngong (Level 1)');
-  } else if (result.matchedCount === 0) {
-    console.log('⚠️  PO not found or already approved at level 1');
-  } else {
-    console.log('⚠️  PO matched but not modified');
+  if (!po) {
+    throw new Error('Purchase Order not found');
   }
 
+  // Ensure approver is allowed
+  if (!po.canUserApprove(APPROVER_EMAIL)) {
+    throw new Error('You are not authorized to approve this PO');
+  }
+
+  // Process approval using schema logic
+  po.processApprovalStep(
+    APPROVER_EMAIL,
+    'approved',
+    'Approved by Department Head',
+    USER_ID
+  );
+
+  // Add activity log
+  po.activities.push({
+    type: 'approved',
+    description: `PO approved by Department Head (${APPROVER_NAME})`,
+    user: APPROVER_NAME,
+    timestamp: new Date()
+  });
+
+  po.lastModifiedDate = new Date();
+  po.lastModifiedBy = USER_ID;
+
+  await po.save();
+
+  console.log('✅ PO APPROVED SUCCESSFULLY');
+  console.log('PO:', po.poNumber);
+  console.log('Current Level:', po.currentApprovalLevel);
+  console.log('New Status:', po.status);
+
   await mongoose.disconnect();
-  console.log('🔌 Disconnected');
 }
 
-approvePO().catch((err) => {
-  console.error('❌ Error:', err.message);
-  mongoose.disconnect();
+signPO().catch(err => {
+  console.error('❌ Approval failed:', err.message);
+  process.exit(1);
 });
