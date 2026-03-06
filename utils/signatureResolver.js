@@ -1,65 +1,52 @@
 /**
  * signatureResolver.js
- * 
- * Drop-in utility to resolve signature image paths reliably
- * across local development (Windows) and Render (Linux).
- * 
+ *
+ * Resolves signature image paths reliably across local Windows dev and Render (Linux).
  * Place in: utils/signatureResolver.js
- * 
- * Usage anywhere in your code:
- *   const { resolveSignaturePath } = require('../utils/signatureResolver');
- *   const resolvedPath = resolveSignaturePath(user.signature);
- *   if (resolvedPath) doc.image(resolvedPath, x, y, { width: 100 });
  */
 
 const fs   = require('fs');
 const path = require('path');
 
-// ── Where signatures are physically stored ────────────────────────────────────
-// Priority order — first match wins:
-//   1. SIGNATURE_PATH env var  (set this on Render if using a custom mount)
-//   2. <project_root>/public/signatures
-//   3. <project_root>/uploads/signatures       (fallback)
-//   4. /var/data/signatures                    (Render persistent disk fallback)
-
+// Search dirs in priority order — first match wins
 const SIGNATURE_SEARCH_DIRS = [
-  process.env.SIGNATURE_PATH,
-  path.resolve(__dirname, '../public/signatures'),
-  path.resolve(__dirname, '../uploads/signatures'),
-  '/var/data/signatures',
+  process.env.SIGNATURE_PATH,                                    // Render env var (highest priority)
+  '/var/data/user-signatures',                                   // Render persistent disk (actual folder)
+  '/var/data/signatures',                                        // Render persistent disk (fallback)
+  path.resolve(__dirname, '../uploads/user-signatures'),         // ✅ actual local storage folder
+  path.resolve(__dirname, '../public/signatures'),               // old migration folder
+  path.resolve(__dirname, '../uploads/signatures'),              // generic fallback
 ].filter(Boolean);
 
 /**
- * Given a stored signature object (from User.signature), returns the absolute
- * local path to the image file, or null if it cannot be found.
+ * Resolves a stored signature path/object to an absolute local path.
  *
- * Handles four storage formats seen in practice:
- *   1. Absolute Windows path  C:\Users\...\public\signatures\file.png
- *   2. Absolute Linux path    /opt/render/project/src/public/signatures/file.png
- *   3. Relative URL path      /public/signatures/file.png  or  public/signatures/file.png
- *   4. Just a filename        abc123.png
+ * Accepts:
+ *   - User.signature object  { localPath, filename, url }
+ *   - A raw path string      "C:\Users\...\uploads\user-signatures\abc.png"
+ *   - A filename string      "abc.png"
  *
- * @param {object|string|null} signatureData  - User.signature object or raw path string
- * @returns {string|null}
+ * @param {object|string|null} signatureData
+ * @returns {string|null}  Absolute path if found, null otherwise
  */
 const resolveSignaturePath = (signatureData) => {
   if (!signatureData) return null;
 
-  // Accept either an object ({ localPath, filename, url }) or a plain string
   const storedPath = typeof signatureData === 'string'
     ? signatureData
     : (signatureData.localPath || signatureData.filename || signatureData.url || null);
 
   if (!storedPath) return null;
 
-  // ── Strategy 1: stored absolute path still works (local dev happy path) ──
+  // Strategy 1: stored absolute path still works (local dev happy path)
   if (path.isAbsolute(storedPath) && fs.existsSync(storedPath)) {
     return storedPath;
   }
 
-  // ── Strategy 2: extract just the filename and search known signature dirs ──
-  // Works for both Windows ("C:\...\abc.png") and Linux paths
-  const filename = path.basename(storedPath.replace(/\\/g, '/'));
+  // Strategy 2: extract filename and search all known signature dirs
+  // Normalise Windows backslashes first
+  const normalised = storedPath.replace(/\\/g, '/');
+  const filename   = path.basename(normalised);
 
   for (const dir of SIGNATURE_SEARCH_DIRS) {
     const candidate = path.join(dir, filename);
@@ -69,8 +56,8 @@ const resolveSignaturePath = (signatureData) => {
     }
   }
 
-  // ── Strategy 3: strip leading slash and resolve from project root ──
-  const relative = storedPath.replace(/\\/g, '/').replace(/^\/+/, '');
+  // Strategy 3: strip leading slash and resolve relative to project root
+  const relative = normalised.replace(/^\/+/, '');
   const candidates = [
     path.resolve(__dirname, '..', relative),
     path.resolve(process.cwd(), relative),
@@ -89,42 +76,61 @@ const resolveSignaturePath = (signatureData) => {
 };
 
 /**
- * Copy all signatures from local public/signatures to Render persistent disk.
- * Run once after attaching the Render disk.
- * 
+ * Migrates signature files to Render persistent disk.
+ *
+ * Copies from BOTH known local signature folders:
+ *   - uploads/user-signatures/   ← where new signatures are saved
+ *   - public/signatures/         ← where old signatures lived
+ *
+ * Run once after attaching the Render disk:
  *   node -e "require('./utils/signatureResolver').migrateSignaturesToDisk()"
  */
 const migrateSignaturesToDisk = async () => {
-  const sourceDir  = path.resolve(__dirname, '../public/signatures');
-  const targetDir  = process.env.SIGNATURE_PATH || '/var/data/signatures';
-
-  if (!fs.existsSync(sourceDir)) {
-    console.log('No local signatures folder found at:', sourceDir);
-    return;
-  }
-
+  const targetDir = '/var/data/user-signatures';
   fs.mkdirSync(targetDir, { recursive: true });
 
-  const files = fs.readdirSync(sourceDir);
-  let copied = 0;
+  const sourceDirs = [
+    path.resolve(__dirname, '../uploads/user-signatures'),
+    path.resolve(__dirname, '../public/signatures'),
+  ];
 
-  for (const file of files) {
-    const src  = path.join(sourceDir, file);
-    const dest = path.join(targetDir, file);
+  let totalCopied = 0;
 
-    if (!fs.existsSync(dest)) {
-      fs.copyFileSync(src, dest);
-      copied++;
-      console.log(`  ✅ Copied: ${file}`);
-    } else {
-      console.log(`  ⏭️  Already exists: ${file}`);
+  for (const sourceDir of sourceDirs) {
+    if (!fs.existsSync(sourceDir)) {
+      console.log(`ℹ️  Skipping (not found): ${sourceDir}`);
+      continue;
+    }
+
+    console.log(`\n📂 Copying from: ${sourceDir}`);
+    const files = fs.readdirSync(sourceDir);
+
+    for (const file of files) {
+      const src  = path.join(sourceDir, file);
+      const dest = path.join(targetDir, file);
+
+      if (!fs.statSync(src).isFile()) continue; // skip subdirs
+
+      if (!fs.existsSync(dest)) {
+        fs.copyFileSync(src, dest);
+        totalCopied++;
+        console.log(`  ✅ Copied: ${file}`);
+      } else {
+        console.log(`  ⏭️  Already exists: ${file}`);
+      }
     }
   }
 
-  console.log(`\nDone. ${copied} file(s) copied to ${targetDir}`);
+  console.log(`\nDone. ${totalCopied} file(s) copied to ${targetDir}`);
 };
 
 module.exports = { resolveSignaturePath, migrateSignaturesToDisk, SIGNATURE_SEARCH_DIRS };
+
+
+
+
+
+
 
 
 // =============================================================================
