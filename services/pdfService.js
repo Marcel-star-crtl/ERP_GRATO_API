@@ -1,6 +1,9 @@
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
+const { resolveSignaturePath } = require('../utils/signatureResolver');
+
+
 
 class PDFService {
     // Draws the payment terms section and returns updated y position
@@ -842,7 +845,88 @@ class PDFService {
     });
   }
 
-  drawSignatureSection(doc, yPos, poData) {
+//   drawSignatureSection(doc, yPos, poData) {
+//   const defaultSignatures = [
+//     { label: 'Supply Chain' },
+//     { label: 'Finance' },
+//     { label: 'Head of Business' }
+//   ];
+
+//   const allowedLabels = ['supply chain', 'finance', 'head of business'];
+
+//   const rawSignatures = Array.isArray(poData?.signatures) && poData.signatures.length
+//     ? poData.signatures
+//     : defaultSignatures;
+
+//   const filtered = rawSignatures.filter(sig =>
+//     allowedLabels.includes((sig?.label || '').toLowerCase())
+//   );
+
+//   // Sort in the correct order: Supply Chain, Finance, Head of Business
+//   const order = ['supply chain', 'finance', 'head of business'];
+//   const signatures = (filtered.length > 0 ? filtered : defaultSignatures).sort((a, b) =>
+//     order.indexOf((a?.label || '').toLowerCase()) - order.indexOf((b?.label || '').toLowerCase())
+//   );
+
+//   // 3 columns for 3 signatures
+//   const columnCount = 3;
+//   const blockWidth = 160;
+//   const columnGap = 17;
+//   const rowHeight = 60;
+//   const baseY = yPos + 10;
+
+//   signatures.forEach((signature, index) => {
+//     const row = Math.floor(index / columnCount);
+//     const col = index % columnCount;
+//     const xPos = 40 + col * (blockWidth + columnGap);
+//     const lineY = baseY + row * rowHeight + 24;
+
+//     doc.moveTo(xPos, lineY)
+//       .lineTo(xPos + blockWidth, lineY)
+//       .strokeColor('#000000')
+//       .lineWidth(0.5)
+//       .stroke();
+
+//     // Draw signature image with white background, preserve aspect ratio, and center
+//     if (signature?.signaturePath && fs.existsSync(signature.signaturePath)) {
+//       try {
+//         const imgWidth = 62; // Increased by 2px
+//         const imgX = xPos + (blockWidth - imgWidth) / 2;
+//         const imgY = lineY - 32 - 4; // Move up by 4px
+//         // Draw white background
+//         doc.save();
+//         doc.rect(imgX, imgY, imgWidth, 28).fill('#FFFFFF');
+//         doc.restore();
+//         // Draw image, only set width
+//         doc.image(signature.signaturePath, imgX, imgY, { width: imgWidth });
+//       } catch (error) {
+//         console.error('Signature image render error:', error.message);
+//       }
+//     }
+
+//     const signedAtText = signature?.signedAt
+//       ? this.formatDateExact(signature.signedAt)
+//       : '';
+
+//     if (signedAtText) {
+//       doc.fontSize(7)
+//         .font(this.defaultFont)
+//         .fillColor('#000000')
+//         .text(signedAtText, xPos + blockWidth - 80, lineY - 16, {
+//           width: 80,
+//           align: 'right'
+//         });
+//     }
+
+//     doc.fontSize(7)
+//       .font(this.boldFont)
+//       .fillColor('#000000')
+//       .text(signature?.label || 'Signature', xPos, lineY + 6);
+//   });
+// }
+
+
+drawSignatureSection(doc, yPos, poData) {
   const defaultSignatures = [
     { label: 'Supply Chain' },
     { label: 'Finance' },
@@ -859,13 +943,11 @@ class PDFService {
     allowedLabels.includes((sig?.label || '').toLowerCase())
   );
 
-  // Sort in the correct order: Supply Chain, Finance, Head of Business
   const order = ['supply chain', 'finance', 'head of business'];
   const signatures = (filtered.length > 0 ? filtered : defaultSignatures).sort((a, b) =>
     order.indexOf((a?.label || '').toLowerCase()) - order.indexOf((b?.label || '').toLowerCase())
   );
 
-  // 3 columns for 3 signatures
   const columnCount = 3;
   const blockWidth = 160;
   const columnGap = 17;
@@ -884,18 +966,17 @@ class PDFService {
       .lineWidth(0.5)
       .stroke();
 
-    // Draw signature image with white background, preserve aspect ratio, and center
-    if (signature?.signaturePath && fs.existsSync(signature.signaturePath)) {
+    // ✅ PATCHED: use resolveSignaturePath instead of fs.existsSync
+    const resolvedSigPath = resolveSignaturePath(signature?.signaturePath || signature);
+    if (resolvedSigPath) {
       try {
-        const imgWidth = 62; // Increased by 2px
+        const imgWidth = 62;
         const imgX = xPos + (blockWidth - imgWidth) / 2;
-        const imgY = lineY - 32 - 4; // Move up by 4px
-        // Draw white background
+        const imgY = lineY - 32 - 4;
         doc.save();
         doc.rect(imgX, imgY, imgWidth, 28).fill('#FFFFFF');
         doc.restore();
-        // Draw image, only set width
-        doc.image(signature.signaturePath, imgX, imgY, { width: imgWidth });
+        doc.image(resolvedSigPath, imgX, imgY, { width: imgWidth });
       } catch (error) {
         console.error('Signature image render error:', error.message);
       }
@@ -921,6 +1002,7 @@ class PDFService {
       .text(signature?.label || 'Signature', xPos, lineY + 6);
   });
 }
+
 
   getPOSignatureSectionHeight(poData) {
     // Match the filtering logic from drawSignatureSection
@@ -1969,55 +2051,6 @@ class PDFService {
     return map[reason] || reason;
   }
 
-  // ============================================
-  // PETTY CASH FORM PDF (Uses Cash Request Format)
-  // ============================================
-  // async generatePettyCashFormPDF(formData, outputPath) {
-  //   return new Promise((resolve, reject) => {
-  //     try {
-  //       console.log('=== STARTING PETTY CASH FORM PDF GENERATION ===');
-  //       console.log('Form Number:', formData.displayId);
-  //       console.log('Requisition:', formData.requisitionNumber);
-
-  //       const doc = new PDFDocument({ 
-  //         size: 'A4', 
-  //         margins: this.pageMargins,
-  //         info: {
-  //           Title: `Petty Cash Form - ${formData.displayId}`,
-  //           Author: 'GRATO ENGINEERING GLOBAL LTD',
-  //           Subject: 'Project Cash Form',
-  //           Creator: 'Purchase Requisition System'
-  //         }
-  //       });
-
-  //       if (outputPath) {
-  //         doc.pipe(fs.createWriteStream(outputPath));
-  //       }
-
-  //       const chunks = [];
-  //       doc.on('data', chunk => chunks.push(chunk));
-  //       doc.on('end', () => {
-  //         const pdfBuffer = Buffer.concat(chunks);
-  //         console.log('=== PETTY CASH FORM PDF GENERATION COMPLETED ===');
-  //         resolve({
-  //           success: true,
-  //           buffer: pdfBuffer,
-  //           filename: `Petty_Cash_Form_${formData.displayId}_${Date.now()}.pdf`
-  //         });
-  //       });
-
-  //       this.generateCashRequestContent(doc, formData);
-  //       doc.end();
-  //     } catch (error) {
-  //       console.error('Petty Cash Form PDF generation error:', error);
-  //       reject({
-  //         success: false,
-  //         error: error.message
-  //       });
-  //     }
-  //   });
-  // }
-
   // ✅ KEEP THIS - It's the correct class method
 async generatePettyCashFormPDF(formData, outputPath) {
   return new Promise((resolve, reject) => {
@@ -2141,95 +2174,6 @@ async generatePettyCashFormPDF(formData, outputPath) {
       }
     });
   }
-
-
-  // generateCashRequestContent(doc, data) {
-  //   let yPos = 50;
-  //   let currentPage = 1;
-
-  //   console.log('=== STARTING PETTY CASH FORM PDF GENERATION ===');
-  //   console.log('Form Number:', data.displayId);
-  //   console.log('Employee:', data.employee?.fullName);
-
-  //   // Header with logo and company info
-  //   this.drawCashRequestHeader(doc, yPos, data);
-  //   yPos += 90;
-
-  //   // Request title bar
-  //   this.drawCashRequestTitleBar(doc, yPos, data);
-  //   yPos += 60;
-
-  //   // Employee and Request Details (Basic Info Only)
-  //   yPos = this.drawCashRequestBasicDetails(doc, yPos, data);
-
-  //   // Check page break before items table
-  //   if (yPos > 650) {
-  //     doc.addPage();
-  //     currentPage++;
-  //     yPos = 50;
-  //   }
-
-  //   // ✅ NEW: Items Table
-  //   const tableResult = this.drawPettyCashItemsTable(doc, yPos, data, currentPage);
-  //   yPos = tableResult.yPos;
-  //   currentPage = tableResult.currentPage;
-
-  //   // Check page break before purpose
-  //   if (yPos > 650) {
-  //     doc.addPage();
-  //     currentPage++;
-  //     yPos = 50;
-  //   }
-
-  //   // Purpose and Justification
-  //   yPos = this.drawPettyCashPurpose(doc, yPos, data);
-
-  //   // Check page break before approval chain
-  //   if (yPos > 600) {
-  //     doc.addPage();
-  //     currentPage++;
-  //     yPos = 50;
-  //   }
-
-  //   // Approval Chain Timeline
-  //   yPos = this.drawApprovalChainTimeline(doc, yPos, data);
-
-  //   // Check page break before financial summary
-  //   if (yPos > 650) {
-  //     doc.addPage();
-  //     currentPage++;
-  //     yPos = 50;
-  //   }
-
-  //   // Financial Summary
-  //   yPos = this.drawCashRequestFinancialSummary(doc, yPos, data);
-
-  //   // Check page break before signature
-  //   if (yPos > 680) {
-  //     doc.addPage();
-  //     currentPage++;
-  //     yPos = 50;
-  //   }
-
-  //   // ✅ UPDATED: Single Buyer Acknowledgment Signature
-  //   this.drawBuyerAcknowledgmentSignature(doc, yPos, data);
-
-  //   // Footer on all pages
-  //   const range = doc.bufferedPageRange();
-  //   console.log('📄 Drawing footers for pages. Range:', range);
-    
-  //   for (let i = 0; i < range.count; i++) {
-  //     try {
-  //       doc.switchToPage(range.start + i);
-  //       this.drawCashRequestFooter(doc, data, i + 1, range.count);
-  //       console.log(`✅ Footer drawn on page ${i + 1} of ${range.count}`);
-  //     } catch (error) {
-  //       console.error(`❌ Error drawing footer on page ${i + 1}:`, error.message);
-  //     }
-  //   }
-    
-  //   console.log('=== PETTY CASH FORM PDF CONTENT GENERATION COMPLETE ===');
-  // }
 
 
   generateCashRequestContent(doc, data) {
@@ -2644,58 +2588,124 @@ getAcknowledgmentInfo(data) {
 }
 
 // ✅ NEW: Requester Acknowledgment Signature (for Cash Requests without items)
+// drawRequesterAcknowledgmentSignature(doc, yPos, data) {
+//   yPos += 20;
+  
+//   // Section title
+//   doc.fontSize(11)
+//      .font(this.boldFont)
+//      .fillColor('#000000')
+//      .text('Requester Acknowledgment', 40, yPos);
+  
+//   yPos += 25;
+
+//   // Signature box with light blue background
+//   const boxHeight = 100;
+//   doc.rect(40, yPos, 515, boxHeight)
+//      .fillAndStroke('#F0F8FF', '#1890FF');
+
+//   yPos += 15;
+
+//   const acknowledgment = this.getAcknowledgmentInfo(data);
+//   const ackName = acknowledgment?.name || '';
+//   const ackDate = acknowledgment?.date ? this.formatDateExact(acknowledgment.date) : '';
+//   const signaturePath = acknowledgment?.signatureLocalPath;
+
+//   // Instruction text
+//   doc.fontSize(8)
+//      .font(this.defaultFont)
+//      .fillColor('#333333')
+//      .text(
+//        'I hereby acknowledge receipt of the cash amount specified above for the stated purpose and will provide proper justification with receipts.',
+//        50, yPos, {
+//          width: 495,
+//          align: 'justify'
+//        }
+//      );
+
+//   yPos += 30;
+
+//     // Centered requester signature
+//   const centerX = 180;
+//   const lineWidth = 200;
+//     const signatureDate = ackDate || '_______________________';
+
+//     // Render signature image if available
+//     if (signaturePath && fs.existsSync(signaturePath)) {
+//       try {
+//         doc.image(signaturePath, centerX + 10, yPos - 28, { width: 160, height: 36, fit: [160, 36] });
+//       } catch (error) {
+//         console.error('Signature image render error:', error.message);
+//       }
+//     }
+
+//   // Requester Acknowledgment
+//   doc.moveTo(centerX, yPos)
+//      .lineTo(centerX + lineWidth, yPos)
+//      .strokeColor('#000000')
+//      .lineWidth(0.5)
+//      .stroke();
+
+//   doc.fontSize(8)
+//      .font(this.boldFont)
+//      .fillColor('#000000')
+//      .text('Requester Signature', centerX, yPos + 5);
+
+//                 doc.fontSize(7)
+//                   .font(this.defaultFont)
+//                   .fillColor('#000000')
+//                   .text(signatureDate, centerX + 90, yPos - 16);
+// }
+
+
 drawRequesterAcknowledgmentSignature(doc, yPos, data) {
   yPos += 20;
-  
-  // Section title
+
   doc.fontSize(11)
      .font(this.boldFont)
      .fillColor('#000000')
      .text('Requester Acknowledgment', 40, yPos);
-  
+
   yPos += 25;
 
-  // Signature box with light blue background
   const boxHeight = 100;
   doc.rect(40, yPos, 515, boxHeight)
      .fillAndStroke('#F0F8FF', '#1890FF');
 
   yPos += 15;
 
-  const acknowledgment = this.getAcknowledgmentInfo(data);
-  const ackName = acknowledgment?.name || '';
-  const ackDate = acknowledgment?.date ? this.formatDateExact(acknowledgment.date) : '';
-  const signaturePath = acknowledgment?.signatureLocalPath;
+  const acknowledgment  = this.getAcknowledgmentInfo(data);
+  const ackDate         = acknowledgment?.date ? this.formatDateExact(acknowledgment.date) : '';
+  const signatureDate   = ackDate || '_______________________';
 
-  // Instruction text
   doc.fontSize(8)
      .font(this.defaultFont)
      .fillColor('#333333')
      .text(
        'I hereby acknowledge receipt of the cash amount specified above for the stated purpose and will provide proper justification with receipts.',
-       50, yPos, {
-         width: 495,
-         align: 'justify'
-       }
+       50, yPos, { width: 495, align: 'justify' }
      );
 
   yPos += 30;
 
-    // Centered requester signature
-  const centerX = 180;
+  const centerX   = 180;
   const lineWidth = 200;
-    const signatureDate = ackDate || '_______________________';
 
-    // Render signature image if available
-    if (signaturePath && fs.existsSync(signaturePath)) {
-      try {
-        doc.image(signaturePath, centerX + 10, yPos - 28, { width: 160, height: 36, fit: [160, 36] });
-      } catch (error) {
-        console.error('Signature image render error:', error.message);
-      }
+  // ✅ PATCHED: use resolveSignaturePath instead of fs.existsSync
+  const resolvedSigPath = resolveSignaturePath(acknowledgment?.signatureLocalPath);
+  if (resolvedSigPath) {
+    try {
+      doc.image(resolvedSigPath, centerX + 10, yPos - 28, {
+        width: 160,
+        height: 36,
+        fit: [160, 36]
+      });
+    } catch (error) {
+      console.error('Signature image render error:', error.message);
     }
+  }
 
-  // Requester Acknowledgment
+  // Signature line
   doc.moveTo(centerX, yPos)
      .lineTo(centerX + lineWidth, yPos)
      .strokeColor('#000000')
@@ -2707,65 +2717,131 @@ drawRequesterAcknowledgmentSignature(doc, yPos, data) {
      .fillColor('#000000')
      .text('Requester Signature', centerX, yPos + 5);
 
-                doc.fontSize(7)
-                  .font(this.defaultFont)
-                  .fillColor('#000000')
-                  .text(signatureDate, centerX + 90, yPos - 16);
+  doc.fontSize(7)
+     .font(this.defaultFont)
+     .fillColor('#000000')
+     .text(signatureDate, centerX + 90, yPos - 16);
 }
 
 // ✅ NEW: Single Buyer Acknowledgment Signature Section
+// drawBuyerAcknowledgmentSignature(doc, yPos, data) {
+//   yPos += 20;
+  
+//   // Section title
+//   doc.fontSize(11)
+//      .font(this.boldFont)
+//      .fillColor('#000000')
+//      .text('Buyer Acknowledgment', 40, yPos);
+  
+//   yPos += 25;
+
+//   // Signature box with light blue background
+//   const boxHeight = 100;
+//   doc.rect(40, yPos, 515, boxHeight)
+//      .fillAndStroke('#F0F8FF', '#1890FF');
+
+//   yPos += 15;
+
+//   const acknowledgment = this.getAcknowledgmentInfo(data);
+//   const ackName = acknowledgment?.name || '';
+//   const ackDate = acknowledgment?.date ? this.formatDateExact(acknowledgment.date) : '';
+//   const signaturePath = acknowledgment?.signatureLocalPath;
+
+//   // Instruction text
+//   doc.fontSize(8)
+//      .font(this.defaultFont)
+//      .fillColor('#333333')
+//      .text(
+//        'I hereby acknowledge receipt of the cash amount specified above for the stated purpose.',
+//        50, yPos, {
+//          width: 495,
+//          align: 'justify'
+//        }
+//      );
+
+//   yPos += 30;
+
+//     // Centered buyer signature
+//   const centerX = 180;
+//   const lineWidth = 200;
+//     const signatureDate = ackDate || '_______________________';
+
+//     // Render signature image if available
+//     if (signaturePath && fs.existsSync(signaturePath)) {
+//       try {
+//         doc.image(signaturePath, centerX + 10, yPos - 28, { width: 160, height: 36, fit: [160, 36] });
+//       } catch (error) {
+//         console.error('Signature image render error:', error.message);
+//       }
+//     }
+
+//   // Buyer Acknowledgment
+//   doc.moveTo(centerX, yPos)
+//      .lineTo(centerX + lineWidth, yPos)
+//      .strokeColor('#000000')
+//      .lineWidth(0.5)
+//      .stroke();
+
+//   doc.fontSize(8)
+//      .font(this.boldFont)
+//      .fillColor('#000000')
+//      .text('Buyer Signature', centerX, yPos + 5);
+
+//                 doc.fontSize(7)
+//                   .font(this.defaultFont)
+//                   .fillColor('#000000')
+//                   .text(signatureDate, centerX + 90, yPos - 16);
+// }
+
+
 drawBuyerAcknowledgmentSignature(doc, yPos, data) {
   yPos += 20;
-  
-  // Section title
+
   doc.fontSize(11)
      .font(this.boldFont)
      .fillColor('#000000')
      .text('Buyer Acknowledgment', 40, yPos);
-  
+
   yPos += 25;
 
-  // Signature box with light blue background
   const boxHeight = 100;
   doc.rect(40, yPos, 515, boxHeight)
      .fillAndStroke('#F0F8FF', '#1890FF');
 
   yPos += 15;
 
-  const acknowledgment = this.getAcknowledgmentInfo(data);
-  const ackName = acknowledgment?.name || '';
-  const ackDate = acknowledgment?.date ? this.formatDateExact(acknowledgment.date) : '';
-  const signaturePath = acknowledgment?.signatureLocalPath;
+  const acknowledgment  = this.getAcknowledgmentInfo(data);
+  const ackDate         = acknowledgment?.date ? this.formatDateExact(acknowledgment.date) : '';
+  const signatureDate   = ackDate || '_______________________';
 
-  // Instruction text
   doc.fontSize(8)
      .font(this.defaultFont)
      .fillColor('#333333')
      .text(
        'I hereby acknowledge receipt of the cash amount specified above for the stated purpose.',
-       50, yPos, {
-         width: 495,
-         align: 'justify'
-       }
+       50, yPos, { width: 495, align: 'justify' }
      );
 
   yPos += 30;
 
-    // Centered buyer signature
-  const centerX = 180;
+  const centerX   = 180;
   const lineWidth = 200;
-    const signatureDate = ackDate || '_______________________';
 
-    // Render signature image if available
-    if (signaturePath && fs.existsSync(signaturePath)) {
-      try {
-        doc.image(signaturePath, centerX + 10, yPos - 28, { width: 160, height: 36, fit: [160, 36] });
-      } catch (error) {
-        console.error('Signature image render error:', error.message);
-      }
+  // ✅ PATCHED: use resolveSignaturePath instead of fs.existsSync
+  const resolvedSigPath = resolveSignaturePath(acknowledgment?.signatureLocalPath);
+  if (resolvedSigPath) {
+    try {
+      doc.image(resolvedSigPath, centerX + 10, yPos - 28, {
+        width: 160,
+        height: 36,
+        fit: [160, 36]
+      });
+    } catch (error) {
+      console.error('Signature image render error:', error.message);
     }
+  }
 
-  // Buyer Acknowledgment
+  // Signature line
   doc.moveTo(centerX, yPos)
      .lineTo(centerX + lineWidth, yPos)
      .strokeColor('#000000')
@@ -2777,11 +2853,14 @@ drawBuyerAcknowledgmentSignature(doc, yPos, data) {
      .fillColor('#000000')
      .text('Buyer Signature', centerX, yPos + 5);
 
-                doc.fontSize(7)
-                  .font(this.defaultFont)
-                  .fillColor('#000000')
-                  .text(signatureDate, centerX + 90, yPos - 16);
+  doc.fontSize(7)
+     .font(this.defaultFont)
+     .fillColor('#000000')
+     .text(signatureDate, centerX + 90, yPos - 16);
 }
+
+
+
 
   // ✅ NEW: Requester Details (Cash Request)
   drawCashRequestRequesterDetails(doc, yPos, data) {
@@ -2922,84 +3001,166 @@ drawBuyerAcknowledgmentSignature(doc, yPos, data) {
   }
 
   // ✅ NEW: Approver Signatures (HOD, Head of Business, Finance)
-  drawApproverSignatures(doc, yPos, data) {
-    yPos += 5;
+  // drawApproverSignatures(doc, yPos, data) {
+  //   yPos += 5;
 
-    doc.fontSize(11)
+  //   doc.fontSize(11)
+  //     .font(this.boldFont)
+  //     .fillColor('#000000')
+  //     .text('Approver Signatures', 40, yPos);
+
+  //   yPos += 25;
+
+  //   const steps = Array.isArray(data.approvalChain) ? data.approvalChain : [];
+
+  //   const findStep = (predicate) => steps.find(predicate);
+
+  //   const hodStep = findStep(step => {
+  //     const role = (step.approver?.role || '').toLowerCase();
+  //     return role.includes('head of department') || role.includes('department head') || role === 'hod';
+  //   });
+
+  //   const hobStep = findStep(step => {
+  //     const role = (step.approver?.role || '').toLowerCase();
+  //     const email = (step.approver?.email || '').toLowerCase();
+  //     return role.includes('head of business') || email === 'kelvin.eyong@gratoglobal.com';
+  //   });
+
+  //   const financeStep = findStep(step => {
+  //     const role = (step.approver?.role || '').toLowerCase();
+  //     return role.includes('finance');
+  //   });
+
+  //   const signatureBlocks = [
+  //     { label: 'Head of Business', step: hobStep },
+  //     { label: 'Finance', step: financeStep }
+  //   ];
+
+  //   const startX = 40;
+  //   const colWidth = 170;
+  //   const lineWidth = 140;
+  //   const lineY = yPos + 30;
+
+  //   signatureBlocks.forEach((block, index) => {
+  //     const x = startX + (index * colWidth);
+  //     const signaturePath = block.step?.decidedBy?.signature?.localPath;
+  //     const signatureDate = block.step?.actionDate ? this.formatDateExact(block.step.actionDate) : '';
+
+  //     // Signature image
+  //     if (signaturePath && fs.existsSync(signaturePath)) {
+  //       try {
+  //         doc.image(signaturePath, x + 10, lineY - 24, { width: 110, height: 36, fit: [110, 36] });
+  //       } catch (error) {
+  //         console.error('Approver signature render error:', error.message);
+  //       }
+  //     }
+
+  //     // Signature line
+  //     doc.moveTo(x + 10, lineY)
+  //       .lineTo(x + 10 + lineWidth, lineY)
+  //       .strokeColor('#000000')
+  //       .lineWidth(0.5)
+  //       .stroke();
+
+  //     // Date inline with signature
+  //     if (signatureDate) {
+  //       doc.fontSize(7)
+  //         .font(this.defaultFont)
+  //         .fillColor('#000000')
+  //         .text(signatureDate, x + 85, lineY - 14);
+  //     }
+
+  //     // Label under line
+  //     doc.fontSize(8)
+  //       .font(this.boldFont)
+  //       .fillColor('#000000')
+  //       .text(block.label, x + 10, lineY + 6);
+  //   });
+
+  //   return lineY + 30;
+  // }
+
+
+  drawApproverSignatures(doc, yPos, data) {
+  yPos += 5;
+
+  doc.fontSize(11)
+    .font(this.boldFont)
+    .fillColor('#000000')
+    .text('Approver Signatures', 40, yPos);
+
+  yPos += 25;
+
+  const steps = Array.isArray(data.approvalChain) ? data.approvalChain : [];
+
+  const findStep = (predicate) => steps.find(predicate);
+
+  const hobStep = findStep(step => {
+    const role = (step.approver?.role || '').toLowerCase();
+    const email = (step.approver?.email || '').toLowerCase();
+    return role.includes('head of business') || email === 'kelvin.eyong@gratoglobal.com';
+  });
+
+  const financeStep = findStep(step => {
+    const role = (step.approver?.role || '').toLowerCase();
+    return role.includes('finance');
+  });
+
+  const signatureBlocks = [
+    { label: 'Head of Business', step: hobStep },
+    { label: 'Finance',          step: financeStep }
+  ];
+
+  const startX    = 40;
+  const colWidth  = 170;
+  const lineWidth = 140;
+  const lineY     = yPos + 30;
+
+  signatureBlocks.forEach((block, index) => {
+    const x             = startX + (index * colWidth);
+    const signatureDate = block.step?.actionDate
+      ? this.formatDateExact(block.step.actionDate)
+      : '';
+
+    // ✅ PATCHED: use resolveSignaturePath instead of fs.existsSync
+    const resolvedSigPath = resolveSignaturePath(block.step?.decidedBy?.signature);
+    if (resolvedSigPath) {
+      try {
+        doc.image(resolvedSigPath, x + 10, lineY - 24, {
+          width: 110,
+          height: 36,
+          fit: [110, 36]
+        });
+      } catch (error) {
+        console.error('Approver signature render error:', error.message);
+      }
+    }
+
+    // Signature line
+    doc.moveTo(x + 10, lineY)
+      .lineTo(x + 10 + lineWidth, lineY)
+      .strokeColor('#000000')
+      .lineWidth(0.5)
+      .stroke();
+
+    // Date inline with signature
+    if (signatureDate) {
+      doc.fontSize(7)
+        .font(this.defaultFont)
+        .fillColor('#000000')
+        .text(signatureDate, x + 85, lineY - 14);
+    }
+
+    // Label under line
+    doc.fontSize(8)
       .font(this.boldFont)
       .fillColor('#000000')
-      .text('Approver Signatures', 40, yPos);
+      .text(block.label, x + 10, lineY + 6);
+  });
 
-    yPos += 25;
+  return lineY + 30;
+}
 
-    const steps = Array.isArray(data.approvalChain) ? data.approvalChain : [];
-
-    const findStep = (predicate) => steps.find(predicate);
-
-    const hodStep = findStep(step => {
-      const role = (step.approver?.role || '').toLowerCase();
-      return role.includes('head of department') || role.includes('department head') || role === 'hod';
-    });
-
-    const hobStep = findStep(step => {
-      const role = (step.approver?.role || '').toLowerCase();
-      const email = (step.approver?.email || '').toLowerCase();
-      return role.includes('head of business') || email === 'kelvin.eyong@gratoglobal.com';
-    });
-
-    const financeStep = findStep(step => {
-      const role = (step.approver?.role || '').toLowerCase();
-      return role.includes('finance');
-    });
-
-    const signatureBlocks = [
-      { label: 'Head of Business', step: hobStep },
-      { label: 'Finance', step: financeStep }
-    ];
-
-    const startX = 40;
-    const colWidth = 170;
-    const lineWidth = 140;
-    const lineY = yPos + 30;
-
-    signatureBlocks.forEach((block, index) => {
-      const x = startX + (index * colWidth);
-      const signaturePath = block.step?.decidedBy?.signature?.localPath;
-      const signatureDate = block.step?.actionDate ? this.formatDateExact(block.step.actionDate) : '';
-
-      // Signature image
-      if (signaturePath && fs.existsSync(signaturePath)) {
-        try {
-          doc.image(signaturePath, x + 10, lineY - 24, { width: 110, height: 36, fit: [110, 36] });
-        } catch (error) {
-          console.error('Approver signature render error:', error.message);
-        }
-      }
-
-      // Signature line
-      doc.moveTo(x + 10, lineY)
-        .lineTo(x + 10 + lineWidth, lineY)
-        .strokeColor('#000000')
-        .lineWidth(0.5)
-        .stroke();
-
-      // Date inline with signature
-      if (signatureDate) {
-        doc.fontSize(7)
-          .font(this.defaultFont)
-          .fillColor('#000000')
-          .text(signatureDate, x + 85, lineY - 14);
-      }
-
-      // Label under line
-      doc.fontSize(8)
-        .font(this.boldFont)
-        .fillColor('#000000')
-        .text(block.label, x + 10, lineY + 6);
-    });
-
-    return lineY + 30;
-  }
 
   // ✅ NEW: Total Disbursed Summary (Cash Request)
   drawTotalDisbursedSummary(doc, yPos, data) {
@@ -3127,49 +3288,6 @@ drawBuyerAcknowledgmentSignature(doc, yPos, data) {
        .text('Douala Cameroon', 110, yPos + 28)
        .text('682952153', 110, yPos + 41);
   }
-
-  // drawCashRequestTitleBar(doc, yPos, data) {
-  //   // Title
-  //   doc.fillColor('#C5504B') 
-  //      .fontSize(14)
-  //      .font(this.boldFont)
-  //      .text(`CASH REQUEST #${data.displayId || data._id.toString().slice(-6).toUpperCase()}`, 40, yPos);
-
-  //   const detailsY = yPos + 25;
-    
-  //   // Three columns
-  //   doc.fillColor('#888888')
-  //      .fontSize(8)
-  //      .font(this.defaultFont)
-  //      .text('Status:', 40, detailsY);
-    
-  //   doc.fillColor('#000000')
-  //      .fontSize(9)
-  //      .font(this.boldFont)
-  //      .text(this.formatStatus(data.status), 40, detailsY + 12);
-
-  //   doc.fillColor('#888888')
-  //      .fontSize(8)
-  //      .text('Request Date:', 220, detailsY);
-    
-  //   doc.fillColor('#000000')
-  //      .fontSize(9)
-  //      .text(this.formatDateExact(data.createdAt), 220, detailsY + 12);
-
-  //   // Show first disbursement date instead of single disbursement
-  //   doc.fillColor('#888888')
-  //      .fontSize(8)
-  //      .text('First Disbursement:', 400, detailsY);
-    
-  //   const firstDisbursementDate = data.disbursements && data.disbursements.length > 0
-  //     ? data.disbursements[0].date
-  //     : data.disbursementDetails?.date;
-    
-  //   doc.fillColor('#000000')
-  //      .fontSize(9)
-  //      .text(this.formatDateExact(firstDisbursementDate), 400, detailsY + 12);
-  // }
-
 
   drawCashRequestTitleBar(doc, yPos, data) {
   // Title
@@ -3343,138 +3461,6 @@ drawBuyerAcknowledgmentSignature(doc, yPos, data) {
 
     return yPos;
   }
-
-  // drawDisbursementHistory(doc, yPos, data) {
-  //   yPos += 5;
-    
-  //   // Section header
-  //   doc.fontSize(11)
-  //      .font(this.boldFont)
-  //      .fillColor('#000000')
-  //      .text('Disbursement History', 40, yPos);
-    
-  //   yPos += 20;
-
-  //   const totalDisbursed = data.totalDisbursed || 0;
-  //   const remainingBalance = data.remainingBalance || 0;
-  //   const amountApproved = data.amountApproved || data.amountRequested;
-
-  //   const progress = Math.round((totalDisbursed / amountApproved) * 100);
-
-  //   // Progress summary box
-  //   const boxHeight = 50;
-  //   doc.rect(40, yPos, 515, boxHeight)
-  //      .fillAndStroke('#E6F7FF', '#1890FF');
-
-  //   yPos += 10;
-
-  //   // Progress info
-  //   doc.fontSize(8)
-  //      .font(this.boldFont)
-  //      .fillColor('#000000')
-  //      .text('Disbursement Progress:', 50, yPos);
-    
-  //   doc.text(`${progress}%`, 480, yPos, { width: 65, align: 'right' });
-
-  //   yPos += 15;
-
-  //   doc.fontSize(8)
-  //      .font(this.defaultFont)
-  //      .text(`Total Disbursed: XAF ${this.formatCurrency(totalDisbursed)}`, 50, yPos);
-    
-  //   if (remainingBalance > 0) {
-  //     doc.text(`Remaining: XAF ${this.formatCurrency(remainingBalance)}`, 300, yPos);
-  //   } else {
-  //     doc.fillColor('#52c41a')
-  //        .text('✓ Fully Disbursed', 300, yPos)
-  //        .fillColor('#000000');
-  //   }
-
-  //   yPos += 30;
-
-  //   // Individual disbursements
-  //   if (data.disbursements && data.disbursements.length > 0) {
-  //     doc.fontSize(9)
-  //        .font(this.boldFont)
-  //        .fillColor('#000000')
-  //        .text('Payment History:', 40, yPos);
-      
-  //     yPos += 15;
-
-  //     // Table header
-  //     doc.rect(40, yPos, 515, 18)
-  //        .fillAndStroke('#F5F5F5', '#CCCCCC');
-
-  //     doc.fontSize(8)
-  //        .font(this.boldFont)
-  //        .fillColor('#000000')
-  //        .text('#', 50, yPos + 5)
-  //        .text('Date', 100, yPos + 5)
-  //        .text('Amount', 250, yPos + 5)
-  //        .text('Notes', 370, yPos + 5);
-
-  //     yPos += 18;
-
-  //     // Disbursement rows
-  //     data.disbursements.forEach((disb, index) => {
-  //       // Check if we need a new page
-  //       if (yPos > 720) {
-  //         doc.addPage();
-  //         yPos = 50;
-          
-  //         // Redraw section header on new page
-  //         doc.fontSize(11)
-  //            .font(this.boldFont)
-  //            .fillColor('#000000')
-  //            .text('Disbursement History (continued)', 40, yPos);
-  //         yPos += 20;
-          
-  //         // Redraw table header
-  //         doc.rect(40, yPos, 515, 18)
-  //            .fillAndStroke('#F5F5F5', '#CCCCCC');
-
-  //         doc.fontSize(8)
-  //            .font(this.boldFont)
-  //            .fillColor('#000000')
-  //            .text('#', 50, yPos + 5)
-  //            .text('Date', 100, yPos + 5)
-  //            .text('Amount', 250, yPos + 5)
-  //            .text('Notes', 370, yPos + 5);
-
-  //         yPos += 18;
-  //       }
-
-  //       // Alternate row colors
-  //       if (index % 2 === 0) {
-  //         doc.rect(40, yPos, 515, 20)
-  //            .fillAndStroke('#FAFAFA', '#CCCCCC');
-  //       } else {
-  //         doc.rect(40, yPos, 515, 20)
-  //            .stroke('#CCCCCC');
-  //       }
-
-  //       doc.fontSize(8)
-  //          .font(this.defaultFont)
-  //          .fillColor('#000000')
-  //          .text(`${disb.disbursementNumber || index + 1}`, 50, yPos + 6)
-  //          .text(this.formatDateExact(disb.date), 100, yPos + 6)
-  //          .text(`XAF ${this.formatCurrency(disb.amount)}`, 250, yPos + 6);
-
-  //       if (disb.notes) {
-  //         const truncatedNotes = disb.notes.length > 30 
-  //           ? `${disb.notes.substring(0, 30)}...` 
-  //           : disb.notes;
-  //         doc.text(truncatedNotes, 370, yPos + 6);
-  //       }
-
-  //       yPos += 20;
-  //     });
-
-  //     yPos += 10;
-  //   }
-
-  //   return yPos;
-  // }
 
   drawDisbursementHistory(doc, yPos, data) {
   yPos += 5;

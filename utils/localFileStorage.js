@@ -120,7 +120,9 @@ const generateUniqueFilename = (originalName, prefix = '') => {
 const saveFile = async (file, category = 'general', subfolder = '', customFilename = null) => {
   try {
     // Get base directory
-    const uploadsBase = path.resolve(process.cwd(), 'uploads');
+    // const uploadsBase = path.resolve(process.cwd(), 'uploads');
+
+    const uploadsBase = process.env.UPLOADS_PATH || path.resolve(process.cwd(), 'uploads');
     
     // Build category path
     const categoryDir = subfolder 
