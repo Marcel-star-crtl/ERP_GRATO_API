@@ -10,6 +10,7 @@ const {
   deleteFiles,
   STORAGE_CATEGORIES 
 } = require('../utils/localFileStorage');
+const cancellationController = require('../controllers/Cancellationcontroller');
 
 
 
@@ -1058,28 +1059,63 @@ const getSupervisorRequisitions = async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // Find requisitions where current user is in the approval chain and status is pending
+    // // Find requisitions where current user is in the approval chain and status is pending
+    // const requisitions = await PurchaseRequisition.find({
+    //   $or: [
+    //     {
+    //       'approvalChain': {
+    //         $elemMatch: {
+    //           'approver.email': user.email,
+    //           'status': 'pending'
+    //         }
+    //       },
+    //       status: { $in: ['pending_supervisor'] }
+    //     },
+    //     {
+    //       'approvalChain': {
+    //         $elemMatch: {
+    //           'approver.email': user.email
+    //         }
+    //       },
+    //       status: { $in: ['justification_pending_supervisor'] }
+    //     }
+    //   ]
+    // })
     const requisitions = await PurchaseRequisition.find({
-      $or: [
-        {
-          'approvalChain': {
-            $elemMatch: {
-              'approver.email': user.email,
-              'status': 'pending'
-            }
-          },
-          status: { $in: ['pending_supervisor'] }
-        },
-        {
-          'approvalChain': {
-            $elemMatch: {
-              'approver.email': user.email
-            }
-          },
-          status: { $in: ['justification_pending_supervisor'] }
+  $or: [
+    // Existing: normal approval flow
+    {
+      'approvalChain': {
+        $elemMatch: {
+          'approver.email': user.email,
+          'status': 'pending'
         }
-      ]
-    })
+      },
+      status: { $in: ['pending_supervisor'] }
+    },
+    // Existing: justification flow
+    {
+      'approvalChain': {
+        $elemMatch: {
+          'approver.email': user.email
+        }
+      },
+      status: { $in: ['justification_pending_supervisor'] }
+    },
+    // NEW: cancellation approval flow
+    {
+      status: 'pending_cancellation',
+      'cancellationRequest.approvalChain': {
+        $elemMatch: {
+          'approver.email': user.email,
+          'status': 'pending'
+        }
+      }
+    }
+  ]
+})
+// .populate('employee', 'fullName email department')
+// .sort({ createdAt: -1 });
     .populate('employee', 'fullName email department')
     .sort({ createdAt: -1 });
 
@@ -5799,124 +5835,6 @@ const downloadJustificationReceipt = async (req, res) => {
     });
   }
 };
-
-// /**
-//  * Acknowledge receipt of disbursement
-//  * POST /api/purchase-requisitions/:requisitionId/disbursements/:disbursementId/acknowledge
-//  */
-// const acknowledgeDisbursement = async (req, res) => {
-//     try {
-//         const { requisitionId, disbursementId } = req.params;
-//         const { acknowledgmentNotes, acknowledgmentMethod } = req.body;
-
-//         console.log('=== ACKNOWLEDGE DISBURSEMENT ===');
-//         console.log('Requisition ID:', requisitionId);
-//         console.log('Disbursement ID:', disbursementId);
-//         console.log('User:', req.user.userId);
-
-//         const requisition = await PurchaseRequisition.findById(requisitionId)
-//             .populate('employee', 'fullName email department');
-
-//         if (!requisition) {
-//             return res.status(404).json({
-//                 success: false,
-//                 message: 'Requisition not found'
-//             });
-//         }
-
-//         // Verify user is the employee (requester)
-//         if (requisition.employee._id.toString() !== req.user.userId) {
-//             return res.status(403).json({
-//                 success: false,
-//                 message: 'Only the requester can acknowledge receipt'
-//             });
-//         }
-
-//         // Find the disbursement
-//         const disbursement = requisition.disbursements.id(disbursementId);
-        
-//         if (!disbursement) {
-//             return res.status(404).json({
-//                 success: false,
-//                 message: 'Disbursement not found'
-//             });
-//         }
-
-//         // Check if already acknowledged
-//         if (disbursement.acknowledged) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: 'This disbursement has already been acknowledged'
-//             });
-//         }
-
-//         // Update acknowledgment
-//         disbursement.acknowledged = true;
-//         disbursement.acknowledgedBy = req.user.userId;
-//         disbursement.acknowledgmentDate = new Date();
-//         disbursement.acknowledgmentNotes = acknowledgmentNotes || '';
-//         disbursement.acknowledgmentMethod = acknowledgmentMethod || 'cash';
-
-//         await requisition.save();
-
-//         // Send notification to finance
-//         const financeUser = await User.findById(disbursement.disbursedBy);
-//         if (financeUser) {
-//             await sendEmail({
-//                 to: financeUser.email,
-//                 subject: `Disbursement Acknowledged - ${requisition.requisitionNumber}`,
-//                 html: `
-//                     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-//                         <div style="background-color: #d4edda; padding: 20px; border-radius: 8px;">
-//                             <h3 style="color: #155724;">✅ Disbursement Receipt Acknowledged</h3>
-//                             <p>Dear ${financeUser.fullName},</p>
-//                             <p>${requisition.employee.fullName} has confirmed receipt of disbursement.</p>
-                            
-//                             <div style="background-color: white; padding: 15px; border-radius: 5px; margin: 15px 0;">
-//                                 <ul style="list-style: none; padding: 0;">
-//                                     <li><strong>Requisition:</strong> ${requisition.requisitionNumber}</li>
-//                                     <li><strong>Disbursement #:</strong> ${disbursement.disbursementNumber}</li>
-//                                     <li><strong>Amount:</strong> XAF ${disbursement.amount.toLocaleString()}</li>
-//                                     <li><strong>Receipt Method:</strong> ${acknowledgmentMethod?.replace('_', ' ').toUpperCase()}</li>
-//                                     <li><strong>Acknowledged:</strong> ${new Date().toLocaleString('en-GB')}</li>
-//                                 </ul>
-//                             </div>
-
-//                             ${acknowledgmentNotes ? `
-//                             <div style="background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin: 10px 0;">
-//                                 <p><strong>Acknowledgment Notes:</strong></p>
-//                                 <p style="font-style: italic;">${acknowledgmentNotes}</p>
-//                             </div>
-//                             ` : ''}
-
-//                             <p>This confirms the money was received successfully.</p>
-//                         </div>
-//                     </div>
-//                 `
-//             }).catch(err => console.error('Failed to send acknowledgment notification:', err));
-//         }
-
-//         console.log('✅ Disbursement acknowledged successfully');
-
-//         res.json({
-//             success: true,
-//             message: 'Disbursement receipt acknowledged successfully',
-//             data: {
-//                 disbursement,
-//                 requisition
-//             }
-//         });
-
-//     } catch (error) {
-//         console.error('Acknowledge disbursement error:', error);
-//         res.status(500).json({
-//             success: false,
-//             message: 'Failed to acknowledge disbursement',
-//             error: error.message
-//         });
-//     }
-// };
-
 
   const acknowledgeDisbursement = async (req, res) => {
     try {

@@ -196,7 +196,9 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
       'justification_rejected',
       'justification_approved',
       'completed',
-      'pending_clarification'
+      'pending_clarification',
+      'pending_cancellation',
+      'cancelled'
     ],
     default: 'pending_supervisor'
   },
@@ -656,6 +658,42 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
     resubmittedDate: Date,
     resubmissionNotes: String
   }],
+
+  cancellationRequest: {
+    requestedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    reason: String,
+    requestedAt: Date,
+    previousStatus: String,
+    approvalChain: [{
+      level: Number,
+      approver: {
+        name: String,
+        email: String,
+        role: String,
+        department: String
+      },
+      status: {
+        type: String,
+        enum: ['pending', 'approved', 'rejected'],
+        default: 'pending'
+      },
+      comments: String,
+      actionDate: Date,
+      decidedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      }
+    }],
+    finalDecision: {
+      type: String,
+      enum: ['pending', 'approved', 'rejected'],
+      default: 'pending'
+    },
+    finalizedAt: Date
+  },
 
   // ✅ NEW: Tracks if this is a resubmission
   isResubmission: {
