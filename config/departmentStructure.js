@@ -328,6 +328,20 @@ const DEPARTMENT_STRUCTURE = {
           canSelfBuy: true
         }
       },
+      'Fleet Coordinator': {
+        email: 'flora.kidzeven@gratoglobal.com',
+        name: 'Ms Flora Kidzeven',
+        reportsTo: 'lukong.lambert@gratoglobal.com',
+        hierarchyLevel: 3,
+        canSupervise: ['Warehouse Coordinator/Buyer'], 
+        approvalAuthority: 'coordinator',
+        specialRole: 'employee',
+        buyerConfig: {
+          specializations: ['IT_Accessories', 'Office_Supplies', 'Equipment', 'Consumables', 'Software', 'Hardware', 'Furniture', 'Safety_Equipment', 'Maintenance_Supplies', 'General'],
+          maxOrderValue: 10000000,
+          canSelfBuy: true
+        }
+      },
       // UPDATED - Christabel now reports to Kelvin
       'Order Management Assistant/Buyer': {
         email: 'christabel@gratoengineering.com',
@@ -371,6 +385,14 @@ const DEPARTMENT_STRUCTURE = {
         canSupervise: [],
         approvalAuthority: 'finance',
         specialRole: 'finance'
+      },
+      'Fleet Coordinator': {
+        email: 'flora.kidzeven@gratoglobal.com',
+        name: 'Ms Flora Kidzeven',
+        reportsTo: 'lukong.lambert@gratoglobal.com',
+        hierarchyLevel: 3,
+        canSupervise: [],
+        approvalAuthority: 'staff'
       }
     }
   },
