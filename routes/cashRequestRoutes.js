@@ -1126,18 +1126,32 @@ router.get(
 // MULTI-SEGMENT ROUTES WITH PARAMETERS (BEFORE SINGLE-SEGMENT ROUTES)
 // ============================================
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DROP-IN REPLACEMENT for the /justification-document/:requestId/:filename
+// route handler inside cashRoutes.js
+//
+// Replace the entire router.get('/justification-document/:requestId/:filename', ...)
+// block with this one.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Add this near the top of cashRoutes.js with the other requires:
+//   const { resolveAttachmentPath } = require('../controllers/fileController');
+//
+// OR just copy the resolveAttachmentPath function directly into cashRoutes.js
+// if you prefer not to export it from fileController.
+
 router.get(
   '/justification-document/:requestId/:filename',
   authMiddleware,
   async (req, res) => {
     try {
       const { requestId, filename } = req.params;
-      
+
       console.log('\n=== SERVING JUSTIFICATION DOCUMENT ===');
       console.log('Request ID:', requestId);
       console.log('Requested filename:', filename);
       console.log('User:', req.user.userId);
-      
+
       // Validate ObjectId format
       if (!requestId.match(/^[0-9a-fA-F]{24}$/)) {
         return res.status(400).json({
@@ -1145,10 +1159,10 @@ router.get(
           message: 'Invalid request ID format'
         });
       }
-      
+
       // Find the request
       const request = await CashRequest.findById(requestId).populate('employee', '_id');
-      
+
       if (!request) {
         console.log('❌ Request not found');
         return res.status(404).json({
@@ -1156,14 +1170,14 @@ router.get(
           message: 'Request not found'
         });
       }
-      
+
       // Check if user has permission
-      const canView = 
+      const canView =
         request.employee._id.toString() === req.user.userId.toString() ||
         req.user.role === 'admin' ||
         req.user.role === 'finance' ||
         req.user.role === 'supervisor';
-      
+
       if (!canView) {
         console.log('❌ Access denied');
         return res.status(403).json({
@@ -1171,26 +1185,20 @@ router.get(
           message: 'Not authorized to view this document'
         });
       }
-      
+
       // Decode filename
       const decodedFilename = decodeURIComponent(filename);
       console.log('Decoded filename:', decodedFilename);
-      
-      // ✅ FIX: Search by BOTH name AND publicId
+
+      // Search by name, publicId, or filename in localPath
       const doc = request.justification?.documents?.find(d => {
-        // Try to match by original name
         if (d.name === decodedFilename) return true;
-        
-        // Try to match by publicId
         if (d.publicId === decodedFilename) return true;
-        
-        // Try to match by filename in localPath
         const pathFilename = path.basename(d.localPath || '');
         if (pathFilename === decodedFilename) return true;
-        
         return false;
       });
-      
+
       if (!doc) {
         console.log('❌ Document not found in request');
         console.log('Available documents:', request.justification?.documents?.map(d => ({
@@ -1198,91 +1206,57 @@ router.get(
           publicId: d.publicId,
           localPath: d.localPath
         })));
-        
         return res.status(404).json({
           success: false,
           message: 'Document not found in request',
           availableDocuments: request.justification?.documents?.map(d => d.name)
         });
       }
-      
+
       console.log('✅ Document found:');
       console.log('   Name:', doc.name);
       console.log('   Public ID:', doc.publicId);
       console.log('   Local Path:', doc.localPath);
-      
-      // ✅ FIX: Use localPath if it exists and is valid
-      let filePath = doc.localPath;
-      
-      // If localPath doesn't exist, try to construct it from publicId
-      if (!filePath || !fs.existsSync(filePath)) {
-        console.log('⚠️  Stored path invalid or missing');
-        
-        // Try to find file by publicId
-        const uploadsDir = path.join(__dirname, '../uploads/justifications');
-        const publicIdPath = path.join(uploadsDir, doc.publicId);
-        
-        if (fs.existsSync(publicIdPath)) {
-          console.log('✅ Found file by publicId:', publicIdPath);
-          filePath = publicIdPath;
-          
-          // Update database with correct path
-          doc.localPath = publicIdPath;
-          await request.save();
-        } else {
-          // Try recursive search as last resort
-          const { findFileRecursively } = require('../utils/localFileStorage');
-          const uploadsRoot = path.join(__dirname, '../uploads');
-          const foundPath = findFileRecursively(uploadsRoot, doc.publicId);
-          
-          if (foundPath) {
-            console.log('✅ Found file (recursive search):', foundPath);
-            filePath = foundPath;
-            
-            // Update database
-            doc.localPath = foundPath;
-            await request.save();
-          } else {
-            console.log('❌ File not found anywhere');
-            
-            return res.status(404).json({
-              success: false,
-              message: 'File not found on server',
-              details: {
-                requestedFilename: decodedFilename,
-                storedName: doc.name,
-                publicId: doc.publicId,
-                storedPath: doc.localPath,
-                searchedLocations: [
-                  doc.localPath,
-                  publicIdPath,
-                  'Recursive search in uploads/'
-                ]
-              }
-            });
-          }
-        }
-      }
-      
-      console.log('📂 Final file path:', filePath);
-      console.log('📊 File exists:', fs.existsSync(filePath));
-      
-      if (!fs.existsSync(filePath)) {
+
+      // ✅ Use resolveAttachmentPath — works on both local dev and Render
+      const { resolveAttachmentPath } = require('../controllers/fileController');
+
+      const resolved =
+        resolveAttachmentPath(doc.localPath) ||
+        resolveAttachmentPath(doc.publicId);
+
+      if (!resolved) {
+        console.log('❌ File not found on disk');
         return res.status(404).json({
           success: false,
-          message: 'File exists in database but not on server',
-          path: filePath
+          message: 'File not found on server. It may have been lost during a redeployment.',
+          details: {
+            requestedFilename: decodedFilename,
+            storedName:        doc.name,
+            publicId:          doc.publicId,
+            storedPath:        doc.localPath
+          }
         });
       }
-      
+
+      const { filePath } = resolved;
+
+      console.log('📂 Final file path:', filePath);
+      console.log('📊 File exists: true');
+
+      // Persist corrected path back to DB if it changed
+      if (doc.localPath !== filePath) {
+        doc.localPath = filePath;
+        await request.save();
+        console.log('💾 Updated localPath in DB');
+      }
+
       console.log('✅ Serving file');
-      
-      // Set proper content type
+
       res.setHeader('Content-Type', doc.mimetype || 'application/octet-stream');
       res.setHeader('Content-Disposition', `inline; filename="${doc.name}"`);
-      
       res.sendFile(filePath);
-      
+
     } catch (error) {
       console.error('❌ Error serving document:', error);
       res.status(500).json({
@@ -1293,6 +1267,177 @@ router.get(
     }
   }
 );
+
+
+
+
+// router.get(
+//   '/justification-document/:requestId/:filename',
+//   authMiddleware,
+//   async (req, res) => {
+//     try {
+//       const { requestId, filename } = req.params;
+      
+//       console.log('\n=== SERVING JUSTIFICATION DOCUMENT ===');
+//       console.log('Request ID:', requestId);
+//       console.log('Requested filename:', filename);
+//       console.log('User:', req.user.userId);
+      
+//       // Validate ObjectId format
+//       if (!requestId.match(/^[0-9a-fA-F]{24}$/)) {
+//         return res.status(400).json({
+//           success: false,
+//           message: 'Invalid request ID format'
+//         });
+//       }
+      
+//       // Find the request
+//       const request = await CashRequest.findById(requestId).populate('employee', '_id');
+      
+//       if (!request) {
+//         console.log('❌ Request not found');
+//         return res.status(404).json({
+//           success: false,
+//           message: 'Request not found'
+//         });
+//       }
+      
+//       // Check if user has permission
+//       const canView = 
+//         request.employee._id.toString() === req.user.userId.toString() ||
+//         req.user.role === 'admin' ||
+//         req.user.role === 'finance' ||
+//         req.user.role === 'supervisor';
+      
+//       if (!canView) {
+//         console.log('❌ Access denied');
+//         return res.status(403).json({
+//           success: false,
+//           message: 'Not authorized to view this document'
+//         });
+//       }
+      
+//       // Decode filename
+//       const decodedFilename = decodeURIComponent(filename);
+//       console.log('Decoded filename:', decodedFilename);
+      
+//       // ✅ FIX: Search by BOTH name AND publicId
+//       const doc = request.justification?.documents?.find(d => {
+//         // Try to match by original name
+//         if (d.name === decodedFilename) return true;
+        
+//         // Try to match by publicId
+//         if (d.publicId === decodedFilename) return true;
+        
+//         // Try to match by filename in localPath
+//         const pathFilename = path.basename(d.localPath || '');
+//         if (pathFilename === decodedFilename) return true;
+        
+//         return false;
+//       });
+      
+//       if (!doc) {
+//         console.log('❌ Document not found in request');
+//         console.log('Available documents:', request.justification?.documents?.map(d => ({
+//           name: d.name,
+//           publicId: d.publicId,
+//           localPath: d.localPath
+//         })));
+        
+//         return res.status(404).json({
+//           success: false,
+//           message: 'Document not found in request',
+//           availableDocuments: request.justification?.documents?.map(d => d.name)
+//         });
+//       }
+      
+//       console.log('✅ Document found:');
+//       console.log('   Name:', doc.name);
+//       console.log('   Public ID:', doc.publicId);
+//       console.log('   Local Path:', doc.localPath);
+      
+//       // ✅ FIX: Use localPath if it exists and is valid
+//       let filePath = doc.localPath;
+      
+//       // If localPath doesn't exist, try to construct it from publicId
+//       if (!filePath || !fs.existsSync(filePath)) {
+//         console.log('⚠️  Stored path invalid or missing');
+        
+//         // Try to find file by publicId
+//         const uploadsDir = path.join(__dirname, '../uploads/justifications');
+//         const publicIdPath = path.join(uploadsDir, doc.publicId);
+        
+//         if (fs.existsSync(publicIdPath)) {
+//           console.log('✅ Found file by publicId:', publicIdPath);
+//           filePath = publicIdPath;
+          
+//           // Update database with correct path
+//           doc.localPath = publicIdPath;
+//           await request.save();
+//         } else {
+//           // Try recursive search as last resort
+//           const { findFileRecursively } = require('../utils/localFileStorage');
+//           const uploadsRoot = path.join(__dirname, '../uploads');
+//           const foundPath = findFileRecursively(uploadsRoot, doc.publicId);
+          
+//           if (foundPath) {
+//             console.log('✅ Found file (recursive search):', foundPath);
+//             filePath = foundPath;
+            
+//             // Update database
+//             doc.localPath = foundPath;
+//             await request.save();
+//           } else {
+//             console.log('❌ File not found anywhere');
+            
+//             return res.status(404).json({
+//               success: false,
+//               message: 'File not found on server',
+//               details: {
+//                 requestedFilename: decodedFilename,
+//                 storedName: doc.name,
+//                 publicId: doc.publicId,
+//                 storedPath: doc.localPath,
+//                 searchedLocations: [
+//                   doc.localPath,
+//                   publicIdPath,
+//                   'Recursive search in uploads/'
+//                 ]
+//               }
+//             });
+//           }
+//         }
+//       }
+      
+//       console.log('📂 Final file path:', filePath);
+//       console.log('📊 File exists:', fs.existsSync(filePath));
+      
+//       if (!fs.existsSync(filePath)) {
+//         return res.status(404).json({
+//           success: false,
+//           message: 'File exists in database but not on server',
+//           path: filePath
+//         });
+//       }
+      
+//       console.log('✅ Serving file');
+      
+//       // Set proper content type
+//       res.setHeader('Content-Type', doc.mimetype || 'application/octet-stream');
+//       res.setHeader('Content-Disposition', `inline; filename="${doc.name}"`);
+      
+//       res.sendFile(filePath);
+      
+//     } catch (error) {
+//       console.error('❌ Error serving document:', error);
+//       res.status(500).json({
+//         success: false,
+//         message: 'Error retrieving document',
+//         error: error.message
+//       });
+//     }
+//   }
+// );
 
 // ============================================
 // EMPLOYEE ROUTES (ALL /employee/* paths)

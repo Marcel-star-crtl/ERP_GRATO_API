@@ -221,7 +221,8 @@ router.get('/download/:publicId', async (req, res) => {
       return res.redirect(`/api/files/supplier-document/${publicId}`);
     }
 
-    const uploadsDir = path.resolve(process.cwd(), 'uploads');
+    // Use the same base directory as file uploads
+    const uploadsDir = process.env.UPLOADS_DIR || '/var/data/uploads';
     const filePath = findFile(uploadsDir, publicId);
     
     if (!filePath) {
