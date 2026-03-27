@@ -942,14 +942,27 @@ const processITDepartmentDecision = async (req, res) => {
       });
     }
 
-    // ✅ FIX: Normalize decision value to match schema enum
-    const normalizedDecision = decision === 'approved' ? 'approve' : 
-                               decision === 'rejected' ? 'reject' : 
-                               decision;
+
+    // Normalize and handle all possible decisions
+    let normalizedDecision = decision;
+    let newStatus = request.status;
+    if (decision === 'approved') {
+      normalizedDecision = 'approve';
+      newStatus = 'it_approved';
+      if (technicianId) {
+        newStatus = 'it_assigned';
+      }
+    } else if (decision === 'rejected') {
+      normalizedDecision = 'reject';
+      newStatus = 'it_rejected';
+    } else if (decision === 'resolved') {
+      normalizedDecision = 'resolved';
+      newStatus = 'resolved';
+    }
 
     // Update IT review
     request.itReview = {
-      decision: normalizedDecision,  // ✅ Use normalized value
+      decision: normalizedDecision,
       comments,
       estimatedCost: estimatedCost || 0,
       technicianId: technicianId || req.user.userId,
@@ -959,23 +972,13 @@ const processITDepartmentDecision = async (req, res) => {
       estimatedCompletionTime
     };
 
-    if (normalizedDecision === 'approve') {
-      // IT approval is FINAL approval - no finance check
-      request.status = 'it_approved'; // Mark as IT approved
-      
-      // Immediately assign for work
-      if (technicianId) {
-        request.status = 'it_assigned'; // Assign to technician if provided
-      }
-    } else if (normalizedDecision === 'reject') {
-      request.status = 'it_rejected';
-    }
+    request.status = newStatus;
 
     await request.save();
 
+
     // Send notifications
     const notifications = [];
-
     if (normalizedDecision === 'approve') {
       // Notify employee of IT approval (FINAL APPROVAL)
       notifications.push(
@@ -986,6 +989,28 @@ const processITDepartmentDecision = async (req, res) => {
           `Your IT request has been approved by the IT department${request.itReview.assignedTechnician ? ` and assigned to ${request.itReview.assignedTechnician}` : ''}. Work will begin shortly.`,
           user.fullName,
           estimatedCompletionTime ? `Estimated completion: ${estimatedCompletionTime}` : 'Work will begin shortly and you will receive updates as it progresses.'
+        ).catch(error => ({ error, type: 'employee' }))
+      );
+    } else if (normalizedDecision === 'resolved') {
+      // Notify employee of resolution
+      notifications.push(
+        sendITSupportEmail.resolutionToEmployee(
+          request.employee.email,
+          request.ticketNumber,
+          request.requestType,
+          comments || 'Your IT request has been resolved.',
+          user.fullName
+        ).catch(error => ({ error, type: 'employee' }))
+      );
+    } else if (normalizedDecision === 'reject') {
+      // Notify employee of rejection
+      notifications.push(
+        sendITSupportEmail.statusUpdateToEmployee(
+          request.employee.email,
+          request.ticketNumber,
+          'rejected',
+          comments || 'Your IT request has been rejected by the IT department.',
+          user.fullName
         ).catch(error => ({ error, type: 'employee' }))
       );
     }

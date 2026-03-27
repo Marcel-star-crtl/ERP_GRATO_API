@@ -26,7 +26,16 @@ const getITSupportApprovalChain = (employeeEmail) => {
 
   console.log(`✓ Base approval chain retrieved: ${baseApprovalChain.length} levels`);
 
-  // CRITICAL FIX: Define IT Department details
+
+  // Define HR & Admin Head details
+  const HR_DEPARTMENT = {
+    name: 'HR & Admin Head',
+    email: 'bruiline.tsitoh@gratoglobal.com',
+    role: 'HR & Admin Head',
+    department: 'HR & Admin'
+  };
+
+  // Define IT Department details
   const IT_DEPARTMENT = {
     name: 'IT Department',
     email: 'marcel.ngong@gratoglobal.com',
@@ -46,9 +55,13 @@ const getITSupportApprovalChain = (employeeEmail) => {
   if (hasIT) {
     // IT already in chain - just map it
     console.log(`✓ IT Department already in approval chain at position ${itIndex + 1}`);
-    itApprovalChain = baseApprovalChain.map((step, index) => {
+    // Remove IT from base chain if present, so we can always add HR before IT
+    const baseChainWithoutIT = baseApprovalChain.filter(
+      step => step.approver?.email?.toLowerCase() !== IT_DEPARTMENT.email.toLowerCase()
+    );
+    // Map base chain
+    let mappedChain = baseChainWithoutIT.map((step, index) => {
       const approver = step.approver || {};
-      
       return {
         level: index + 1,
         approver: {
@@ -65,49 +78,76 @@ const getITSupportApprovalChain = (employeeEmail) => {
         decidedBy: null
       };
     });
-  } else {
-    // IT NOT in chain - append it as final step
-    console.log('✓ Appending IT Department as final approval step');
-    
-    // Map existing chain
-    const mappedBaseChain = baseApprovalChain.map((step, index) => {
-      const approver = step.approver || {};
-      
-      return {
-        level: index + 1,
-        approver: {
-          name: String(approver.name || 'Unknown Approver').trim(),
-          email: String(approver.email || '').trim().toLowerCase(),
-          role: mapRoleForITApproval(approver.role || 'Approver', index + 1, approver.email),
-          department: String(approver.department || 'Unknown Department').trim()
-        },
-        status: 'pending',
-        assignedDate: index === 0 ? new Date() : null,
-        comments: '',
-        actionDate: null,
-        actionTime: null,
-        decidedBy: null
-      };
-    });
-
-    // Append IT Department as final step
-    const itStep = {
-      level: mappedBaseChain.length + 1,
-      approver: {
-        name: IT_DEPARTMENT.name,
-        email: IT_DEPARTMENT.email,
-        role: IT_DEPARTMENT.role,
-        department: IT_DEPARTMENT.department
-      },
+    // Insert HR as penultimate step
+    mappedChain.push({
+      level: mappedChain.length + 1,
+      approver: { ...HR_DEPARTMENT },
       status: 'pending',
       assignedDate: null,
       comments: '',
       actionDate: null,
       actionTime: null,
       decidedBy: null
-    };
-
-    itApprovalChain = [...mappedBaseChain, itStep];
+    });
+    // Add IT as final step
+    mappedChain.push({
+      level: mappedChain.length + 1,
+      approver: { ...IT_DEPARTMENT },
+      status: 'pending',
+      assignedDate: null,
+      comments: '',
+      actionDate: null,
+      actionTime: null,
+      decidedBy: null
+    });
+    // Re-number levels
+    itApprovalChain = mappedChain.map((step, idx) => ({ ...step, level: idx + 1 }));
+  } else {
+    // IT NOT in chain - append HR then IT as final steps
+    console.log('✓ Appending HR & Admin Head and IT Department as final approval steps');
+    // Map existing chain
+    let mappedBaseChain = baseApprovalChain.map((step, index) => {
+      const approver = step.approver || {};
+      return {
+        level: index + 1,
+        approver: {
+          name: String(approver.name || 'Unknown Approver').trim(),
+          email: String(approver.email || '').trim().toLowerCase(),
+          role: mapRoleForITApproval(approver.role || 'Approver', index + 1, approver.email),
+          department: String(approver.department || 'Unknown Department').trim()
+        },
+        status: 'pending',
+        assignedDate: index === 0 ? new Date() : null,
+        comments: '',
+        actionDate: null,
+        actionTime: null,
+        decidedBy: null
+      };
+    });
+    // Add HR as penultimate step
+    mappedBaseChain.push({
+      level: mappedBaseChain.length + 1,
+      approver: { ...HR_DEPARTMENT },
+      status: 'pending',
+      assignedDate: null,
+      comments: '',
+      actionDate: null,
+      actionTime: null,
+      decidedBy: null
+    });
+    // Add IT as final step
+    mappedBaseChain.push({
+      level: mappedBaseChain.length + 1,
+      approver: { ...IT_DEPARTMENT },
+      status: 'pending',
+      assignedDate: null,
+      comments: '',
+      actionDate: null,
+      actionTime: null,
+      decidedBy: null
+    });
+    // Re-number levels
+    itApprovalChain = mappedBaseChain.map((step, idx) => ({ ...step, level: idx + 1 }));
   }
 
   // Validate final chain

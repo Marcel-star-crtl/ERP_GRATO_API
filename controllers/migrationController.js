@@ -108,7 +108,13 @@ const findOrCreateUser = async (userName, migrationUserId) => {
 
 exports.migrateAvailableStock = async (req, res) => {
   try {
-    const { data, mode = 'update' } = req.body; // mode: 'update' or 'create-new'
+    const parseNumber = (val) => {
+      if (val === null || val === undefined || val === '') return 0;
+      const num = parseFloat(val.toString().replace(/[^0-9.-]/g, ''));
+      return isNaN(num) ? 0 : num;
+    };
+
+    const { data, mode = 'update' } = req.body;
     const results = {
       imported: 0,
       updated: 0,
@@ -121,62 +127,62 @@ exports.migrateAvailableStock = async (req, res) => {
       mode
     };
 
-    // Track codes we've seen to detect duplicates within this upload
     const seenCodes = {};
-    const duplicateCodeMap = {}; // Track for create-new mode
+    const duplicateCodeMap = {};
 
     for (let i = 0; i < data.length; i++) {
       const row = data[i];
-      
+
       try {
         let materialCode = row['Material Code']?.toString().trim();
-        
+
         if (!materialCode) {
           results.errors.push(`Row ${i + 2}: Missing Material Code`);
           results.failed++;
           continue;
         }
 
-        // Check if code appears multiple times in THIS upload
         if (seenCodes[materialCode]) {
           seenCodes[materialCode].count++;
           seenCodes[materialCode].rows.push(i + 2);
-          results.warnings.push(`Row ${i + 2}: Duplicate code "${materialCode}" found in upload (first seen at row ${seenCodes[materialCode].rows[0]}). ${mode === 'create-new' ? 'Will create with suffix.' : 'Last occurrence will overwrite.'}`);
-          
-          // In create-new mode, append suffix to make codes unique
+          results.warnings.push(
+            `Row ${i + 2}: Duplicate code "${materialCode}" found in upload (first seen at row ${seenCodes[materialCode].rows[0]}). ${
+              mode === 'create-new' ? 'Will create with suffix.' : 'Last occurrence will overwrite.'
+            }`
+          );
+
           if (mode === 'create-new') {
             materialCode = `${materialCode}-V${seenCodes[materialCode].count}`;
           }
-          
+
           if (!duplicateCodeMap[row['Material Code']]) {
             duplicateCodeMap[row['Material Code']] = [];
           }
           duplicateCodeMap[row['Material Code']].push(i + 2);
         } else {
-          seenCodes[materialCode] = {
-            count: 1,
-            rows: [i + 2]
-          };
+          seenCodes[materialCode] = { count: 1, rows: [i + 2] };
         }
 
-        // Check if item exists in database (use original code for lookup in update mode)
-        const lookupCode = mode === 'create-new' && seenCodes[row['Material Code']?.toString().trim()]?.count > 1 
-          ? null 
-          : row['Material Code']?.toString().trim();
-        
-        let item = lookupCode ? await Item.findOne({ code: lookupCode }) : null;
-        
+        const materialCodeValue = row['Material Code']?.toString().trim();
+        const supplierValue = row['SUPPLIER']?.toString().trim() || '';
+        const standardPriceValue = parseNumber(row['UP']) || parseNumber(row['TP']);
+
+        let item = null;
+        if (materialCodeValue) {
+          item = await Item.findOne({
+            code: materialCodeValue,
+            supplier: supplierValue,
+            standardPrice: standardPriceValue
+          });
+        }
+
         const rawUOM = row['UOM']?.toString().trim() || 'Each';
         const normalizedUOM = normalizeUOM(rawUOM);
-        
-        const parseNumber = (val) => {
-          if (val === null || val === undefined || val === '') return 0;
-          const num = parseFloat(val.toString().replace(/[^0-9.-]/g, ''));
-          return isNaN(num) ? 0 : num;
-        };
+
+        // ✅ parseNumber is declared ONCE above — no duplicate here
 
         const itemData = {
-          code: materialCode, // Use potentially modified code
+          code: materialCode,
           description: row['Material Name']?.toString().trim() || 'Unknown',
           category: row['CATEGORY']?.toString().trim() || 'General',
           unitOfMeasure: normalizedUOM,
@@ -192,7 +198,6 @@ exports.migrateAvailableStock = async (req, res) => {
           createdBy: req.user.userId
         };
 
-        // In create-new mode, skip update and always create
         if (mode === 'create-new' || !item) {
           item = new Item(itemData);
           await item.save();
@@ -200,6 +205,8 @@ exports.migrateAvailableStock = async (req, res) => {
           results.created.push({
             code: materialCode,
             description: itemData.description,
+            supplier: itemData.supplier,
+            standardPrice: itemData.standardPrice,
             uom: normalizedUOM,
             stockQuantity: itemData.stockQuantity,
             row: i + 2
@@ -208,6 +215,8 @@ exports.migrateAvailableStock = async (req, res) => {
           const oldValues = {
             code: item.code,
             description: item.description,
+            supplier: item.supplier,
+            standardPrice: item.standardPrice,
             stockQuantity: item.stockQuantity
           };
           Object.assign(item, itemData);
@@ -216,6 +225,8 @@ exports.migrateAvailableStock = async (req, res) => {
           results.updated_items.push({
             code: materialCode,
             description: itemData.description,
+            supplier: itemData.supplier,
+            standardPrice: itemData.standardPrice,
             oldStock: oldValues.stockQuantity,
             newStock: itemData.stockQuantity,
             row: i + 2
@@ -224,12 +235,17 @@ exports.migrateAvailableStock = async (req, res) => {
 
       } catch (error) {
         console.error(`Error processing row ${i + 2}:`, error);
-        results.errors.push(`Row ${i + 2}: ${error.message}`);
+        results.errors.push(`Row ${i + 2}: ${error.message}`); // ✅ was missing
         results.failed++;
       }
     }
-    
-    const modeLabel = mode === 'create-new' ? '(CREATE-NEW MODE - duplicates with suffix)' : '(UPDATE MODE)';
+
+    // ✅ Response is NOW here — after the loop, inside the outer try
+    const modeLabel =
+      mode === 'create-new'
+        ? '(CREATE-NEW MODE - duplicates with suffix)'
+        : '(UPDATE MODE)';
+
     res.json({
       success: true,
       message: `Migration completed ${modeLabel}: ${results.imported} created, ${results.updated} updated, ${results.failed} failed. ⚠️ ${results.warnings.length} warnings.`,

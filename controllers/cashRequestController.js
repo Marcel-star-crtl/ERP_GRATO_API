@@ -806,7 +806,7 @@ const processFinanceDecision = async (req, res) => {
 
           // Set appropriate status
           if (request.remainingBalance === 0) {
-            request.status = 'fully_disbursed';
+            request.status = (request.requestMode === 'reimbursement') ? 'completed' : 'fully_disbursed';
             console.log('✅ Request FULLY DISBURSED');
           } else {
             request.status = 'partially_disbursed';
@@ -888,18 +888,14 @@ const processFinanceDecision = async (req, res) => {
 
           ${disbursementAmount ? 
             (isFullyDisbursed ?
-              '<p><strong>Status:</strong> Your request has been fully processed and funds should be in your account soon.</p>' :
+              (isReimbursement ?
+                '<p><strong>Status:</strong> Your reimbursement has been fully processed and funds should be in your account soon. No justification is required.</p>' :
+                `<p><strong>Status:</strong> Your request has been fully processed and funds should be in your account soon.</p><div style="background-color: #e6f7ff; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #1890ff;"><p><strong>📝 Action Required:</strong></p><p>Please submit your justification with receipts within the required timeframe.</p></div>`
+              ) :
               `<p><strong>Status:</strong> Partial payment processed (${Math.round((parseFloat(disbursementAmount) / finalAmount) * 100)}%). Remaining payments will follow.</p>`
             ) :
             '<p><strong>Next Step:</strong> Disbursement will be processed by the Finance team soon.</p>'
           }
-
-          ${isFullyDisbursed ? `
-          <div style="background-color: #e6f7ff; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #1890ff;">
-            <p><strong>📝 Action Required:</strong></p>
-            <p>Please submit your justification with receipts within the required timeframe.</p>
-          </div>
-          ` : ''}
 
           <p>Thank you for following the proper ${isReimbursement ? 'reimbursement' : 'cash request'} process!</p>
         `
@@ -1354,29 +1350,34 @@ const submitJustification = async (req, res) => {
           department: approver.department
         },
         status: 'pending',
-        assignedDate: index === 0 ? new Date() : null
+        assignedDate: new Date()
       }));
-      
+
       request.justificationApprovalChain = justificationChain;
       request.status = 'justification_pending_supervisor';
-      
-      console.log(`\n✅ Created ${justificationChain.length}-level justification chain (de-duplicated by highest role):`);
-      justificationChain.forEach((step) => {
-        console.log(`   L${step.level}: ${step.approver.name} (${step.approver.role})`);
-      });
-      
+      console.log(`✅ Created justification chain (V2 - with HR): ${justificationChain.length} approvers`);
+
     } else {
-      // VERSION 1: Old flow without HR
-      request.justificationApprovalChain = request.approvalChain.map(step => ({
-        level: step.level,
-        approver: step.approver,
-        status: 'pending',
-        assignedDate: step.level === 1 ? new Date() : null
-      }));
-      
+      // VERSION 1: Original chain without HR
+      const justificationChain = request.approvalChain
+        .filter(s => s.level <= 2)
+        .map((step, index) => ({
+          level: index + 1,
+          approver: {
+            name: step.approver.name,
+            email: step.approver.email,
+            role: step.approver.role,
+            department: step.approver.department
+          },
+          status: 'pending',
+          assignedDate: new Date()
+        }));
+
+      request.justificationApprovalChain = justificationChain;
       request.status = 'justification_pending_supervisor';
       console.log('✅ Created justification chain (V1 - no HR)');
     }
+    
 
     request.justificationApproval = {
       submittedDate: new Date(),
@@ -4202,7 +4203,12 @@ const createReimbursementRequest = async (req, res) => {
       purpose,
       urgency,
       requiredDate,
-      itemizedBreakdown
+      itemizedBreakdown,
+      advanceReceived,
+      amountSpent,
+      budgetCodeId,
+      budgetCode,
+      allocatedAmount
     } = req.body;
 
     // Get employee
@@ -4229,12 +4235,33 @@ const createReimbursementRequest = async (req, res) => {
 
     console.log(`✓ Monthly limit check passed: ${limitCheck.count}/5 used`);
 
-    // Validate amount
+    // Parse and validate reimbursement fields
     const amount = parseFloat(amountRequested);
+    const advance = parseFloat(advanceReceived) || 0;
+    const spent = parseFloat(amountSpent);
+
     if (isNaN(amount) || amount <= 0 || amount > 100000) {
       return res.status(400).json({
         success: false,
         message: 'Reimbursement amount must be between XAF 1 and XAF 100,000'
+      });
+    }
+    if (isNaN(spent) || spent <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Total amount spent must be greater than zero.'
+      });
+    }
+    if (advance < 0 || advance > spent) {
+      return res.status(400).json({
+        success: false,
+        message: 'Advance received cannot exceed total spent.'
+      });
+    }
+    if (amount !== spent - advance) {
+      return res.status(400).json({
+        success: false,
+        message: 'Reimbursement due must equal total spent minus advance received.'
       });
     }
 
@@ -4249,7 +4276,7 @@ const createReimbursementRequest = async (req, res) => {
         if (Array.isArray(parsedBreakdown) && parsedBreakdown.length > 0) {
           console.log(`📋 Validating itemized breakdown (${parsedBreakdown.length} items)...`);
           
-          const validation = validateItemizedBreakdown(parsedBreakdown, amountRequested);
+          const validation = validateItemizedBreakdown(parsedBreakdown, amountSpent);
           
           if (!validation.valid) {
             return res.status(400).json({
@@ -4331,22 +4358,38 @@ const createReimbursementRequest = async (req, res) => {
 
     const mappedApprovalChain = mapApprovalChainForCashRequest(approvalChain);
 
+    // Budget allocation (if provided)
+    let budgetAllocation = undefined;
+    if (budgetCodeId || budgetCode || allocatedAmount) {
+      budgetAllocation = {
+        budgetCodeId: budgetCodeId || undefined,
+        budgetCode: budgetCode || undefined,
+        allocatedAmount: allocatedAmount ? parseFloat(allocatedAmount) : amount,
+        actualSpent: spent,
+        allocationStatus: 'spent',
+        assignedBy: req.user.userId,
+        assignedAt: new Date()
+      };
+    }
+
     // ✅ CREATE REIMBURSEMENT REQUEST
     const reimbursementRequest = new CashRequest({
       employee: req.user.userId,
       requestMode: 'reimbursement',
       requestType,
       amountRequested: amount,
+      advanceReceived: advance,
+      amountSpent: spent,
       purpose: purpose.trim(),
       urgency,
       requiredDate: new Date(requiredDate),
       status: 'pending_supervisor',
       approvalChain: mappedApprovalChain,
       itemizedBreakdown: parsedBreakdown, // ✅ Store itemized breakdown (optional)
-      
+      budgetAllocation,
       // ✅ REIMBURSEMENT-SPECIFIC DETAILS
       reimbursementDetails: {
-        amountSpent: amount,
+        amountSpent: spent,
         receiptDocuments, // ✅ Store receipt files properly
         itemizedBreakdown: parsedBreakdown, // ✅ Duplicate for easier access
         submittedDate: new Date(),

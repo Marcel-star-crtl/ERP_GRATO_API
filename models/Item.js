@@ -66,11 +66,14 @@ const ItemSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
+
 // Indexes for better query performance
 ItemSchema.index({ code: 1 });
 ItemSchema.index({ category: 1, isActive: 1 });
 ItemSchema.index({ description: 'text', specifications: 'text' });
 ItemSchema.index({ isActive: 1 });
+// Compound unique index for code, supplier, and standardPrice
+ItemSchema.index({ code: 1, supplier: 1, standardPrice: 1 }, { unique: true, sparse: true });
 
 // Virtual for display ID
 ItemSchema.virtual('displayCode').get(function() {

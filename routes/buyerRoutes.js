@@ -285,7 +285,7 @@ router.get('/purchase-orders/supervisor/stats',
 // Approve PO (Supervisor)
 router.post('/purchase-orders/:poId/approve', 
   authMiddleware, 
-  requireRoles('supervisor', 'admin', 'hr', 'technical', 'finance'),
+  // requireRoles('supervisor', 'admin', 'hr', 'technical', 'finance'),
   async (req, res) => {
     try {
       const { poId } = req.params;

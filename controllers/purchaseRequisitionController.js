@@ -215,39 +215,29 @@ const createRequisition = async (req, res) => {
     console.log('Parsed items:', parsedItems);
 
     // Validate items exist in database
-    const itemIds = parsedItems.map(item => item.itemId).filter(Boolean);
-    
-    if (itemIds.length !== parsedItems.length) {
-      return res.status(400).json({
-        success: false,
-        message: 'All items must have valid database references (itemId)'
-      });
-    }
 
-    // Check if items exist and are active
-    try {
-      const Item = require('../models/Item');
-      const validItems = await Item.find({ 
-        _id: { $in: itemIds },
-        isActive: true 
-      }).select('_id code description');
-
-      console.log('Found valid items:', validItems.length, 'out of', itemIds.length);
-
-      if (validItems.length !== itemIds.length) {
-        const foundIds = validItems.map(item => item._id.toString());
-        const missingIds = itemIds.filter(id => !foundIds.includes(id));
-        
+    // Validate each itemId individually (allow duplicates with different descriptions)
+    for (const item of parsedItems) {
+      if (!item.itemId) {
         return res.status(400).json({
           success: false,
-          message: `Invalid or inactive items: ${missingIds.join(', ')}`
+          message: 'All items must have valid database references (itemId)'
         });
       }
-    } catch (itemError) {
-      console.error('Item validation error:', itemError);
-      // Continue anyway - validation is optional for now
+      try {
+        const Item = require('../models/Item');
+        const validItem = await Item.findOne({ _id: item.itemId, isActive: true }).select('_id');
+        if (!validItem) {
+          return res.status(400).json({
+            success: false,
+            message: `Invalid or inactive items: ${item.itemId}`
+          });
+        }
+      } catch (itemError) {
+        console.error('Item validation error:', itemError);
+        // Continue anyway - validation is optional for now
+      }
     }
-
     console.log('All items validated successfully');
 
     // Transform items to match database structure

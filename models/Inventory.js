@@ -5,8 +5,8 @@ const InventorySchema = new mongoose.Schema({
     type: String,
     required: true,
     uppercase: true,
-    trim: true,
-    index: true 
+    trim: true
+    // No unique or index here; handled by compound index below
   },
   description: {
     type: String,
@@ -159,8 +159,8 @@ const InventorySchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
+
 // Indexes for better query performance
-InventorySchema.index({ code: 1 });
 InventorySchema.index({ category: 1, isActive: 1 });
 InventorySchema.index({ description: 'text', specifications: 'text' });
 InventorySchema.index({ isActive: 1 });
@@ -168,6 +168,8 @@ InventorySchema.index({ assetTag: 1 }, { sparse: true });
 InventorySchema.index({ stockQuantity: 1 });
 InventorySchema.index({ 'assetDetails.assignedTo': 1 });
 InventorySchema.index({ code: 1, createdAt: 1 });
+// Compound unique index for code, supplier, and standardPrice
+InventorySchema.index({ code: 1, supplier: 1, standardPrice: 1 }, { unique: true, sparse: true });
 
 // Virtual for display code
 InventorySchema.virtual('displayCode').get(function() {

@@ -179,7 +179,7 @@ const ITSupportRequestSchema = new mongoose.Schema({
     estimatedCompletion: Date,
     decision: {
       type: String,
-      enum: ['approve', 'reject', 'needs_finance_approval']
+      enum: ['approve', 'reject', 'needs_finance_approval', 'resolved']
     },
     comments: String,
     decisionDate: Date,

@@ -1,3 +1,72 @@
+// Script to diagnose all cash request routes
+const axios = require('axios');
+
+const BASE_URL = process.env.API_BASE_URL || 'http://localhost:5001/api/cash-requests';
+
+const routes = [
+  { method: 'GET', path: '/employee' },
+  { method: 'GET', path: '/employee/testid' },
+  { method: 'GET', path: '/supervisor' },
+  { method: 'GET', path: '/supervisor/pending' },
+  { method: 'GET', path: '/finance' },
+  { method: 'GET', path: '/admin' },
+  { method: 'POST', path: '/' },
+  { method: 'POST', path: '/reimbursement' },
+  { method: 'GET', path: '/reimbursement/limit-status' },
+  { method: 'GET', path: '/dashboard-stats' },
+  { method: 'GET', path: '/dashboard/stats' },
+  { method: 'GET', path: '/check-pending' },
+  { method: 'GET', path: '/reports/analytics' },
+  { method: 'POST', path: '/approval-chain-preview' },
+  { method: 'GET', path: '/export' },
+  { method: 'GET', path: '/justifications/supervisor/pending' },
+  { method: 'GET', path: '/testid' },
+];
+
+
+const AUTH_TOKEN = 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2OTFhYmY1OWM3NDMwZTgxYzE5ODQ2YWIiLCJyb2xlIjoiZW1wbG95ZWUiLCJpYXQiOjE3NzM3NDQ1ODYsImV4cCI6MTc3MzgzMDk4Nn0.TlfsqCXgJ9JXXWH5a7teAgGdm0z73uns4pK0We9Hn9E';
+
+async function diagnoseRoute(route) {
+  const url = BASE_URL + route.path;
+  const config = {
+    headers: {
+      'Authorization': AUTH_TOKEN,
+      'Accept': 'application/json, text/plain, */*'
+    }
+  };
+  try {
+    let response;
+    if (route.method === 'GET') {
+      response = await axios.get(url, config);
+    } else if (route.method === 'POST') {
+      response = await axios.post(url, {}, config);
+    } else if (route.method === 'PUT') {
+      response = await axios.put(url, {}, config);
+    } else if (route.method === 'DELETE') {
+      response = await axios.delete(url, config);
+    }
+    console.log(`${route.method} ${url} => ${response.status}`);
+  } catch (error) {
+    if (error.response) {
+      console.log(`${route.method} ${url} => ${error.response.status}`);
+      console.log('  Response headers:', error.response.headers);
+      console.log('  Response data:', error.response.data);
+    } else {
+      console.log(`${route.method} ${url} => ERROR (${error.message})`);
+      try {
+        console.log('  Error details:', error.toJSON ? error.toJSON() : error);
+      } catch (e) {
+        console.log('  Error (non-JSON):', error);
+      }
+    }
+  }
+}
+
+(async () => {
+  for (const route of routes) {
+    await diagnoseRoute(route);
+  }
+})();
 // scripts/diagnostic.js - Run this from project root: node scripts/diagnostic.js
 
 const path = require('path');
