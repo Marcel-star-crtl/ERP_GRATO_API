@@ -21,6 +21,126 @@ class PDFService {
   }
 
 
+    /**
+   * Generate IT Material Discharge & Acknowledgment PDF
+   * @param {Object} request - ITSupportRequest document (populated)
+   * @param {string} outputPath - Optional file path to save PDF
+   * @returns {Promise<{success: boolean, buffer: Buffer, filename: string}>}
+   */
+  async generateITDischargePDF(request, outputPath) {
+    return new Promise(async (resolve, reject) => {
+      try {
+        const doc = new PDFDocument({
+          size: 'A4',
+          margins: this.pageMargins,
+          bufferPages: true,
+          info: {
+            Title: `IT Material Discharge - ${request.ticketNumber}`,
+            Author: 'GRATO ENGINEERING GLOBAL LTD',
+            Subject: 'IT Material Discharge & Acknowledgment',
+            Creator: 'ERP System'
+          }
+        });
+        if (outputPath) {
+          doc.pipe(fs.createWriteStream(outputPath));
+        }
+        const chunks = [];
+        doc.on('data', chunk => chunks.push(chunk));
+        doc.on('end', () => {
+          const pdfBuffer = Buffer.concat(chunks);
+          resolve({
+            success: true,
+            buffer: pdfBuffer,
+            filename: `IT_Discharge_${request.ticketNumber}_${Date.now()}.pdf`
+          });
+        });
+
+        // Header
+        let yPos = 50;
+        this.drawITDischargeHeader(doc, yPos, request);
+        yPos += 80;
+
+        // Discharged Items Table
+        yPos = this.drawDischargedItemsTable(doc, yPos, request);
+        yPos += 20;
+
+        // Signatures Section
+        yPos = this.drawITDischargeSignatures(doc, yPos, request);
+
+        // Footer
+        const range = doc.bufferedPageRange();
+        for (let i = 0; i < range.count; i++) {
+          doc.switchToPage(i);
+          this.drawFooter(doc, request, i + 1, range.count);
+        }
+
+        doc.end();
+      } catch (error) {
+        reject({ success: false, error: error.message });
+      }
+    });
+  }
+
+  drawITDischargeHeader(doc, yPos, request) {
+    // Logo (if available)
+    try {
+      if (fs.existsSync(this.logoPath)) {
+        doc.image(this.logoPath, 40, yPos, { width: 80 });
+      }
+    } catch {}
+    doc.font(this.boldFont).fontSize(16).text('IT Material Discharge & Acknowledgment', 140, yPos, { align: 'left' });
+    doc.font(this.defaultFont).fontSize(10).text(`Ticket: ${request.ticketNumber}`, 140, yPos + 22);
+    doc.fontSize(10).text(`Employee: ${request.employee?.fullName || ''}`, 140, yPos + 38);
+    doc.fontSize(10).text(`Department: ${request.employee?.department || ''}`, 140, yPos + 54);
+    doc.fontSize(10).text(`Date: ${this.formatDateExact(new Date())}`, 140, yPos + 70);
+  }
+
+  drawDischargedItemsTable(doc, yPos, request) {
+    doc.font(this.boldFont).fontSize(12).text('Discharged Items', 40, yPos);
+    yPos += 18;
+    // Table header
+    doc.font(this.boldFont).fontSize(10);
+    doc.text('Item', 40, yPos);
+    doc.text('Qty', 220, yPos);
+    doc.text('Asset Tag', 270, yPos);
+    doc.text('Serial No.', 370, yPos);
+    doc.text('Discharge Date', 470, yPos);
+    yPos += 16;
+    doc.font(this.defaultFont).fontSize(10);
+    (request.dischargedItems || []).forEach(item => {
+      doc.text(item.item || '', 40, yPos);
+      doc.text(String(item.quantity || ''), 220, yPos);
+      doc.text(item.assetTag || '', 270, yPos);
+      doc.text(item.serialNumber || '', 370, yPos);
+      doc.text(item.dischargeDate ? this.formatDateExact(item.dischargeDate) : '', 470, yPos);
+      yPos += 14;
+    });
+    return yPos;
+  }
+
+  drawITDischargeSignatures(doc, yPos, request) {
+    yPos += 20;
+    doc.font(this.boldFont).fontSize(11).text('Signatures', 40, yPos);
+    yPos += 18;
+    // IT Staff Signature
+    doc.font(this.defaultFont).fontSize(10).text('IT Staff:', 40, yPos);
+    if (request.dischargeSignature?.imageUrl && fs.existsSync(request.dischargeSignature.imageUrl)) {
+      doc.image(request.dischargeSignature.imageUrl, 100, yPos - 4, { width: 80, height: 40 });
+    }
+    doc.text(request.dischargeSignature?.name || '', 100, yPos + 40);
+    doc.text(request.dischargeSignature?.signedAt ? this.formatDateExact(request.dischargeSignature.signedAt) : '', 100, yPos + 54);
+
+    // Requester Signature
+    doc.font(this.defaultFont).fontSize(10).text('Requester:', 320, yPos);
+    if (request.acknowledgmentSignature?.imageUrl && fs.existsSync(request.acknowledgmentSignature.imageUrl)) {
+      doc.image(request.acknowledgmentSignature.imageUrl, 400, yPos - 4, { width: 80, height: 40 });
+    }
+    doc.text(request.acknowledgmentSignature?.name || '', 400, yPos + 40);
+    doc.text(request.acknowledgmentSignature?.signedAt ? this.formatDateExact(request.acknowledgmentSignature.signedAt) : '', 400, yPos + 54);
+    return yPos + 70;
+  }
+
+
   async generatePurchaseOrderPDF(poData, outputPath) {
     return new Promise((resolve, reject) => {
       try {

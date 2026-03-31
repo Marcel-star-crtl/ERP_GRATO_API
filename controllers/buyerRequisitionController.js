@@ -9,183 +9,391 @@ const { sendEmail } = require('../services/emailService');
 const { sendBuyerNotificationEmail } = require('../services/buyerEmailService');
 
 // Get purchase requisitions assigned to buyer
-const getAssignedRequisitions = async (req, res) => {
-    try {
-      const { status, sourcingStatus, page = 1, limit = 20, search, justified } = req.query;
+// const getAssignedRequisitions = async (req, res) => {
+//     try {
+//       const { status, sourcingStatus, page = 1, limit = 20, search, justified } = req.query;
       
-      console.log('=== BUYER - GET ASSIGNED REQUISITIONS ===');
-      console.log('User ID:', req.user.userId);
-      console.log('Query params:', { status, sourcingStatus, page, limit, search });
+//       console.log('=== BUYER - GET ASSIGNED REQUISITIONS ===');
+//       console.log('User ID:', req.user.userId);
+//       console.log('Query params:', { status, sourcingStatus, page, limit, search });
       
-      const user = await User.findById(req.user.userId);
-      console.log('User details:', {
-        name: user.fullName,
-        role: user.role,
-        departmentRole: user.departmentRole,
-        email: user.email
-      });
+//       const user = await User.findById(req.user.userId);
+//       console.log('User details:', {
+//         name: user.fullName,
+//         role: user.role,
+//         departmentRole: user.departmentRole,
+//         email: user.email
+//       });
       
-      let query = {};
+//       let query = {};
       
-      // FIXED: Proper query based on user role
-      if (user.role === 'buyer' || user.departmentRole === 'buyer') {
-        // Standard buyer - only see their assigned requisitions
-        query = {
-          'supplyChainReview.assignedBuyer': new mongoose.Types.ObjectId(req.user.userId)
-        };
-      } else if (user.role === 'supply_chain' || user.role === 'admin') {
-        // Supply chain or admin - see all buyer assignments
-        query = {
-          'supplyChainReview.assignedBuyer': { $exists: true, $ne: null }
-        };
-      } else {
-        return res.status(403).json({
-          success: false,
-          message: 'Access denied - user not authorized to view buyer requisitions'
-        });
-      }
+//       // FIXED: Proper query based on user role
+//       if (user.role === 'buyer' || user.departmentRole === 'buyer') {
+//         // Standard buyer - only see their assigned requisitions
+//         query = {
+//           'supplyChainReview.assignedBuyer': new mongoose.Types.ObjectId(req.user.userId)
+//         };
+//       } else if (user.role === 'supply_chain' || user.role === 'admin') {
+//         // Supply chain or admin - see all buyer assignments
+//         query = {
+//           'supplyChainReview.assignedBuyer': { $exists: true, $ne: null }
+//         };
+//       } else {
+//         return res.status(403).json({
+//           success: false,
+//           message: 'Access denied - user not authorized to view buyer requisitions'
+//         });
+//       }
       
-      // FIXED: Handle justified filter first
-      if (justified === 'true') {
-        query.status = {
-          $in: [
-            'justification_pending_supervisor',
-            'justification_pending_finance',
-            'justification_pending_supply_chain',
-            'justification_pending_head',
-            'justification_rejected',
-            'justification_approved'
-          ]
-        };
-      } else if (status) {
-        query.status = status;
-      } else if (sourcingStatus) {
-        // Map frontend sourcingStatus to backend status
-        const statusMapping = {
-          'pending_sourcing': ['approved', 'pending_head_approval'],
-          'in_progress': ['in_procurement'],
-          'quotes_received': ['quotes_received'],
-          'completed': ['procurement_complete', 'delivered']
-        };
+//       // FIXED: Handle justified filter first
+//       if (justified === 'true') {
+//         query.status = {
+//           $in: [
+//             'justification_pending_supervisor',
+//             'justification_pending_finance',
+//             'justification_pending_supply_chain',
+//             'justification_pending_head',
+//             'justification_rejected',
+//             'justification_approved'
+//           ]
+//         };
+//       } else if (status) {
+//         query.status = status;
+//       } else if (sourcingStatus) {
+//         // Map frontend sourcingStatus to backend status
+//         const statusMapping = {
+//           'pending_sourcing': ['approved', 'pending_head_approval'],
+//           'in_progress': ['in_procurement'],
+//           'quotes_received': ['quotes_received'],
+//           'completed': ['procurement_complete', 'delivered']
+//         };
         
-        if (statusMapping[sourcingStatus]) {
-          query.status = { $in: statusMapping[sourcingStatus] };
-        }
-      } else {
-        // Default: show all relevant statuses
-        query.status = { 
-          $in: [
-            'pending_head_approval',
-            'approved', 
-            'in_procurement',
-            'quotes_received',
-            'procurement_complete',
-            'delivered',
-            'justification_pending_supervisor',
-            'justification_pending_finance',
-            'justification_pending_supply_chain',
-            'justification_pending_head',
-            'justification_rejected',
-            'justification_approved'
-          ]
-        };
-      }
+//         if (statusMapping[sourcingStatus]) {
+//           query.status = { $in: statusMapping[sourcingStatus] };
+//         }
+//       } else {
+//         // Default: show all relevant statuses
+//         query.status = { 
+//           $in: [
+//             'pending_head_approval',
+//             'approved', 
+//             'in_procurement',
+//             'quotes_received',
+//             'procurement_complete',
+//             'delivered',
+//             'justification_pending_supervisor',
+//             'justification_pending_finance',
+//             'justification_pending_supply_chain',
+//             'justification_pending_head',
+//             'justification_rejected',
+//             'justification_approved'
+//           ]
+//         };
+//       }
       
-      // Add search functionality
-      if (search) {
-        query.$or = [
-          { title: { $regex: search, $options: 'i' } },
-          { requisitionNumber: { $regex: search, $options: 'i' } },
-          { itemCategory: { $regex: search, $options: 'i' } }
-        ];
-      }
+//       // Add search functionality
+//       if (search) {
+//         query.$or = [
+//           { title: { $regex: search, $options: 'i' } },
+//           { requisitionNumber: { $regex: search, $options: 'i' } },
+//           { itemCategory: { $regex: search, $options: 'i' } }
+//         ];
+//       }
       
-      console.log('Final query:', JSON.stringify(query, null, 2));
+//       console.log('Final query:', JSON.stringify(query, null, 2));
       
-      const requisitions = await PurchaseRequisition.find(query)
-        .populate('employee', 'fullName email department')
-        .populate('supplyChainReview.assignedBuyer', 'fullName email role departmentRole')
-        .populate('supplyChainReview.decidedBy', 'fullName email')
-        .populate('supplyChainReview.buyerAssignedBy', 'fullName email')
-        .populate('financeVerification.verifiedBy', 'fullName email')
-        .sort({ createdAt: -1 })
-        .limit(limit * 1)
-        .skip((page - 1) * limit);
+//       const requisitions = await PurchaseRequisition.find(query)
+//         .populate('employee', 'fullName email department')
+//         .populate('supplyChainReview.assignedBuyer', 'fullName email role departmentRole')
+//         .populate('supplyChainReview.decidedBy', 'fullName email')
+//         .populate('supplyChainReview.buyerAssignedBy', 'fullName email')
+//         .populate('financeVerification.verifiedBy', 'fullName email')
+//         .sort({ createdAt: -1 })
+//         .limit(limit * 1)
+//         .skip((page - 1) * limit);
       
-      const total = await PurchaseRequisition.countDocuments(query);
+//       const total = await PurchaseRequisition.countDocuments(query);
       
-      // FIXED: Transform data to match frontend expectations
-      const transformedRequisitions = requisitions.map(req => ({
-        id: req._id,
-        title: req.title,
-        requester: req.employee?.fullName || 'Unknown',
-        department: req.employee?.department || 'Unknown',
-        budget: req.estimatedTotalCost || req.budgetXAF,
-        items: req.items,
-        expectedDeliveryDate: req.urgentDate || req.expectedDeliveryDate,
-        urgency: req.urgency || 'Medium',
-        category: req.itemCategory,
-        sourcingStatus: mapBackendStatusToFrontend(req.status),
-        status: req.status,
-        requestDate: req.createdAt,
-        deliveryLocation: req.deliveryLocation,
-        notes: req.justificationOfPurchase
-      }));
+//       // FIXED: Transform data to match frontend expectations
+//       const transformedRequisitions = requisitions.map(req => ({
+//         id: req._id,
+//         title: req.title,
+//         requester: req.employee?.fullName || 'Unknown',
+//         department: req.employee?.department || 'Unknown',
+//         budget: req.estimatedTotalCost || req.budgetXAF,
+//         items: req.items,
+//         expectedDeliveryDate: req.urgentDate || req.expectedDeliveryDate,
+//         urgency: req.urgency || 'Medium',
+//         category: req.itemCategory,
+//         sourcingStatus: mapBackendStatusToFrontend(req.status),
+//         status: req.status,
+//         requestDate: req.createdAt,
+//         deliveryLocation: req.deliveryLocation,
+//         notes: req.justificationOfPurchase
+//       }));
       
-      console.log('Found requisitions:', transformedRequisitions.length);
-      console.log('Requisitions details:', transformedRequisitions.map(r => ({
-        id: r.id,
-        title: r.title,
-        status: r.status,
-        sourcingStatus: r.sourcingStatus
-      })));
+//       console.log('Found requisitions:', transformedRequisitions.length);
+//       console.log('Requisitions details:', transformedRequisitions.map(r => ({
+//         id: r.id,
+//         title: r.title,
+//         status: r.status,
+//         sourcingStatus: r.sourcingStatus
+//       })));
       
-      res.json({
-        success: true,
-        data: transformedRequisitions,
-        pagination: {
-          current: parseInt(page),
-          total: Math.ceil(total / limit),
-          count: transformedRequisitions.length,
-          totalRecords: total
-        },
-        debug: {
-          userRole: user.role,
-          userDepartmentRole: user.departmentRole,
-          queryUsed: query
-        }
-      });
+//       res.json({
+//         success: true,
+//         data: transformedRequisitions,
+//         pagination: {
+//           current: parseInt(page),
+//           total: Math.ceil(total / limit),
+//           count: transformedRequisitions.length,
+//           totalRecords: total
+//         },
+//         debug: {
+//           userRole: user.role,
+//           userDepartmentRole: user.departmentRole,
+//           queryUsed: query
+//         }
+//       });
       
-    } catch (error) {
-      console.error('Get assigned requisitions error:', error);
-      res.status(500).json({
+//     } catch (error) {
+//       console.error('Get assigned requisitions error:', error);
+//       res.status(500).json({
+//         success: false,
+//         message: 'Failed to fetch assigned requisitions',
+//         error: error.message
+//       });
+//     }
+// };
+
+
+const getAssignedRequisitions = async (req, res) => {
+  try {
+    const {
+      status,
+      sourcingStatus,
+      page  = 1,
+      limit = 200,   // high default so the "all" tab returns everything
+      search,
+      justified
+    } = req.query;
+ 
+    console.log('=== BUYER - GET ASSIGNED REQUISITIONS ===');
+    console.log('User ID:', req.user.userId);
+    console.log('Query params:', { status, sourcingStatus, page, limit, search, justified });
+ 
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'User not found' });
+    }
+ 
+    // ── Base scope (who can see what) ────────────────────────────────────
+    let query = {};
+ 
+    if (user.role === 'buyer' || user.departmentRole === 'buyer') {
+      query = {
+        'supplyChainReview.assignedBuyer': new mongoose.Types.ObjectId(req.user.userId)
+      };
+    } else if (user.role === 'supply_chain' || user.role === 'admin') {
+      query = {
+        'supplyChainReview.assignedBuyer': { $exists: true, $ne: null }
+      };
+    } else {
+      return res.status(403).json({
         success: false,
-        message: 'Failed to fetch assigned requisitions',
-        error: error.message
+        message: 'Access denied - user not authorized to view buyer requisitions'
       });
     }
+ 
+    // ── Status filter (mutually exclusive, evaluated in priority order) ──
+ 
+    if (justified === 'true') {
+      // "Needs Justification" tab
+      // Includes BOTH disbursed statuses AND the full justification workflow
+      query.status = {
+        $in: [
+          'partially_disbursed',
+          'fully_disbursed',
+          'justification_pending_supervisor',
+          'justification_pending_finance',
+          'justification_pending_supply_chain',
+          'justification_pending_head',
+          'justification_rejected',
+          'justification_approved',
+        ]
+      };
+ 
+    } else if (sourcingStatus) {
+      const sourcingStatusMap = {
+        pending_sourcing: ['approved', 'pending_head_approval'],
+        in_progress:      ['in_procurement'],
+        quotes_received:  ['quotes_received'],
+        completed:        ['procurement_complete', 'delivered', 'completed'],
+      };
+      const mapped = sourcingStatusMap[sourcingStatus];
+      if (mapped) query.status = { $in: mapped };
+      // unknown value → no extra filter (returns all)
+ 
+    } else if (status) {
+      query.status = status;
+ 
+    } else {
+      // "All" tab — every status a buyer ever touches
+      query.status = {
+        $in: [
+          'pending_head_approval',
+          'approved',
+          'in_procurement',
+          'quotes_received',
+          'procurement_complete',
+          'delivered',
+          'completed',
+          'partially_disbursed',
+          'fully_disbursed',
+          'justification_pending_supervisor',
+          'justification_pending_finance',
+          'justification_pending_supply_chain',
+          'justification_pending_head',
+          'justification_rejected',
+          'justification_approved',
+        ]
+      };
+    }
+ 
+    // ── Optional text search ─────────────────────────────────────────────
+    if (search) {
+      query.$or = [
+        { title:             { $regex: search, $options: 'i' } },
+        { requisitionNumber: { $regex: search, $options: 'i' } },
+        { itemCategory:      { $regex: search, $options: 'i' } },
+      ];
+    }
+ 
+    console.log('Final query:', JSON.stringify(query, null, 2));
+ 
+    const pageSize = Math.min(parseInt(limit) || 200, 500); // cap at 500
+    const pageNum  = parseInt(page) || 1;
+ 
+    const [requisitions, total] = await Promise.all([
+      PurchaseRequisition.find(query)
+        .populate('employee',                         'fullName email department')
+        .populate('supplyChainReview.assignedBuyer',  'fullName email role departmentRole')
+        .populate('supplyChainReview.decidedBy',      'fullName email')
+        .populate('supplyChainReview.buyerAssignedBy','fullName email')
+        .populate('financeVerification.verifiedBy',   'fullName email')
+        .sort({ createdAt: -1 })
+        .limit(pageSize)
+        .skip((pageNum - 1) * pageSize),
+      PurchaseRequisition.countDocuments(query),
+    ]);
+ 
+    // ── Transform to frontend shape ──────────────────────────────────────
+    const transformedRequisitions = requisitions.map(req => ({
+      id:                   req._id,
+      title:                req.title,
+      requester:            req.employee?.fullName   || 'Unknown',
+      department:           req.employee?.department || 'Unknown',
+      budget:               req.estimatedTotalCost   || req.budgetXAF,
+      items:                req.items,
+      expectedDeliveryDate: req.urgentDate || req.expectedDeliveryDate || req.expectedDate,
+      urgency:              req.urgency    || 'Medium',
+      category:             req.itemCategory,
+      sourcingStatus:       mapBackendStatusToFrontend(req.status),
+      status:               req.status,              // raw value, useful for debugging
+      requestDate:          req.createdAt,
+      deliveryLocation:     req.deliveryLocation,
+      notes:                req.justificationOfPurchase,
+      // Disbursement fields so the frontend can show context-aware actions
+      totalDisbursed:       req.totalDisbursed  || 0,
+      remainingBalance:     req.remainingBalance,
+      paymentMethod:        req.paymentMethod,
+    }));
+ 
+    console.log(
+      `Returning ${transformedRequisitions.length} of ${total} total matching requisitions`
+    );
+ 
+    res.json({
+      success: true,
+      data:    transformedRequisitions,
+      pagination: {
+        current:      pageNum,
+        total:        Math.ceil(total / pageSize),
+        count:        transformedRequisitions.length,
+        totalRecords: total,
+      },
+      debug: {
+        userRole:           user.role,
+        userDepartmentRole: user.departmentRole,
+        filtersReceived:    { status, sourcingStatus, justified },
+      }
+    });
+ 
+  } catch (error) {
+    console.error('Get assigned requisitions error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch assigned requisitions',
+      error:   error.message,
+    });
+  }
 };
+ 
 
-
-// Helper function to map backend status to frontend sourcingStatus
-const mapBackendStatusToFrontend = (backendStatus) => {
-    const statusMapping = {
-      'approved': 'pending_sourcing',
-      'pending_head_approval': 'pending_sourcing',
-      'in_procurement': 'in_progress',
-      'quotes_received': 'quotes_received',
-      'procurement_complete': 'completed',
-      'delivered': 'completed',
-      'justification_pending_supervisor': 'justified',
-      'justification_pending_finance': 'justified',
-      'justification_pending_supply_chain': 'justified',
-      'justification_pending_head': 'justified',
-      'justification_rejected': 'justified',
-      'justification_approved': 'justified',
-      'completed': 'completed'
-    };
+// // Helper function to map backend status to frontend sourcingStatus
+// const mapBackendStatusToFrontend = (backendStatus) => {
+//     const statusMapping = {
+//       'approved': 'pending_sourcing',
+//       'pending_head_approval': 'pending_sourcing',
+//       'in_procurement': 'in_progress',
+//       'quotes_received': 'quotes_received',
+//       'procurement_complete': 'completed',
+//       'delivered': 'completed',
+//       'justification_pending_supervisor': 'justified',
+//       'justification_pending_finance': 'justified',
+//       'justification_pending_supply_chain': 'justified',
+//       'justification_pending_head': 'justified',
+//       'justification_rejected': 'justified',
+//       'justification_approved': 'justified',
+//       'completed': 'completed'
+//     };
     
-    return statusMapping[backendStatus] || 'pending_sourcing';
+//     return statusMapping[backendStatus] || 'pending_sourcing';
+// };
+
+
+const mapBackendStatusToFrontend = (backendStatus) => {
+  const map = {
+    // ── Pending sourcing ──────────────────────────────────────
+    approved:                           'pending_sourcing',
+    pending_head_approval:              'pending_sourcing',
+ 
+    // ── Active procurement ────────────────────────────────────
+    in_procurement:                     'in_progress',
+ 
+    // ── Quotes received ───────────────────────────────────────
+    quotes_received:                    'quotes_received',
+ 
+    // ── Procurement done ──────────────────────────────────────
+    procurement_complete:               'completed',
+    delivered:                          'completed',
+    completed:                          'completed',
+ 
+    // ── Disbursed — buyer must submit justification ───────────
+    // These two are the NEW ones that were previously missing
+    partially_disbursed:                'justified',
+    fully_disbursed:                    'justified',
+ 
+    // ── Justification workflow ────────────────────────────────
+    justification_pending_supervisor:   'justified',
+    justification_pending_finance:      'justified',
+    justification_pending_supply_chain: 'justified',
+    justification_pending_head:         'justified',
+    justification_rejected:             'justified',
+    justification_approved:             'justified',
+  };
+ 
+  return map[backendStatus] || 'pending_sourcing';
 };
   
 // Get detailed requisition information

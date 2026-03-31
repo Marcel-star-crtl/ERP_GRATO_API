@@ -144,20 +144,24 @@ const ITSupportRequestSchema = new mongoose.Schema({
     }
   }],
 
+
   status: {
     type: String,
     enum: [
       'draft',
       'pending_supervisor',
-      'pending_departmental_head',      // NEW
-      'pending_head_of_business',       // NEW
-      'pending_it_approval',            // NEW - Renamed from pending_it_review
-      'supervisor_approved',            // Keep for backward compatibility
+      'pending_departmental_head',
+      'pending_head_of_business',
+      'pending_it_approval',
+      'supervisor_approved',
       'supervisor_rejected',
-      'it_approved',                    // NEW - When IT approves (final approval)
+      'it_approved',
+      'pending_discharge', // <-- NEW: IT to discharge items
+      'pending_acknowledgment', // <-- NEW: Requester to acknowledge
+      'discharge_complete', // <-- NEW: Both steps done
       'it_assigned',
-      'it_rejected',                    // NEW
-      'approved',                        // Legacy - when fully approved
+      'it_rejected',
+      'approved',
       'rejected',
       'in_progress',
       'waiting_parts',
@@ -166,6 +170,33 @@ const ITSupportRequestSchema = new mongoose.Schema({
       'cancelled'
     ],
     default: 'draft'
+  },
+
+  // Discharge/Acknowledgment workflow fields
+  dischargedItems: [{
+    item: String,
+    quantity: Number,
+    assetTag: String,
+    serialNumber: String,
+    dischargeDate: Date
+  }],
+  dischargeSignature: {
+    name: String,
+    imageUrl: String, // Path or URL to signature image
+    signedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    signedAt: Date
+  },
+  acknowledgmentSignature: {
+    name: String,
+    imageUrl: String, // Path or URL to signature image
+    signedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    signedAt: Date
   },
 
   // IT Department Review

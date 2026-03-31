@@ -21,6 +21,7 @@ const swaggerUi = require('swagger-ui-express');
 console.log('\n🔍 Loading route modules...');
 
 const loadRoute = (routePath, routeName) => {
+
   try {
     const route = require(routePath);
     if (!route || typeof route !== 'function') {
