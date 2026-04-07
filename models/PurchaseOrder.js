@@ -57,6 +57,33 @@ const purchaseOrderApprovalStepSchema = new mongoose.Schema({
   timestamps: true
 });
 
+
+const TenderJustificationSchema = new mongoose.Schema({
+  // Name/title the buyer gives to the manually-signed document
+  documentName: {
+    type:     String,
+    required: true,
+    trim:     true
+  },
+  // Compulsory explanation of why no tender was raised
+  justificationNote: {
+    type:     String,
+    required: true,
+    trim:     true
+  },
+  // Uploaded signed document (scanned PDF / image)
+  signedDocument: {
+    url:          String,   // public/CDN URL
+    localPath:    String,   // server filesystem path (for PDF generation)
+    originalName: String,   // original filename from upload
+    mimeType:     String,
+    size:         Number,
+    uploadedAt:   { type: Date, default: Date.now }
+  },
+  submittedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  submittedAt:   { type: Date, default: Date.now }
+}, { _id: false });
+
 const PurchaseOrderSchema = new mongoose.Schema({
   poNumber: {
     type: String,
@@ -88,6 +115,16 @@ const PurchaseOrderSchema = new mongoose.Schema({
   currency: {
     type: String,
     default: 'XAF'
+  },
+
+  tenderJustification: {
+    type:    TenderJustificationSchema,
+    default: null
+  },
+  // Flag for quick querying
+  createdWithoutTender: {
+    type:    Boolean,
+    default: false
   },
 
   status: {
