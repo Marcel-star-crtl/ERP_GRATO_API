@@ -35,7 +35,7 @@ router.get('/',
 
 // Create customer manually
 router.post('/',
-  requireRoles('admin', 'supply_chain'),
+  requireRoles('admin', 'supply_chain', 'finance', 'it'),
   customerController.createCustomer
 );
 
