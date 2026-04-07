@@ -73,6 +73,7 @@ const headApprovalRoutes = require('./routes/headApproval');
 const quotationRoutes = require('./routes/quotationRoutes');
 const debitNoteRoutes = require('./routes/debitNoteRoutes');
 const projectPlanRoutes = require('./routes/projectPlanRoutes');
+const tenderRoutes = require('./routes/tenderRoutes');
 const salaryPaymentRoutes = require('./routes/salaryPaymentRoutes');
 const customerRoutes = require('./routes/customerRoutes');
 
@@ -455,6 +456,8 @@ if (buyerRoutes) {
 }
 
 app.use('/api/project-plans', projectPlanRoutes);
+
+app.use('/api/tenders', tenderRoutes);
 
 // app.use('/api/salary-payments', salaryPaymentRoutes);
 

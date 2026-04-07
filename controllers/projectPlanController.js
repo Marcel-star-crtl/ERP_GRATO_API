@@ -13,6 +13,7 @@ const {
   isFullyApproved,
   getNextApprover
 } = require('../config/projectPlanApprovalChain');
+const accountingService = require('../services/accountingService');
 
 // Get user's project plans
 exports.getMyProjectPlans = async (req, res) => {
@@ -666,6 +667,16 @@ exports.markCompletionItemComplete = async (req, res) => {
       message: 'Item marked as complete successfully',
       data: projectPlan
     });
+
+    try {
+      await accountingService.postCompletionItemRecognized(
+        req.params.planId,
+        req.params.itemId,
+        req.user.userId
+      );
+    } catch (accountingError) {
+      console.warn('Accounting post failed for completion item (non-blocking):', accountingError.message);
+    }
   } catch (error) {
     console.error('Error marking completion item:', error);
     res.status(500).json({

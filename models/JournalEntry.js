@@ -69,11 +69,11 @@ const journalEntrySchema = new mongoose.Schema({
     required: true,
     min: 0
   },
-  status: {
-    type: String,
-    enum: ['posted', 'void'],
-    default: 'posted'
-  },
+  // status: {
+  //   type: String,
+  //   enum: ['posted', 'void'],
+  //   default: 'posted'
+  // },
   postedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -92,7 +92,26 @@ const journalEntrySchema = new mongoose.Schema({
     type: String,
     trim: true,
     default: ''
-  }
+  },
+  status: {
+    type: String,
+    enum: ['draft', 'pending_approval', 'posted', 'void'],
+    default: 'posted'   // system entries still default to posted
+  },
+  submittedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  submittedAt: { type: Date, default: null },
+  reviewedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  reviewedAt: { type: Date, default: null },
+  reviewComments: { type: String, trim: true, default: '' },
+ 
 }, {
   timestamps: true
 });
@@ -111,11 +130,26 @@ journalEntrySchema.pre('validate', function(next) {
   next();
 });
 
-journalEntrySchema.pre('save', function(next) {
-  if (!this.isNew) {
-    return next(new Error('Journal entries are immutable. Post a reversal entry instead of editing.'));
-  }
+// journalEntrySchema.pre('save', function(next) {
+//   if (!this.isNew) {
+//     return next(new Error('Journal entries are immutable. Post a reversal entry instead of editing.'));
+//   }
 
+//   next();
+// });
+
+journalEntrySchema.pre('save', function(next) {
+  if (!this.isNew && this.isModified()) {
+    const allowedModifiedPaths = [
+      'status', 'reviewedBy', 'reviewedAt', 'reviewComments',
+      'submittedBy', 'submittedAt'
+    ];
+    const modified = this.modifiedPaths();
+    const illegal = modified.filter(p => !allowedModifiedPaths.includes(p));
+    if (illegal.length > 0) {
+      return next(new Error('Journal entries are immutable. Only status transitions are allowed.'));
+    }
+  }
   next();
 });
 

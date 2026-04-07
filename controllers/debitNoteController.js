@@ -1,5 +1,3 @@
-// controllers/debitNoteController.js
-
 const DebitNote = require('../models/DebitNote');
 const PurchaseOrder = require('../models/PurchaseOrder');
 const Supplier = require('../models/Supplier');

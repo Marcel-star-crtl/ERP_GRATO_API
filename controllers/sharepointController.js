@@ -11,21 +11,6 @@ const {
   canUserDeleteFolder,
   isFolderVisibleToUser
 } = require('../utils/sharepointAccessHelpers');
-// ============ HELPER FUNCTIONS ============
-
-// const canUserUploadToFolder = (folder, user) => {
-//   if (user._id.toString() === folder.createdBy.toString()) return true;
-//   if (user.role === 'admin') return true;
-//   return folder.accessControl.allowedDepartments.includes(user.department);
-// };
-
-// const canUserManageFolder = (folder, user) => {
-//   return user._id.toString() === folder.createdBy.toString() || user.role === 'admin';
-// };
-
-// const canUserDeleteFolder = (folder, user) => {
-//   return user._id.toString() === folder.createdBy.toString() || user.role === 'admin';
-// };
 
 // ============ FOLDER OPERATIONS ============
 
@@ -986,13 +971,13 @@ const generateShareLink = async (req, res) => {
       });
     }
 
-    // Check permission
-    if (file.uploadedBy.toString() !== req.user.userId && user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'You do not have permission to generate share link'
-      });
-    }
+    // // Check permission
+    // if (file.uploadedBy.toString() !== req.user.userId && user.role !== 'admin') {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: 'You do not have permission to generate share link'
+    //   });
+    // }
 
     // Generate unique token
     const token = crypto.randomBytes(32).toString('hex');

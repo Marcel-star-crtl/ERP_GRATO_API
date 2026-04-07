@@ -20,9 +20,49 @@ const PurchaseRequisitionSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  // itemCategory: {
+  //   type: String,
+  //   enum: ['IT', 'Office Supplies', 'Hardware', 'all', 'Other'],
+  //   default: 'all'
+  // },
+  // itemCategory: {
+  //   type: String,
+  //   enum: [
+  //     'IT Accessories',
+  //     'Office Supplies',
+  //     'Equipment',
+  //     'Consumables',
+  //     'Software',
+  //     'Hardware',
+  //     'Furniture',
+  //     'Safety Equipment',
+  //     'Maintenance Supplies',
+  //     'Other',
+  //     'all'
+  //   ],
+  //   default: 'all'
+  // },
   itemCategory: {
     type: String,
-    enum: ['IT', 'Office Supplies', 'Hardware', 'all', 'Other'],
+    enum: [
+      'IT Accessories',
+      'Office Supplies',
+      'Equipment',
+      'Consumables',
+      'Software',
+      'Hardware',
+      'Furniture',
+      'Civil Works',
+      'Security',
+      'Rollout',
+      'Safety Equipment',
+      'Maintenance Supplies',
+      'Personal Accessories',
+      'Spares',
+      'Expense',
+      'Other',
+      'all'
+    ],
     default: 'all'
   },
   budgetXAF: {

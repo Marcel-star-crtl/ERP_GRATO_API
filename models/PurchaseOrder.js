@@ -232,24 +232,6 @@ const PurchaseOrderSchema = new mongoose.Schema({
     default: 'created'
   },
 
-  // // Activities Log
-  // activities: [{
-  //   type: {
-  //     type: String,
-  //     enum: ['created', 'sent', 'acknowledged', 'updated', 'shipped', 'delivered', 'cancelled'],
-  //     required: true
-  //   },
-  //   description: {
-  //     type: String,
-  //     required: true
-  //   },
-  //   timestamp: {
-  //     type: Date,
-  //     default: Date.now
-  //   },
-  //   user: String
-  // }],
-
   // Activities Log
   activities: [{
     type: {
@@ -359,7 +341,7 @@ const PurchaseOrderSchema = new mongoose.Schema({
       max: 5
     },
     costVariance: Number,
-    deliveryVariance: Number // in days
+    deliveryVariance: Number
   },
 
   // Financial Information

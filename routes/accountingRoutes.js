@@ -140,15 +140,15 @@ router.get('/journal-entries', async (req, res) => {
   }
 });
 
-router.post('/journal-entries', async (req, res) => {
-  try {
-    const { date, description, lines } = req.body;
-    const entry = await accountingService.createJournalEntry({ date, description, lines, sourceType: 'manual' }, req.user.userId);
-    res.status(201).json({ success: true, data: entry, message: 'Journal entry posted successfully' });
-  } catch (error) {
-    res.status(400).json({ success: false, message: 'Failed to post journal entry', error: error.message });
-  }
-});
+// router.post('/journal-entries', async (req, res) => {
+//   try {
+//     const { date, description, lines } = req.body;
+//     const entry = await accountingService.createJournalEntry({ date, description, lines, sourceType: 'manual' }, req.user.userId);
+//     res.status(201).json({ success: true, data: entry, message: 'Journal entry posted successfully' });
+//   } catch (error) {
+//     res.status(400).json({ success: false, message: 'Failed to post journal entry', error: error.message });
+//   }
+// });
 
 router.post('/journal-entries/:entryId/reverse', async (req, res) => {
   try {
@@ -281,6 +281,348 @@ router.get('/reports/general-ledger/:accountId', async (req, res) => {
     res.json({ success: true, data: result });
   } catch (error) {
     res.status(400).json({ success: false, message: 'Failed to generate general ledger', error: error.message });
+  }
+});
+
+// ── Partial Invoice Posting ────────────────────────────────
+router.post('/postings/invoices/:invoiceId/payment-terms/:termIndex', async (req, res) => {
+  try {
+    const termIndex = Number(req.params.termIndex);
+    if (isNaN(termIndex) || termIndex < 0) {
+      return res.status(400).json({ success: false, message: 'termIndex must be a non-negative integer' });
+    }
+ 
+    const entry = await accountingService.postPartialInvoice(
+      req.params.invoiceId,
+      termIndex,
+      req.user.userId
+    );
+ 
+    res.json({ success: true, data: entry, message: 'Partial invoice payment term posted to ledger' });
+  } catch (error) {
+    res.status(400).json({ success: false, message: 'Failed to post partial invoice', error: error.message });
+  }
+});
+ 
+ 
+// ── Completion Item Posting ────────────────────────────────
+router.post('/postings/project-plans/:planId/completion-items/:itemId', async (req, res) => {
+  try {
+    const entry = await accountingService.postCompletionItemRecognized(
+      req.params.planId,
+      req.params.itemId,
+      req.user.userId
+    );
+ 
+    if (!entry) {
+      return res.json({ success: true, data: null, message: 'No amount to post for this completion item' });
+    }
+ 
+    res.json({ success: true, data: entry, message: 'Completion milestone posted to ledger' });
+  } catch (error) {
+    res.status(400).json({ success: false, message: 'Failed to post completion milestone', error: error.message });
+  }
+});
+ 
+ 
+// ── P&L Report ────────────────────────────────────────────
+router.get('/reports/profit-and-loss', async (req, res) => {
+  try {
+    const result = await accountingService.getProfitAndLoss({
+      startDate: req.query.startDate,
+      endDate: req.query.endDate
+    });
+ 
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to generate P&L report', error: error.message });
+  }
+});
+ 
+ 
+// ── Balance Sheet Report ───────────────────────────────────
+router.get('/reports/balance-sheet', async (req, res) => {
+  try {
+    const result = await accountingService.getBalanceSheet({
+      asOfDate: req.query.asOfDate
+    });
+ 
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to generate balance sheet', error: error.message });
+  }
+});
+
+// ── P1: PAYMENTS ─────────────────────────────────────────────────────────────
+ 
+router.get('/payments', async (req, res) => {
+  try {
+    const result = await accountingService.listPayments({
+      type: req.query.type,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+      invoiceId: req.query.invoiceId,
+      supplierInvoiceId: req.query.supplierInvoiceId,
+      page: req.query.page,
+      limit: req.query.limit
+    });
+    res.json({ success: true, ...result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch payments', error: error.message });
+  }
+});
+ 
+router.post('/payments', async (req, res) => {
+  try {
+    const payment = await accountingService.createPayment(req.body, req.user.userId);
+    res.status(201).json({ success: true, data: payment, message: 'Payment recorded' });
+  } catch (error) {
+    res.status(400).json({ success: false, message: 'Failed to record payment', error: error.message });
+  }
+});
+ 
+router.post('/postings/payments/:paymentId/receipt', async (req, res) => {
+  try {
+    const entry = await accountingService.postPaymentReceipt(req.params.paymentId, req.user.userId);
+    res.json({ success: true, data: entry, message: 'Payment receipt posted to ledger' });
+  } catch (error) {
+    res.status(400).json({ success: false, message: 'Failed to post payment receipt', error: error.message });
+  }
+});
+ 
+router.post('/postings/payments/:paymentId/supplier', async (req, res) => {
+  try {
+    const entry = await accountingService.postSupplierPayment(req.params.paymentId, req.user.userId);
+    res.json({ success: true, data: entry, message: 'Supplier payment posted to ledger' });
+  } catch (error) {
+    res.status(400).json({ success: false, message: 'Failed to post supplier payment', error: error.message });
+  }
+});
+ 
+ 
+// ── P2: AGED REPORTS ─────────────────────────────────────────────────────────
+ 
+router.get('/reports/aged-receivables', async (req, res) => {
+  try {
+    const result = await accountingService.getAgedReceivables({ asOfDate: req.query.asOfDate });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to generate aged receivables', error: error.message });
+  }
+});
+ 
+router.get('/reports/aged-payables', async (req, res) => {
+  try {
+    const result = await accountingService.getAgedPayables({ asOfDate: req.query.asOfDate });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to generate aged payables', error: error.message });
+  }
+});
+ 
+ 
+// ── P3: MAKER-CHECKER ────────────────────────────────────────────────────────
+ 
+// Override the existing POST /journal-entries to create drafts for manual entries
+// Replace the existing route handler body with:
+//   const { date, description, lines } = req.body;
+//   const entry = await accountingService.createDraftJournalEntry({ date, description, lines }, req.user.userId);
+//   res.status(201).json({ success: true, data: entry, message: 'Journal draft created — submit for review to post' });
+//
+// (The existing route stays in place, just swap the service call)
+ 
+router.post('/journal-entries/:entryId/submit', async (req, res) => {
+  try {
+    const entry = await accountingService.submitJournalForReview(req.params.entryId, req.user.userId);
+    res.json({ success: true, data: entry, message: 'Journal submitted for review' });
+  } catch (error) {
+    res.status(400).json({ success: false, message: 'Failed to submit journal', error: error.message });
+  }
+});
+ 
+router.post('/journal-entries/:entryId/approve', async (req, res) => {
+  try {
+    const entry = await accountingService.approveJournal(req.params.entryId, req.user.userId);
+    res.json({ success: true, data: entry, message: 'Journal approved and posted' });
+  } catch (error) {
+    res.status(400).json({ success: false, message: 'Failed to approve journal', error: error.message });
+  }
+});
+ 
+router.post('/journal-entries/:entryId/reject', async (req, res) => {
+  try {
+    const entry = await accountingService.rejectJournal(req.params.entryId, req.user.userId, req.body.reason);
+    res.json({ success: true, data: entry, message: 'Journal rejected and returned to draft' });
+  } catch (error) {
+    res.status(400).json({ success: false, message: 'Failed to reject journal', error: error.message });
+  }
+});
+ 
+ 
+// ── P4: VAT RETURN ───────────────────────────────────────────────────────────
+ 
+router.get('/reports/vat-return', async (req, res) => {
+  try {
+    const result = await accountingService.getVATReturn({
+      startDate: req.query.startDate,
+      endDate: req.query.endDate
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to generate VAT return', error: error.message });
+  }
+});
+ 
+ 
+// ── P5: DASHBOARD KPIs ───────────────────────────────────────────────────────
+ 
+router.get('/dashboard/kpis', async (req, res) => {
+  try {
+    const result = await accountingService.getDashboardKPIs();
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch KPIs', error: error.message });
+  }
+});
+ 
+ 
+// ── P6: CASH FLOW ────────────────────────────────────────────────────────────
+ 
+router.get('/reports/cash-flow', async (req, res) => {
+  try {
+    const result = await accountingService.getCashFlowStatement({
+      startDate: req.query.startDate,
+      endDate: req.query.endDate
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to generate cash flow statement', error: error.message });
+  }
+});
+ 
+ 
+// ── P7: BANK RECONCILIATION ───────────────────────────────────────────────────
+ 
+router.get('/bank/transactions', async (req, res) => {
+  try {
+    const result = await accountingService.listBankTransactions({
+      accountCode: req.query.accountCode,
+      isReconciled: req.query.isReconciled,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+      page: req.query.page,
+      limit: req.query.limit
+    });
+    res.json({ success: true, ...result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to list bank transactions', error: error.message });
+  }
+});
+ 
+router.post('/bank/import', async (req, res) => {
+  try {
+    const { rows, accountCode } = req.body;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ success: false, message: 'rows array is required' });
+    }
+    const importBatch = `IMPORT-${Date.now()}`;
+    const result = await accountingService.importBankTransactions(rows, accountCode, importBatch, req.user.userId);
+    res.json({ success: true, ...result, importBatch, message: `${result.imported} transactions imported` });
+  } catch (error) {
+    res.status(400).json({ success: false, message: 'Failed to import bank transactions', error: error.message });
+  }
+});
+ 
+router.post('/bank/reconcile', async (req, res) => {
+  try {
+    const { bankTxId, journalEntryId } = req.body;
+    if (!bankTxId || !journalEntryId) {
+      return res.status(400).json({ success: false, message: 'bankTxId and journalEntryId are required' });
+    }
+    const tx = await accountingService.reconcileTransaction(bankTxId, journalEntryId, req.user.userId);
+    res.json({ success: true, data: tx, message: 'Transaction reconciled' });
+  } catch (error) {
+    res.status(400).json({ success: false, message: 'Failed to reconcile transaction', error: error.message });
+  }
+});
+ 
+router.get('/bank/summary', async (req, res) => {
+  try {
+    const result = await accountingService.getReconciliationSummary(
+      req.query.accountCode || '1010',
+      { startDate: req.query.startDate, endDate: req.query.endDate }
+    );
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to get reconciliation summary', error: error.message });
+  }
+});
+ 
+ 
+// ── P8: AUDIT LOG + CSV EXPORTS ───────────────────────────────────────────────
+ 
+router.get('/audit-log', async (req, res) => {
+  try {
+    const result = await accountingService.getAuditLog({
+      entityType: req.query.entityType,
+      action: req.query.action,
+      performedBy: req.query.performedBy,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+      page: req.query.page,
+      limit: req.query.limit
+    });
+    res.json({ success: true, ...result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch audit log', error: error.message });
+  }
+});
+ 
+router.get('/exports/trial-balance.csv', async (req, res) => {
+  try {
+    const csv = await accountingService.exportTrialBalanceCSV({ startDate: req.query.startDate, endDate: req.query.endDate });
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="trial-balance.csv"');
+    await accountingService.logAudit('report_exported', 'Report', null, req.user.userId, 'Trial balance CSV exported');
+    res.send(csv);
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Export failed', error: error.message });
+  }
+});
+ 
+router.get('/exports/journal-entries.csv', async (req, res) => {
+  try {
+    const csv = await accountingService.exportJournalEntriesCSV({ startDate: req.query.startDate, endDate: req.query.endDate });
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="journal-entries.csv"');
+    await accountingService.logAudit('report_exported', 'Report', null, req.user.userId, 'Journal entries CSV exported');
+    res.send(csv);
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Export failed', error: error.message });
+  }
+});
+ 
+router.get('/exports/profit-and-loss.csv', async (req, res) => {
+  try {
+    const csv = await accountingService.exportProfitAndLossCSV({ startDate: req.query.startDate, endDate: req.query.endDate });
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="profit-and-loss.csv"');
+    await accountingService.logAudit('report_exported', 'Report', null, req.user.userId, 'P&L CSV exported');
+    res.send(csv);
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Export failed', error: error.message });
+  }
+});
+ 
+router.get('/exports/balance-sheet.csv', async (req, res) => {
+  try {
+    const csv = await accountingService.exportBalanceSheetCSV({ asOfDate: req.query.asOfDate });
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="balance-sheet.csv"');
+    await accountingService.logAudit('report_exported', 'Report', null, req.user.userId, 'Balance sheet CSV exported');
+    res.send(csv);
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Export failed', error: error.message });
   }
 });
 

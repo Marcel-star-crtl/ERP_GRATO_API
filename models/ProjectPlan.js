@@ -136,6 +136,22 @@ const projectPlanSchema = new mongoose.Schema({
     default: 'Draft',
     index: true
   },
+  accountingAudit: {
+    isPosted: {
+      type: Boolean,
+      default: false
+    },
+    postedAt: Date,
+    entryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'JournalEntry'
+    },
+    entryNumber: String,
+    sourceType: {
+      type: String,
+      default: 'project_plan_completion'
+    }
+  },
   issuesAndConcerns: {
     type: String
   },

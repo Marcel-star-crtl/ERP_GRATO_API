@@ -81,6 +81,418 @@ class PDFService {
     });
   }
 
+  async generateTenderApprovalFormPDF(tender) {
+    return new Promise((resolve, reject) => {
+      try {
+        const PDFDocument = require('pdfkit');
+        const fs          = require('fs');
+        const path        = require('path');
+        const { resolveSignaturePath } = require('../utils/signatureResolver');
+  
+        console.log('=== GENERATING TENDER APPROVAL FORM PDF ===');
+        console.log('Tender:', tender.tenderNumber, '|', tender.title);
+  
+        const doc = new PDFDocument({
+          size:        'A4',
+          margins:     this.pageMargins,
+          bufferPages: true,
+          info: {
+            Title:   `Tender Approval Form - ${tender.tenderNumber}`,
+            Author:  'GRATO ENGINEERING GLOBAL LTD',
+            Subject: 'Tender Approval Form',
+            Creator: 'Procurement System'
+          }
+        });
+  
+        const chunks = [];
+        doc.on('data', c => chunks.push(c));
+        doc.on('end', () => resolve({
+          success:  true,
+          buffer:   Buffer.concat(chunks),
+          filename: `Tender_${tender.tenderNumber}_${Date.now()}.pdf`
+        }));
+  
+        // ── helpers ────────────────────────────────────────────────────────────
+        const fmt     = (n) => (Number(n) || 0).toLocaleString('en', { minimumFractionDigits: 0 });
+        const fmtDate = (d) => {
+          if (!d) return '';
+          const dt = new Date(d);
+          if (isNaN(dt.getTime())) return '';
+          const day = String(dt.getDate()).padStart(2, '0');
+          const mon = dt.toLocaleString('en-GB', { month: 'short' });
+          return `${day}-${mon}-${String(dt.getFullYear()).slice(2)}`;
+        };
+  
+        const suppliers = Array.isArray(tender.supplierQuotes) ? tender.supplierQuotes : [];
+  
+        // Collect all unique item descriptions (in insertion order)
+        const allDescriptions = [];
+        suppliers.forEach(sq =>
+          (sq.items || []).forEach(item => {
+            if (item.description && !allDescriptions.includes(item.description))
+              allDescriptions.push(item.description);
+          })
+        );
+  
+        // quantity reference (first supplier with that item)
+        const getQty = (desc) => {
+          for (const sq of suppliers) {
+            const found = (sq.items || []).find(i => i.description === desc);
+            if (found) return found.quantity;
+          }
+          return '';
+        };
+  
+        const pageW      = doc.page.width;  // 595.28
+        const marginL    = this.pageMargins.left;   // 40
+        const marginR    = this.pageMargins.right;  // 40
+        const contentW   = pageW - marginL - marginR; // 515
+  
+        const PAGE_BOTTOM = doc.page.height - this.pageMargins.bottom - 80; // leave footer space
+  
+        let y = 50;
+  
+        // ──────────────────────────────────────────────────────────────────────
+        // 1. HEADER — logo left, company name right
+        // ──────────────────────────────────────────────────────────────────────
+        try {
+          if (fs.existsSync(this.logoPath)) {
+            doc.image(this.logoPath, marginL, y, { width: 70, height: 66 });
+          } else {
+            doc.rect(marginL, y, 70, 66).strokeColor('#E63946').lineWidth(2).stroke();
+            doc.fontSize(8).fillColor('#E63946').font(this.boldFont)
+              .text('GRATO', marginL + 8, y + 20)
+              .text('ENGINEERING', marginL + 4, y + 32).fillColor('#000000');
+          }
+        } catch { /* silently skip */ }
+  
+        doc.fontSize(10).font(this.boldFont).fillColor('#000000')
+          .text('GRATO ENGINEERING GLOBAL LTD', marginL + 80, y);
+        doc.fontSize(8).font(this.defaultFont)
+          .text('Bonaberi, Douala — Cameroon', marginL + 80, y + 15)
+          .text('682952153 | info@gratoengineering.com', marginL + 80, y + 27);
+  
+        y += 80;
+  
+        // ──────────────────────────────────────────────────────────────────────
+        // 2. TITLE
+        // ──────────────────────────────────────────────────────────────────────
+        doc.fontSize(14).font(this.boldFont).fillColor('#000000')
+          .text('TENDER APPROVAL FORM', marginL, y, { align: 'center', width: contentW });
+        y += 20;
+        doc.strokeColor('#333333').lineWidth(1.5)
+          .moveTo(marginL, y).lineTo(marginL + contentW, y).stroke();
+        y += 8;
+  
+        // ──────────────────────────────────────────────────────────────────────
+        // 3. NUMBER / DATE / TITLE row
+        // ──────────────────────────────────────────────────────────────────────
+        const cellH = 18;
+        // Row: NUMBER | value | (gap) | DATE | value
+        this._tafCell(doc, marginL,        y, 75,  cellH, 'NUMBER:', true);
+        this._tafCell(doc, marginL + 75,   y, 160, cellH, tender.tenderNumber || '');
+        this._tafCell(doc, marginL + 235,  y, 55,  cellH, '');
+        this._tafCell(doc, marginL + 290,  y, 50,  cellH, 'DATE', true);
+        this._tafCell(doc, marginL + 340,  y, 175, cellH, fmtDate(tender.date));
+        y += cellH;
+  
+        // Title row
+        this._tafCell(doc, marginL,        y, 75,  cellH, 'TITLE', true);
+        this._tafCell(doc, marginL + 75,   y, 440, cellH, (tender.title || '').toUpperCase(), false, true);
+        y += cellH + 4;
+  
+        // ──────────────────────────────────────────────────────────────────────
+        // 4. REQUESTER DETAILS (left) | SUPPLIER(S) ENGAGED (right)
+        // ──────────────────────────────────────────────────────────────────────
+        const halfW = contentW / 2;
+        // Section headers
+        this._tafCell(doc, marginL,         y, halfW, cellH, 'REQUESTER DETAILS',   true, true, '#d8d8d8');
+        this._tafCell(doc, marginL + halfW, y, halfW, cellH, 'SUPPLIER(S) ENGAGED', true, true, '#d8d8d8');
+        y += cellH;
+  
+        const reqRows = [
+          ['REQUESTER NAME',  tender.requesterName       || ''],
+          ['DEPARTMENT',      tender.requesterDepartment || ''],
+          ['ITEM CATEGORY',   tender.itemCategory        || ''],
+          ['REQUIRED DATE:',  fmtDate(tender.requiredDate)],
+          ['COMMERCIAL TERMS',tender.commercialTerms     || '']
+        ];
+        const suppNames = suppliers.map(sq => sq.supplierName).filter(Boolean);
+  
+        const rowsCount = Math.max(reqRows.length, suppNames.length);
+        for (let i = 0; i < rowsCount; i++) {
+          const [label, val] = reqRows[i] || ['', ''];
+          // left: label cell + value cell
+          this._tafCell(doc, marginL,             y, 120, cellH, label, true, false, '#ececec');
+          this._tafCell(doc, marginL + 120,       y, halfW - 120, cellH, val, false, false, '#ffffff', true);
+          // right: supplier name
+          const suppName = suppNames[i] || '';
+          this._tafCell(doc, marginL + halfW,     y, halfW, cellH, suppName, false, false, '#ffffff', false, suppName === tender.awardedSupplierName);
+          y += cellH;
+        }
+        y += 6;
+  
+        // ──────────────────────────────────────────────────────────────────────
+        // 5. SUPPLIER COMPARISON TABLE
+        // ──────────────────────────────────────────────────────────────────────
+        // Column layout:
+        //   Description (fixed) | Qty (fixed) | [Supplier A: UnitPrice | Total | NegTotal] | [Supplier B: …]
+        const COL_DESC = 160;
+        const COL_QTY  = 45;
+        const remaining = contentW - COL_DESC - COL_QTY;
+        const perSupplierW = suppliers.length > 0 ? Math.floor(remaining / suppliers.length) : remaining;
+        const SUB_W = Math.floor(perSupplierW / 3);
+  
+        // Check page
+        const tableHeaderH = cellH * 2;
+        const tableBodyH   = allDescriptions.length * cellH + cellH; // + total row
+        if (y + tableHeaderH + tableBodyH > PAGE_BOTTOM) {
+          doc.addPage(); y = 50;
+        }
+  
+        // Row 1: merged supplier name headers
+        let cx = marginL + COL_DESC + COL_QTY;
+        this._tafCell(doc, marginL,          y, COL_DESC, cellH, 'DESCRIPTION', true, true, '#d8d8d8');
+        this._tafCell(doc, marginL + COL_DESC,y,COL_QTY,  cellH, 'QTY',         true, true, '#d8d8d8');
+        suppliers.forEach(sq => {
+          const isAwarded = sq.supplierName === tender.awardedSupplierName;
+          this._tafCell(doc, cx, y, SUB_W * 3, cellH, sq.supplierName, true, true, isAwarded ? '#fff0b3' : '#e8e8e8');
+          cx += SUB_W * 3;
+        });
+        y += cellH;
+  
+        // Row 2: sub-headers
+        cx = marginL + COL_DESC + COL_QTY;
+        this._tafCell(doc, marginL,          y, COL_DESC, cellH, '', false, false, '#f0f0f0');
+        this._tafCell(doc, marginL + COL_DESC,y, COL_QTY, cellH, '', false, false, '#f0f0f0');
+        suppliers.forEach(() => {
+          ['UNIT PRICE','TOTAL AMOUNT','NEGOTIATED TOTAL'].forEach(h => {
+            this._tafCell(doc, cx, y, SUB_W, cellH, h, true, true, '#f5f5f5', false, false, 7);
+            cx += SUB_W;
+          });
+        });
+        y += cellH;
+  
+        // Data rows
+        allDescriptions.forEach(desc => {
+          if (y + cellH > PAGE_BOTTOM) { doc.addPage(); y = 50; }
+          cx = marginL + COL_DESC + COL_QTY;
+          this._tafCell(doc, marginL,           y, COL_DESC, cellH, desc, false, false, '#ffffff', false, false, 8);
+          this._tafCell(doc, marginL + COL_DESC,y, COL_QTY,  cellH, String(getQty(desc)), false, true);
+          suppliers.forEach(sq => {
+            const item = (sq.items || []).find(i => i.description === desc) || {};
+            this._tafCell(doc, cx,         y, SUB_W, cellH, fmt(item.unitPrice),      false, true);
+            this._tafCell(doc, cx + SUB_W, y, SUB_W, cellH, fmt(item.totalAmount),    false, true);
+            this._tafCell(doc, cx+2*SUB_W, y, SUB_W, cellH, fmt(item.negotiatedTotal),true, true);
+            cx += SUB_W * 3;
+          });
+          y += cellH;
+        });
+  
+        // TOTAL row
+        if (y + cellH > PAGE_BOTTOM) { doc.addPage(); y = 50; }
+        cx = marginL + COL_DESC + COL_QTY;
+        this._tafCell(doc, marginL,           y, COL_DESC, cellH, 'TOTAL', true, true, '#fff8dc');
+        this._tafCell(doc, marginL + COL_DESC,y, COL_QTY,  cellH, '',      false, false, '#fff8dc');
+        suppliers.forEach(sq => {
+          this._tafCell(doc, cx,         y, SUB_W, cellH, '',               false, true, '#fff8dc');
+          this._tafCell(doc, cx + SUB_W, y, SUB_W, cellH, fmt(sq.grandTotal),         true, true, '#fff8dc');
+          this._tafCell(doc, cx+2*SUB_W, y, SUB_W, cellH, fmt(sq.negotiatedGrandTotal),true,true,'#fffacc');
+          cx += SUB_W * 3;
+        });
+        y += cellH + 6;
+  
+        // ──────────────────────────────────────────────────────────────────────
+        // 6. SUMMARY ROWS
+        // ──────────────────────────────────────────────────────────────────────
+        const summaryLabelW = 140;
+        const summaryValW   = contentW - summaryLabelW;
+        const summaryRows   = [
+          ['DELIVERY TERMS', tender.deliveryTerms || ''],
+          ['PAYMENT TERMS',  tender.paymentTerms  || ''],
+          ['WARRANTY',       tender.warranty      || ''],
+          ['AWARD',          tender.awardedSupplierName || ''],
+          ['BUDGET',         tender.budget   ? `${fmt(tender.budget)} XAF` : ''],
+          ['COST SAVINGS',   tender.costSavings ? `${fmt(tender.costSavings)} XAF` : ''],
+          ['COST AVOIDANCE', tender.costAvoidance ? `${fmt(tender.costAvoidance)} XAF` : '']
+        ];
+  
+        summaryRows.forEach(([label, val]) => {
+          if (y + cellH > PAGE_BOTTOM) { doc.addPage(); y = 50; }
+          const isAward = label === 'AWARD';
+          this._tafCell(doc, marginL,                 y, summaryLabelW, cellH, label, true, false, '#ececec');
+          this._tafCell(doc, marginL + summaryLabelW, y, summaryValW,   cellH, val,   isAward, false, isAward ? '#fffacc' : '#ffffff');
+          y += cellH;
+        });
+        y += 6;
+  
+        // ──────────────────────────────────────────────────────────────────────
+        // 7. TECHNICAL RECOMMENDATION
+        // ──────────────────────────────────────────────────────────────────────
+        const recText1 = tender.technicalRecommendation || '';
+        const recH1    = Math.max(60, doc.heightOfString(recText1, { width: contentW - 10 }) + 14);
+        if (y + cellH + recH1 > PAGE_BOTTOM) { doc.addPage(); y = 50; }
+        this._tafCell(doc, marginL, y, contentW, cellH, 'TECHNICAL RECOMMENDATION', true, true, '#d8d8d8');
+        y += cellH;
+        this._tafCell(doc, marginL, y, contentW, recH1, recText1, false, false, '#ffffff', false, false, 8);
+        y += recH1 + 4;
+  
+        // ──────────────────────────────────────────────────────────────────────
+        // 8. PROCUREMENT RECOMMENDATION
+        // ──────────────────────────────────────────────────────────────────────
+        const recText2 = tender.procurementRecommendation || '';
+        const recH2    = Math.max(60, doc.heightOfString(recText2, { width: contentW - 10 }) + 14);
+        if (y + cellH + recH2 > PAGE_BOTTOM) { doc.addPage(); y = 50; }
+        this._tafCell(doc, marginL, y, contentW, cellH, 'PROCUREMENT RECOMMENDATION', true, true, '#d8d8d8');
+        y += cellH;
+        this._tafCell(doc, marginL, y, contentW, recH2, recText2, false, false, '#ffffff', false, false, 8);
+        y += recH2 + 8;
+  
+        // ──────────────────────────────────────────────────────────────────────
+        // 9. APPROVAL SIGNATURE TABLE
+        //    Columns: DEPARTMENT | NAME | SIGNATURE & DATE | REMARK
+        //    One row per approval step in the chain (3 levels).
+        //    Auto-filled if step.status === 'approved'.
+        // ──────────────────────────────────────────────────────────────────────
+        const approvalChain  = Array.isArray(tender.approvalChain) ? tender.approvalChain : [];
+        const SIG_TABLE_ROWS = approvalChain.length || 3; // fallback: 3 empty rows
+        const SIG_ROW_H      = 52; // height per row — enough for a signature image
+        const totalSigH      = cellH + SIG_TABLE_ROWS * SIG_ROW_H;
+  
+        if (y + totalSigH > PAGE_BOTTOM) { doc.addPage(); y = 50; }
+  
+        // Column widths
+        const CS = [95, 130, 190, 100]; // DEPT | NAME | SIG+DATE | REMARK
+        const CH = ['DEPARTMENT', 'NAME', 'SIGNATURE & DATE', 'REMARK'];
+        let hx = marginL;
+        CH.forEach((h, i) => {
+          this._tafCell(doc, hx, y, CS[i], cellH, h, true, true, '#d8d8d8');
+          hx += CS[i];
+        });
+        y += cellH;
+  
+        // ── Approval rows ───────────────────────────────────────────────────────
+        const fallbackRows = [
+          { dept: 'Supply Chain',    role: 'Supply Chain Coordinator' },
+          { dept: 'Head of Business',role: 'Head of Business'          },
+          { dept: 'Finance',         role: 'Finance Officer'           }
+        ];
+  
+        for (let i = 0; i < SIG_TABLE_ROWS; i++) {
+          const step      = approvalChain[i];
+          const isApproved= step && step.status === 'approved';
+          const fb        = fallbackRows[i] || {};
+          const dept      = step ? (step.approver.department || step.approver.role || fb.dept || '') : (fb.dept || '');
+          const name      = step ? step.approver.name : '';
+          const remark    = step ? (step.comments || '') : '';
+          const signedDate= isApproved && step.actionDate ? fmtDate(step.actionDate) : '';
+          const rowBg     = isApproved ? '#f6ffed' : '#ffffff';
+  
+          let rx = marginL;
+  
+          // DEPARTMENT cell
+          this._tafCell(doc, rx, y, CS[0], SIG_ROW_H, dept, false, false, rowBg, false, false, 8);
+          rx += CS[0];
+  
+          // NAME cell
+          this._tafCell(doc, rx, y, CS[1], SIG_ROW_H, name, false, false, rowBg, false, false, 8);
+          rx += CS[1];
+  
+          // SIGNATURE & DATE cell — render signature image if approved
+          doc.rect(rx, y, CS[2], SIG_ROW_H).strokeColor('#cccccc').lineWidth(0.5).stroke();
+          if (rowBg !== '#ffffff') doc.rect(rx, y, CS[2], SIG_ROW_H).fill(rowBg).stroke();
+  
+          if (isApproved) {
+            // Try to render signature image
+            const sigPath = resolveSignaturePath(step.signaturePath || step.decidedBy?.signature);
+            if (sigPath) {
+              try {
+                const imgX = rx + 4;
+                const imgY = y + 4;
+                const imgW = CS[2] - 60;
+                const imgH = SIG_ROW_H - 12;
+                doc.save();
+                doc.rect(imgX, imgY, imgW, imgH).fill('#ffffff');
+                doc.restore();
+                doc.image(sigPath, imgX, imgY, { width: imgW, height: imgH, fit: [imgW, imgH] });
+              } catch (sigErr) {
+                console.warn('Signature image error:', sigErr.message);
+              }
+            }
+  
+            // Date — bottom-right of the cell
+            if (signedDate) {
+              doc.fontSize(7).font(this.defaultFont).fillColor('#555555')
+                .text(signedDate, rx + CS[2] - 58, y + SIG_ROW_H - 14, { width: 54, align: 'right' });
+            }
+  
+            // Green checkmark indicator
+            doc.fontSize(9).font(this.boldFont).fillColor('#52c41a')
+              .text('✓', rx + CS[2] - 12, y + 4);
+          }
+          doc.fillColor('#000000');
+          rx += CS[2];
+  
+          // REMARK cell
+          this._tafCell(doc, rx, y, CS[3], SIG_ROW_H, remark, false, false, rowBg, false, false, 7);
+  
+          y += SIG_ROW_H;
+        }
+  
+        y += 10;
+  
+        // ──────────────────────────────────────────────────────────────────────
+        // 10. FOOTER — on every page
+        // ──────────────────────────────────────────────────────────────────────
+        const range = doc.bufferedPageRange();
+        for (let p = 0; p < range.count; p++) {
+          doc.switchToPage(p);
+          this.drawFooter(doc, tender, p + 1, range.count);
+        }
+  
+        doc.end();
+        console.log('=== TENDER PDF GENERATION COMPLETE ===');
+      } catch (err) {
+        console.error('generateTenderApprovalFormPDF error:', err);
+        reject({ success: false, error: err.message });
+      }
+    });
+  }
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Helper: draw a single table cell with optional bold / centered / coloured text
+  // _tafCell(doc, x, y, w, h, text, bold, center, bgColour, italic, highlighted, fontSize)
+  // ─────────────────────────────────────────────────────────────────────────────
+  _tafCell(doc, x, y, w, h, text, bold = false, center = false, bg = '#ffffff',
+          italic = false, highlighted = false, fontSize = 8) {
+    // Background
+    if (bg && bg !== '#ffffff') {
+      doc.rect(x, y, w, h).fill(bg);
+    }
+    // Border
+    doc.rect(x, y, w, h).strokeColor('#cccccc').lineWidth(0.5).stroke();
+  
+    if (!text && text !== 0) return;
+  
+    const str = String(text);
+    doc.fontSize(fontSize)
+      .font(bold ? this.boldFont : (italic ? 'Helvetica-Oblique' : this.defaultFont))
+      .fillColor(highlighted ? '#7c5800' : '#000000');
+  
+    const padX = 4;
+    const padY = (h - fontSize) / 2;  // vertical centre
+  
+    doc.text(str, x + padX, y + padY, {
+      width:    w - padX * 2,
+      height:   h,
+      align:    center ? 'center' : 'left',
+      ellipsis: true,
+      lineBreak:str.length > 40   // allow wrap only for longer text
+    });
+  
+    doc.fillColor('#000000');
+  }
+
   drawITDischargeHeader(doc, yPos, request) {
     // Logo (if available)
     try {
@@ -964,86 +1376,6 @@ class PDFService {
       align: 'right'
     });
   }
-
-//   drawSignatureSection(doc, yPos, poData) {
-//   const defaultSignatures = [
-//     { label: 'Supply Chain' },
-//     { label: 'Finance' },
-//     { label: 'Head of Business' }
-//   ];
-
-//   const allowedLabels = ['supply chain', 'finance', 'head of business'];
-
-//   const rawSignatures = Array.isArray(poData?.signatures) && poData.signatures.length
-//     ? poData.signatures
-//     : defaultSignatures;
-
-//   const filtered = rawSignatures.filter(sig =>
-//     allowedLabels.includes((sig?.label || '').toLowerCase())
-//   );
-
-//   // Sort in the correct order: Supply Chain, Finance, Head of Business
-//   const order = ['supply chain', 'finance', 'head of business'];
-//   const signatures = (filtered.length > 0 ? filtered : defaultSignatures).sort((a, b) =>
-//     order.indexOf((a?.label || '').toLowerCase()) - order.indexOf((b?.label || '').toLowerCase())
-//   );
-
-//   // 3 columns for 3 signatures
-//   const columnCount = 3;
-//   const blockWidth = 160;
-//   const columnGap = 17;
-//   const rowHeight = 60;
-//   const baseY = yPos + 10;
-
-//   signatures.forEach((signature, index) => {
-//     const row = Math.floor(index / columnCount);
-//     const col = index % columnCount;
-//     const xPos = 40 + col * (blockWidth + columnGap);
-//     const lineY = baseY + row * rowHeight + 24;
-
-//     doc.moveTo(xPos, lineY)
-//       .lineTo(xPos + blockWidth, lineY)
-//       .strokeColor('#000000')
-//       .lineWidth(0.5)
-//       .stroke();
-
-//     // Draw signature image with white background, preserve aspect ratio, and center
-//     if (signature?.signaturePath && fs.existsSync(signature.signaturePath)) {
-//       try {
-//         const imgWidth = 62; // Increased by 2px
-//         const imgX = xPos + (blockWidth - imgWidth) / 2;
-//         const imgY = lineY - 32 - 4; // Move up by 4px
-//         // Draw white background
-//         doc.save();
-//         doc.rect(imgX, imgY, imgWidth, 28).fill('#FFFFFF');
-//         doc.restore();
-//         // Draw image, only set width
-//         doc.image(signature.signaturePath, imgX, imgY, { width: imgWidth });
-//       } catch (error) {
-//         console.error('Signature image render error:', error.message);
-//       }
-//     }
-
-//     const signedAtText = signature?.signedAt
-//       ? this.formatDateExact(signature.signedAt)
-//       : '';
-
-//     if (signedAtText) {
-//       doc.fontSize(7)
-//         .font(this.defaultFont)
-//         .fillColor('#000000')
-//         .text(signedAtText, xPos + blockWidth - 80, lineY - 16, {
-//           width: 80,
-//           align: 'right'
-//         });
-//     }
-
-//     doc.fontSize(7)
-//       .font(this.boldFont)
-//       .fillColor('#000000')
-//       .text(signature?.label || 'Signature', xPos, lineY + 6);
-//   });
-// }
 
 
 drawSignatureSection(doc, yPos, poData) {
@@ -3119,87 +3451,6 @@ drawBuyerAcknowledgmentSignature(doc, yPos, data) {
     yPos += 10;
     return { yPos, currentPage };
   }
-
-  // ✅ NEW: Approver Signatures (HOD, Head of Business, Finance)
-  // drawApproverSignatures(doc, yPos, data) {
-  //   yPos += 5;
-
-  //   doc.fontSize(11)
-  //     .font(this.boldFont)
-  //     .fillColor('#000000')
-  //     .text('Approver Signatures', 40, yPos);
-
-  //   yPos += 25;
-
-  //   const steps = Array.isArray(data.approvalChain) ? data.approvalChain : [];
-
-  //   const findStep = (predicate) => steps.find(predicate);
-
-  //   const hodStep = findStep(step => {
-  //     const role = (step.approver?.role || '').toLowerCase();
-  //     return role.includes('head of department') || role.includes('department head') || role === 'hod';
-  //   });
-
-  //   const hobStep = findStep(step => {
-  //     const role = (step.approver?.role || '').toLowerCase();
-  //     const email = (step.approver?.email || '').toLowerCase();
-  //     return role.includes('head of business') || email === 'kelvin.eyong@gratoglobal.com';
-  //   });
-
-  //   const financeStep = findStep(step => {
-  //     const role = (step.approver?.role || '').toLowerCase();
-  //     return role.includes('finance');
-  //   });
-
-  //   const signatureBlocks = [
-  //     { label: 'Head of Business', step: hobStep },
-  //     { label: 'Finance', step: financeStep }
-  //   ];
-
-  //   const startX = 40;
-  //   const colWidth = 170;
-  //   const lineWidth = 140;
-  //   const lineY = yPos + 30;
-
-  //   signatureBlocks.forEach((block, index) => {
-  //     const x = startX + (index * colWidth);
-  //     const signaturePath = block.step?.decidedBy?.signature?.localPath;
-  //     const signatureDate = block.step?.actionDate ? this.formatDateExact(block.step.actionDate) : '';
-
-  //     // Signature image
-  //     if (signaturePath && fs.existsSync(signaturePath)) {
-  //       try {
-  //         doc.image(signaturePath, x + 10, lineY - 24, { width: 110, height: 36, fit: [110, 36] });
-  //       } catch (error) {
-  //         console.error('Approver signature render error:', error.message);
-  //       }
-  //     }
-
-  //     // Signature line
-  //     doc.moveTo(x + 10, lineY)
-  //       .lineTo(x + 10 + lineWidth, lineY)
-  //       .strokeColor('#000000')
-  //       .lineWidth(0.5)
-  //       .stroke();
-
-  //     // Date inline with signature
-  //     if (signatureDate) {
-  //       doc.fontSize(7)
-  //         .font(this.defaultFont)
-  //         .fillColor('#000000')
-  //         .text(signatureDate, x + 85, lineY - 14);
-  //     }
-
-  //     // Label under line
-  //     doc.fontSize(8)
-  //       .font(this.boldFont)
-  //       .fillColor('#000000')
-  //       .text(block.label, x + 10, lineY + 6);
-  //   });
-
-  //   return lineY + 30;
-  // }
-
 
   drawApproverSignatures(doc, yPos, data) {
   yPos += 5;
