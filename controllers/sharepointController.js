@@ -75,41 +75,72 @@ const notifyCollaborators = async (file, action, actor, extra = {}) => {
 
 const createFolder = async (req, res) => {
   try {
-    const { name, description, department, privacyLevel, allowedDepartments } = req.body;
-    if (!name || !description || !department)
+    const { name, description, privacyLevel, allowedDepartments } = req.body;
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(401).json({ success: false, message: 'User not found' });
+ 
+    // ── Determine department ───────────────────────────────────────────────
+    // Admins can specify any department; everyone else uses their own.
+    const department = user.role === 'admin'
+      ? (req.body.department || user.department)
+      : user.department;
+ 
+    if (!name || !description || !department) {
       return res.status(400).json({ success: false, message: 'name, description and department are required' });
-
-    if (!['public', 'department', 'confidential'].includes(privacyLevel))
-      return res.status(400).json({ success: false, message: 'Invalid privacy level' });
-
-    if (await SharePointFolder.findOne({ name }))
+    }
+ 
+    const resolvedPrivacy = ['public', 'department', 'confidential'].includes(privacyLevel)
+      ? privacyLevel
+      : 'department';
+ 
+    if (await SharePointFolder.findOne({ name })) {
       return res.status(400).json({ success: false, message: 'A folder with this name already exists' });
-
+    }
+ 
+    // ── Determine allowedDepartments ──────────────────────────────────────
+    // Company folders: accessible to all → empty allowedDepartments list
+    //   (the helper checks department === 'Company' directly)
+    // Public folders: same — everyone can access, no list needed
+    // Department / confidential: restricted to the specified department(s)
+    let resolvedAllowedDepts;
+    if (department === 'Company' || resolvedPrivacy === 'public') {
+      resolvedAllowedDepts = [];
+    } else if (Array.isArray(allowedDepartments) && allowedDepartments.length > 0) {
+      resolvedAllowedDepts = allowedDepartments;
+    } else {
+      resolvedAllowedDepts = [department];
+    }
+ 
     const folder = await new SharePointFolder({
-      name, description, department,
-      privacyLevel: privacyLevel || 'department',
-      isPublic:     privacyLevel === 'public',
+      name,
+      description,
+      department,
+      privacyLevel: resolvedPrivacy,
+      isPublic:     resolvedPrivacy === 'public',
       createdBy:    req.user.userId,
       accessControl: {
-        allowedDepartments: allowedDepartments || [department],
+        allowedDepartments: resolvedAllowedDepts,
         allowedUsers:       [req.user.userId],
         invitedUsers:       [],
         blockedUsers:       []
       }
     }).save();
-
+ 
     await new SharePointActivityLog({
-      action: 'folder_create', userId: req.user.userId,
-      folderId: folder._id, folderName: folder.name,
-      details: { department, privacyLevel }
+      action:     'folder_create',
+      userId:     req.user.userId,
+      folderId:   folder._id,
+      folderName: folder.name,
+      details:    { department, privacyLevel: resolvedPrivacy }
     }).save();
-
+ 
     res.status(201).json({ success: true, message: 'Folder created', data: folder });
   } catch (error) {
-    console.error('createFolder:', error);
+    console.error('createFolder error:', error);
     res.status(500).json({ success: false, message: 'Failed to create folder', error: error.message });
   }
 };
+ 
 
 // const getFolders = async (req, res) => {
 //   try {
@@ -152,17 +183,62 @@ const getFolders = async (req, res) => {
  
     const { department } = req.query;
  
-    const allFolders = await SharePointFolder.find({})
-      .populate('createdBy', 'fullName email')   // populate so safeStr works on objects too
-      .sort({ createdAt: -1 });
+    // ── Build a query that finds every folder that COULD be visible ─────────
+    //
+    // We fetch broadly here and let isFolderVisibleToUser() do the fine-grained
+    // filtering, because the helper encodes all the business rules.
+    //
+    // The query includes:
+    //   a) All public folders
+    //   b) All 'Company' department folders (org-wide default)
+    //   c) Folders belonging to the user's own department
+    //   d) Folders where the user's department is explicitly allowed
+    //   e) Folders the user created
+    //   f) Folders where the user is explicitly invited
+    //   g) For admins: everything
+    //
+    let dbQuery;
+ 
+    if (user.role === 'admin') {
+      // Admin sees every folder
+      dbQuery = {};
+    } else {
+      dbQuery = {
+        $or: [
+          // Public
+          { privacyLevel: 'public' },
+          { isPublic: true },
+          // Company-wide default
+          { department: 'Company' },
+          // User's own department
+          ...(user.department ? [{ department: user.department }] : []),
+          // Explicitly allowed departments
+          ...(user.department ? [{ 'accessControl.allowedDepartments': user.department }] : []),
+          // User created it
+          { createdBy: toObjectId(req.user.userId) },
+          // User is explicitly invited (covers confidential folders)
+          { 'accessControl.invitedUsers.userId': toObjectId(req.user.userId) },
+          // Legacy allowedUsers
+          { 'accessControl.allowedUsers': toObjectId(req.user.userId) }
+        ]
+      };
+    }
+ 
+    // Apply optional department filter from query string
+    if (department && department !== 'all') {
+      dbQuery = { $and: [dbQuery, { department }] };
+    }
+ 
+    const allFolders = await SharePointFolder.find(dbQuery)
+      .populate('createdBy', 'fullName email')
+      .sort({ department: 1, name: 1 });
  
     const result = [];
  
     for (const folder of allFolders) {
       try {
-        // isFolderVisibleToUser is null-safe in the updated helpers
+        // Fine-grained visibility check (handles confidential, blocked, etc.)
         if (!isFolderVisibleToUser(folder, user)) continue;
-        if (department && department !== 'all' && folder.department !== department) continue;
  
         const access = canUserAccessFolder(folder, user);
  
@@ -178,8 +254,7 @@ const getFolders = async (req, res) => {
           }
         });
       } catch (perFolderErr) {
-        // Log which folder caused the issue but keep going
-        console.error(`getFolders: skipping folder ${folder._id} due to error:`, perFolderErr.message);
+        console.error(`getFolders: skipping folder ${folder._id} (${folder.name}):`, perFolderErr.message);
       }
     }
  
@@ -190,12 +265,12 @@ const getFolders = async (req, res) => {
       userDepartment: user.department,
       userRole:       user.role
     });
+ 
   } catch (error) {
     console.error('getFolders error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch folders', error: error.message });
   }
 };
-
 
 const getFolder = async (req, res) => {
   try {
@@ -356,20 +431,63 @@ const getFiles = async (req, res) => {
 
 const getFileDetails = async (req, res) => {
   try {
-    const file = await SharePointFile.findById(req.params.fileId)
-      .populate('uploadedBy', 'fullName email')
-      .populate('folderId', 'name department')
-      .populate('sharedWith.userId', 'fullName email')
+    const { fileId } = req.params;
+ 
+    const file = await SharePointFile.findById(fileId)
+      .populate('uploadedBy',           'fullName email')
+      .populate('folderId',             'name department')
+      .populate('sharedWith.userId',    'fullName email')
       .populate('collaborators.userId', 'fullName email department')
-      .populate('checkout.userId', 'fullName email')
-      .populate('comments.userId', 'fullName email')
-      .populate('auditTrail.userId', 'fullName email');
-
-    if (!file || file.isDeleted) return res.status(404).json({ success: false, message: 'File not found' });
-
+      .populate('checkout.userId',      'fullName email')
+      .populate('comments.userId',      'fullName email')
+      .populate('auditTrail.userId',    'fullName email');
+ 
+    if (!file || file.isDeleted) {
+      return res.status(404).json({ success: false, message: 'File not found' });
+    }
+ 
+    // ── Resolve caller's effective permission ──────────────────────────────
+    const user   = await User.findById(req.user.userId);
+    const folder = await SharePointFolder.findById(file.folderId);
+ 
+    let folderPermission = 'none';
+    let canEdit          = false;
+ 
+    if (user && folder) {
+      const access     = canUserAccessFolder(folder, user);
+      folderPermission = access.permission || 'none';
+ 
+      // Edit-capable: file uploader, admin, folder upload/manage, or file collab 'edit'
+      const isFileOwner = file.uploadedBy?._id?.toString() === user._id.toString()
+                       || file.uploadedBy?.toString()       === user._id.toString();
+ 
+      const isCollabEdit = (file.collaborators || []).some(c => {
+        const uid = c.userId?._id?.toString() ?? c.userId?.toString();
+        return uid === user._id.toString() && c.permission === 'edit';
+      });
+ 
+      canEdit = isFileOwner
+             || user.role === 'admin'
+             || ['upload', 'manage'].includes(folderPermission)
+             || isCollabEdit;
+    }
+ 
+    // ── Append permissions to response ─────────────────────────────────────
+    const fileObj = file.toObject();
+    fileObj.userPermissions = {
+      canEdit,
+      canDownload:     ['download', 'upload', 'manage'].includes(folderPermission) || canEdit,
+      canDelete:       canEdit || user?.role === 'admin',
+      canShare:        ['upload', 'manage'].includes(folderPermission) || canEdit,
+      folderPermission
+    };
+ 
+    // Log the view
     await logFileAudit(file._id, 'view', req.user.userId);
-    res.json({ success: true, data: file });
+ 
+    res.json({ success: true, data: fileObj });
   } catch (error) {
+    console.error('getFileDetails error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch file', error: error.message });
   }
 };
