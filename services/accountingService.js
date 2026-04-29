@@ -11,6 +11,16 @@ const Counter = require('../models/Counter');
 const Payment = require('../models/Payment');
 const BankTransaction = require('../models/BankTransaction');
 const AuditLog = require('../models/AuditLog');
+  const TaxGroup       = require('../models/TaxGroup');
+  const Currency       = require('../models/Currency');
+  const FixedAsset     = require('../models/FixedAsset');
+  const AnalyticAccount= require('../models/AnalyticAccount');
+  const AnalyticLine   = require('../models/AnalyticLine');
+  const Budget         = require('../models/Budget');
+  const CreditNote     = require('../models/CreditNote');
+  const DunningAction  = require('../models/DunningAction');
+  const PaymentBatch   = require('../models/PaymentBatch');
+  const FiscalYear     = require('../models/FiscalYear');
 
 const DEFAULT_CHART = [
   { code: '1000', name: 'Cash on Hand', type: 'asset', subType: 'current_asset', normalBalance: 'debit' },
@@ -28,7 +38,13 @@ const DEFAULT_CHART = [
   { code: '5000', name: 'Cost of Services', type: 'expense', subType: 'cost_of_sales', normalBalance: 'debit' },
   { code: '5100', name: 'Salaries Expense', type: 'expense', subType: 'operating_expense', normalBalance: 'debit' },
   { code: '5200', name: 'Transport Expense', type: 'expense', subType: 'operating_expense', normalBalance: 'debit' },
-  { code: '5300', name: 'General Admin Expense', type: 'expense', subType: 'operating_expense', normalBalance: 'debit' }
+  { code: '5300', name: 'General Admin Expense', type: 'expense', subType: 'operating_expense', normalBalance: 'debit' },
+  { code:'1510', name:'Accumulated Depreciation',  type:'asset',     subType:'non_current_asset', normalBalance:'credit' },
+  { code:'3100', name:'Retained Earnings',          type:'equity',    subType:'equity',            normalBalance:'credit' },
+  { code:'3200', name:'Current Year Earnings',      type:'equity',    subType:'equity',            normalBalance:'credit' },
+  { code:'4100', name:'Other Revenue',              type:'revenue',   subType:'other_revenue',     normalBalance:'credit' },
+  { code:'5400', name:'Depreciation Expense',       type:'expense',   subType:'operating_expense', normalBalance:'debit'  },
+  { code:'5500', name:'FX Gain/Loss',               type:'expense',   subType:'financial_expense', normalBalance:'debit'  },
 ];
 
 const DEFAULT_MAPPINGS = {

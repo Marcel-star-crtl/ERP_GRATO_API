@@ -263,7 +263,29 @@ const FixedAssetSchema = new mongoose.Schema({
   lastUpdatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
-  }
+  },
+
+  accountCodes: {
+    assetAccount:        { type: String, default: '1500' },
+    depreciationAccount: { type: String, default: '5400' },
+    accumulatedAccount:  { type: String, default: '1510' },
+    disposalGainAccount: { type: String, default: '4100' },
+    disposalLossAccount: { type: String, default: '5300' }
+  },
+  depreciationLines: [{
+    sequence:  { type: Number, required: true },
+    date:      { type: Date,   required: true },
+    amount:    { type: Number, required: true },
+    bookValue: { type: Number, required: true },
+    isPosted:  { type: Boolean, default: false },
+    entryId:   { type: mongoose.Schema.Types.ObjectId, ref: 'JournalEntry', default: null }
+  }],
+  accountingAudit: {
+    acquisitionEntryId: { type: mongoose.Schema.Types.ObjectId, ref: 'JournalEntry', default: null },
+    acquisitionPosted:  { type: Boolean, default: false },
+    disposalEntryId:    { type: mongoose.Schema.Types.ObjectId, ref: 'JournalEntry', default: null },
+    disposalPosted:     { type: Boolean, default: false }
+  },
 }, {
   timestamps: true,
   toJSON: { virtuals: true },

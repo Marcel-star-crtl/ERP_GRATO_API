@@ -3,12 +3,14 @@ const User = require('../models/User');
 const { getApprovalChain } = require('../config/departmentStructure');
 const { sendITSupportEmail, sendEmail } = require('../services/emailService');
 const { getITSupportApprovalChain } = require('../config/itSupportApprovalChain');
-const { 
-  saveFile, 
-  deleteFile,
-  deleteFiles,
-  STORAGE_CATEGORIES 
-} = require('../utils/localFileStorage');
+// const { 
+//   saveFile, 
+//   deleteFile,
+//   deleteFiles,
+//   STORAGE_CATEGORIES 
+// } = require('../utils/localFileStorage');
+const { saveFile, deleteFile } = require('../utils/cloudinaryStorage');
+
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');

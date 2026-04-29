@@ -337,8 +337,14 @@ const budgetCodeSchema = new mongoose.Schema({
   lastModifiedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
-  }
-
+  },
+  accountingLinks: [{
+    journalEntryId: { type: mongoose.Schema.Types.ObjectId, ref: 'JournalEntry' },
+    entryNumber:    { type: String },
+    amount:         { type: Number },
+    sourceType:     { type: String },
+    linkedAt:       { type: Date, default: Date.now }
+  }],
 }, {
   timestamps: true
 });
